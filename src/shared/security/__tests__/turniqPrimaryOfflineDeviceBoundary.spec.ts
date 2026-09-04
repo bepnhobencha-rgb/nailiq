@@ -91,6 +91,15 @@ describe("TurnIQ M5 primary offline device boundary", () => {
     expect(serviceWorker).not.toMatch(/caches\.put\([^\n]*(api|action)/i);
   });
 
+  it("publishes offline HTML only after every executable asset is cached", () => {
+    const assetWarm = serviceWorker.indexOf("for (const url of assetUrls)");
+    const readinessGate = serviceWorker.indexOf("if (!allAssetsCached || !offlineUrl) return;");
+    const htmlPublish = serviceWorker.indexOf("await cache.put(offlineUrl.href, response)");
+    expect(assetWarm).toBeGreaterThan(-1);
+    expect(readinessGate).toBeGreaterThan(assetWarm);
+    expect(htmlPublish).toBeGreaterThan(readinessGate);
+  });
+
   it("remains dormant and preserves evidence during rollback", () => {
     expect(migration).toContain("no salon/device is enabled by this migration");
     expect(migration).toContain("Never drop command/event/receipt history");
