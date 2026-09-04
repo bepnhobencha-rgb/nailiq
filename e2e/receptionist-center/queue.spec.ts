@@ -290,6 +290,30 @@ test.describe("Receptionist queue + assign", () => {
     // el.click() can't establish the focus context a real click does.)
   });
 
+  test("actual arrival time reports an invalid correction immediately and blocks submit", async ({
+    page,
+  }) => {
+    await gotoReceptionistCenter(page, fx.slug);
+    await fillWalkinGuestContact(page, testClientNameMarker());
+    await clickWalkinService(page, fx.serviceIds[0]!);
+
+    const form = page.getByTestId("walkin-add-form");
+    const actualTime = form.getByTestId("walkin-actual-time");
+    const currentHm = await actualTime.inputValue();
+    const [hours, minutes] = currentHm.split(":").map(Number);
+    const currentMinutes = hours * 60 + minutes;
+    const tooOldMinutes = (currentMinutes - 31 + 24 * 60) % (24 * 60);
+    const tooOldHm = `${String(Math.floor(tooOldMinutes / 60)).padStart(2, "0")}:${String(tooOldMinutes % 60).padStart(2, "0")}`;
+
+    await actualTime.fill(tooOldHm);
+    await expect(form.getByTestId("walkin-actual-time-error")).toBeVisible();
+    await expect(form.getByTestId("walkin-submit")).toBeDisabled();
+
+    await actualTime.fill(currentHm);
+    await expect(form.getByTestId("walkin-actual-time-error")).toHaveCount(0);
+    await expect(form.getByTestId("walkin-submit")).toBeEnabled();
+  });
+
   test("case 6: double-click submit — only one walk-in created (in-flight guard)", async ({
     page,
   }) => {

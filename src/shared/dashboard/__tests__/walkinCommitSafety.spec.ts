@@ -66,4 +66,14 @@ describe("walk-in committed-success and retry contract", () => {
     }
     expect(actions).toContain('fail("idempotency_conflict")');
   });
+
+  it("surfaces and blocks an invalid corrected arrival time before submit", () => {
+    expect(form).toContain("const nextActualTimeHm = event.target.value");
+    expect(form).toContain(
+      "nextActualTime.ok ? null : labels.actualTimeInvalid",
+    );
+    expect(form.match(/!!actualTimeError/g)?.length ?? 0).toBeGreaterThanOrEqual(
+      2,
+    );
+  });
 });
