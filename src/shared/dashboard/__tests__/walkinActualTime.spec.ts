@@ -2,6 +2,7 @@ import { describe, expect, it } from "vitest";
 
 import {
   resolveWalkinActualTime,
+  sameWalkinActualInstant,
   validateWalkinActualTime,
   walkinActualTimeHm,
 } from "@/shared/dashboard/walkinActualTime";
@@ -67,5 +68,20 @@ describe("walk-in actual-time safety", () => {
         "2026-09-04T17:30:45.000Z",
       ),
     ).toBe("10:30");
+  });
+
+  it("matches the same persisted instant across timestamp spellings", () => {
+    expect(
+      sameWalkinActualInstant(
+        "2026-09-04T17:30:00+00:00",
+        "2026-09-04T17:30:00.000Z",
+      ),
+    ).toBe(true);
+    expect(
+      sameWalkinActualInstant(
+        "2026-09-04T17:31:00+00:00",
+        "2026-09-04T17:30:00.000Z",
+      ),
+    ).toBe(false);
   });
 });

@@ -76,7 +76,10 @@ import { parseTimeSlotToMinutes } from "@/shared/booking/parseBookingTimeSlot";
 import { toCanonicalPhone } from "@/shared/lib/toCanonicalPhone";
 import { type ActorRole, logBookingEvent } from "@/shared/dashboard/auditLog";
 import { getDashboardWriteClient } from "@/shared/dashboard/setupActions";
-import { validateWalkinActualTime } from "@/shared/dashboard/walkinActualTime";
+import {
+  sameWalkinActualInstant,
+  validateWalkinActualTime,
+} from "@/shared/dashboard/walkinActualTime";
 import {
   createDeskAfterHoursApproval,
   replayDeskAfterHoursApproval,
@@ -654,7 +657,10 @@ export async function addWalkinToQueue(
         JSON.stringify(walkinRequestTags) &&
       (replay.party_size ?? null) === partySize &&
       (requestedActualArrivalAt === null ||
-        String(replay.joined_queue_at ?? "") === requestedActualArrivalAt);
+        sameWalkinActualInstant(
+          replay.joined_queue_at,
+          requestedActualArrivalAt,
+        ));
     if (!sameRequest) return fail("idempotency_conflict");
     return {
       ok: true,

@@ -19,6 +19,24 @@ export type WalkinActualTimeValidation =
   | { ok: false; error: WalkinActualTimeError };
 
 /**
+ * Postgres may serialize the same timestamptz with `+00:00` while the browser
+ * sends it with `Z`. Idempotency compares instants, not timestamp spelling.
+ */
+export function sameWalkinActualInstant(
+  left: string | null | undefined,
+  right: string,
+): boolean {
+  if (!left) return false;
+  const leftMs = Date.parse(left);
+  const rightMs = Date.parse(right);
+  return (
+    Number.isFinite(leftMs) &&
+    Number.isFinite(rightMs) &&
+    leftMs === rightMs
+  );
+}
+
+/**
  * Server boundary for backdated walk-ins. The desk can correct an arrival time
  * only within the current 30-minute window and can never future-date it.
  * Minute-granularity input receives the remaining seconds of the oldest minute
