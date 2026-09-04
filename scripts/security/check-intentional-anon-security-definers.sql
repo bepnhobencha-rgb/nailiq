@@ -20,9 +20,9 @@ BEGIN
     AND p.prosecdef
     AND has_function_privilege('anon', p.oid, 'EXECUTE');
 
-  IF v_actual_count <> 12 THEN
+  IF v_actual_count <> 10 THEN
     RAISE EXCEPTION
-      'anonymous SECURITY DEFINER allowlist drift: expected 12, found %',
+      'anonymous SECURITY DEFINER allowlist drift: expected 10, found %',
       v_actual_count;
   END IF;
 
@@ -72,28 +72,6 @@ BEGIN
             '''pricing_changed''',
             'public_booking_request_fingerprint',
             'p_expected_pricing_fingerprint'
-          ]::text[]
-        ),
-        (
-          'public.create_public_waitlist_entry(uuid,uuid,uuid,date,text,text,text,text,text)',
-          'v',
-          'RETURNS TABLE(id uuid)',
-          ARRAY[
-            'invalid_waitlist_source',
-            'invalid_service_for_salon',
-            'invalid_staff_for_salon'
-          ]::text[]
-        ),
-        (
-          'public.create_public_capacity_rescue_request(uuid,uuid,text,uuid,uuid,date,text,integer,text,text,text,text,jsonb)',
-          'v',
-          'RETURNS TABLE(id uuid, status text, created_new boolean)',
-          ARRAY[
-            'v_role NOT IN (''anon'', ''authenticated'', ''service_role'')',
-            'invalid_intent_keys',
-            'invalid_service_for_salon',
-            'invalid_staff_for_salon',
-            'request_id_conflict'
           ]::text[]
         ),
         (

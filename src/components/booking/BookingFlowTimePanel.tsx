@@ -38,6 +38,7 @@ export function BookingFlowTimePanel({
   clientEmail,
   waitlistSubmitting,
   waitlistSlotJoined,
+  waitlistSlotAvailableLabel,
   waitlistPreferredTime,
   onWaitlistPreferredTimeChange,
   waitlistTimeOptions,
@@ -70,6 +71,7 @@ export function BookingFlowTimePanel({
   clientEmail: string;
   waitlistSubmitting: boolean;
   waitlistSlotJoined: boolean;
+  waitlistSlotAvailableLabel: string | null;
   waitlistPreferredTime: string;
   onWaitlistPreferredTimeChange: (v: string) => void;
   waitlistTimeOptions: string[];
@@ -130,6 +132,16 @@ export function BookingFlowTimePanel({
     afternoon: t.timeAfternoon,
     evening: t.timeEvening,
   };
+
+  const slotAvailableNotice = waitlistSlotAvailableLabel ? (
+    <div
+      role="status"
+      data-testid="waitlist-slot-available"
+      className="mb-5 rounded-2xl border border-nq-success/35 bg-nq-success/12 px-4 py-3 text-center text-sm font-semibold text-nq-success"
+    >
+      {t.waitlistSlotAvailable.replace("{time}", waitlistSlotAvailableLabel)}
+    </div>
+  ) : null;
 
   const waitlistJoinedMsg = (
     <p className="rounded-2xl border border-nq-success/35 bg-nq-success/12 px-4 py-3 text-center text-sm font-medium text-nq-success">
@@ -424,7 +436,8 @@ export function BookingFlowTimePanel({
           </div>
         ) : (
           <>
-            {error && !waitlistOpen ? (
+            {slotAvailableNotice}
+            {error && !(waitlistOpen && !waitlistSlotAvailableLabel) ? (
               <p
                 className="mb-5 rounded-2xl border border-nq-error/35 bg-nq-error/10 px-4 py-3 text-sm text-nq-error"
                 role="alert"
@@ -555,10 +568,11 @@ export function BookingFlowTimePanel({
           </div>
           {/* Even when slots exist, invite the customer to the waitlist for a
               time they can't find — this is what actually fills the queue. */}
+          {waitlistTimeOptions.length > 0 ? (
           <div className="mt-5">
             {waitlistSlotJoined ? (
               waitlistJoinedMsg
-            ) : waitlistOpen ? (
+            ) : waitlistOpen && !waitlistSlotAvailableLabel ? (
               <div className="space-y-5" data-testid="waitlist-inline-form">
                 {waitlistFields}
               </div>
@@ -589,6 +603,7 @@ export function BookingFlowTimePanel({
               </button>
             )}
           </div>
+          ) : null}
           </>
         )}
       </div>

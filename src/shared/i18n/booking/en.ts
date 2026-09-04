@@ -235,6 +235,9 @@ export const bookingEn = {
   waitlistJoined:
     "You're on the list. We'll email you if a matching spot opens.",
   waitlistError: "Couldn't save your request. Try again.",
+  waitlistAvailabilityUnverified:
+    "We couldn't verify live availability. Nothing was added to the waitlist. Please try again.",
+  waitlistSlotAvailable: "{time} is open — book it now.",
   waitlistEmailLabel: "Email *",
   capacityRescueTitle: "Keep this exact plan",
   capacityRescueDescription:

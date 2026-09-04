@@ -346,6 +346,11 @@ export interface ReceptionistCenterData {
     bookingDate: string; // YYYY-MM-DD
     preferredSlotLabel: string | null;
     phone: string;
+    /** Full contact values are restricted to the authenticated salon dashboard
+     * and rendered only inside the explicit customer-detail drawer. */
+    email: string;
+    preferredStaffName: string | null;
+    source: "slot_unavailable" | "booking_conflict";
     status: string; // 'waiting' | 'review_required' | 'notified' | 'claimed'
     requestKind: "individual" | "sequence" | "group";
     partySize: number;
@@ -1491,6 +1496,8 @@ export async function loadReceptionistCenterData(
         preferred_slot_label: string | null;
         client_name: string | null;
         client_phone: string | null;
+        client_email: string | null;
+        source: string | null;
         status: string | null;
         request_kind: string | null;
         party_size: number | null;
@@ -1524,6 +1531,17 @@ export async function loadReceptionistCenterData(
           bookingDate: String(r.booking_date ?? "").slice(0, 10),
           preferredSlotLabel: slot,
           phone: String(r.client_phone ?? ""),
+          email: String(r.client_email ?? ""),
+          preferredStaffName: (() => {
+            const preference = rawIntent?.staffPreference;
+            return typeof preference === "string" && preference !== "any"
+              ? staffNameById.get(preference) ?? null
+              : null;
+          })(),
+          source:
+            r.source === "booking_conflict"
+              ? r.source
+              : "slot_unavailable",
           status: String(r.status ?? "waiting"),
           requestKind,
           partySize: typeof r.party_size === "number" && r.party_size > 0
@@ -1537,7 +1555,7 @@ export async function loadReceptionistCenterData(
         });
       };
       const WL_SELECT =
-        "id, service_id, booking_date, preferred_slot_label, client_name, client_phone, status, request_kind, party_size, intent_json, claimed_at, offered_staff_id, created_at";
+        "id, service_id, booking_date, preferred_slot_label, client_name, client_phone, client_email, source, status, request_kind, party_size, intent_json, claimed_at, offered_staff_id, created_at";
       try {
         const svc = createServiceRoleClient();
         const loadedRows: WlRow[] = [];

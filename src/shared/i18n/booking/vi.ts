@@ -215,6 +215,9 @@ export const bookingVi: BookingMessages = {
   waitlistJoined:
     "Đã ghi nhận. Chúng tôi sẽ gửi email khi có chỗ trống phù hợp.",
   waitlistError: "Không lưu được. Vui lòng thử lại.",
+  waitlistAvailabilityUnverified:
+    "Chưa xác minh được lịch trống. NailIQ chưa thêm bạn vào danh sách chờ. Vui lòng thử lại.",
+  waitlistSlotAvailable: "{time} đang trống — Đặt ngay.",
   waitlistEmailLabel: "Email *",
   capacityRescueTitle: "Giữ nguyên phương án này",
   capacityRescueDescription:

@@ -1,7 +1,6 @@
 import { validateGuestPhone } from "@/shared/booking/validateGuestPhone";
 import { isValidEmailFormat } from "@/shared/lib/emailFormat";
 import { isValidCustomerName } from "@/shared/lib/nameFormat";
-import { createPublicClient } from "@/shared/lib/supabase/publicClient";
 
 export type CapacityRescueKind = "individual" | "sequence" | "group";
 
@@ -29,12 +28,21 @@ export type CapacityRescueReceipt = {
   createdNew: boolean;
 };
 
+export type CapacityRescueSubmissionResult =
+  | {
+      outcome: "created";
+      availability: "slot_unavailable" | "booking_conflict" | "capacity_unavailable";
+      receipt: CapacityRescueReceipt;
+    }
+  | { outcome: "slot_available"; slotLabel: string }
+  | { outcome: "availability_unverified" };
+
 const UUID_RE =
   /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 
-export async function submitCapacityRescueRequest(
+export async function submitCapacityRescueRequestChecked(
   params: SubmitCapacityRescueRequestParams,
-): Promise<CapacityRescueReceipt> {
+): Promise<CapacityRescueSubmissionResult> {
   const name = params.clientName.trim();
   const email = params.clientEmail.trim().toLowerCase();
   const phone = validateGuestPhone(params.clientPhone);
@@ -72,43 +80,73 @@ export async function submitCapacityRescueRequest(
     throw new Error("invalid_party_size");
   }
 
-  const client = createPublicClient();
-  const { data, error } = await client.rpc(
-    "create_public_capacity_rescue_request" as never,
-    {
-      p_salon_id: params.salonId,
-      p_request_id: params.requestId,
-      p_request_kind: params.requestKind,
-      p_primary_service_id: params.primaryServiceId,
-      p_staff_id: params.staffId,
-      p_booking_date: params.bookingDateYmd,
-      p_preferred_slot_label: params.preferredSlotLabel ?? "",
-      p_party_size: params.partySize,
-      p_client_name: name,
-      p_client_phone: phone.digits,
-      p_client_email: email,
-      p_client_locale: params.clientLocale,
-      p_intent_json: { ...params.intent, serviceIds },
-    } as never,
-  );
+  const response = await fetch("/api/booking/capacity-rescue", {
+    method: "POST",
+    headers: { "content-type": "application/json" },
+    body: JSON.stringify({
+      ...params,
+      clientName: name,
+      clientPhone: phone.digits,
+      clientEmail: email,
+      intent: { ...params.intent, serviceIds },
+    }),
+  }).catch(() => null);
+  if (!response) return { outcome: "availability_unverified" };
 
-  if (error) throw new Error(error.message || "capacity_rescue_failed");
-  const row = Array.isArray(data) ? data[0] : data;
-  if (!row || typeof row !== "object") throw new Error("capacity_rescue_empty");
-
-  const raw = row as Record<string, unknown>;
-  const requestId = typeof raw.id === "string" ? raw.id : "";
-  const status =
-    raw.status === "waiting" ||
-    raw.status === "review_required" ||
-    raw.status === "notified"
-      ? raw.status
-      : null;
-  if (!requestId || !status) throw new Error("capacity_rescue_invalid_receipt");
-
+  const body = (await response.json().catch(() => null)) as
+    | Record<string, unknown>
+    | null;
+  if (!body || typeof body !== "object") {
+    return { outcome: "availability_unverified" };
+  }
+  if (body.code === "slot_available" && typeof body.slotLabel === "string") {
+    return { outcome: "slot_available", slotLabel: body.slotLabel };
+  }
+  if (body.code === "availability_unverified") {
+    return { outcome: "availability_unverified" };
+  }
+  if (!response.ok || body.ok !== true || typeof body.receipt !== "object") {
+    throw new Error(
+      typeof body.code === "string" ? body.code : "capacity_rescue_failed",
+    );
+  }
+  const raw = body.receipt as Record<string, unknown>;
+  const requestId = typeof raw.requestId === "string" ? raw.requestId : "";
+  const status = ["waiting", "review_required", "notified"].includes(
+    String(raw.status),
+  )
+    ? (raw.status as CapacityRescueReceipt["status"])
+    : null;
+  const availability = [
+    "slot_unavailable",
+    "booking_conflict",
+    "capacity_unavailable",
+  ].includes(String(body.outcome))
+    ? (body.outcome as
+        | "slot_unavailable"
+        | "booking_conflict"
+        | "capacity_unavailable")
+    : null;
+  if (!requestId || !status || !availability) {
+    throw new Error("capacity_rescue_invalid_receipt");
+  }
   return {
-    requestId,
-    status,
-    createdNew: raw.created_new === true,
+    outcome: "created",
+    availability,
+    receipt: {
+      requestId,
+      status,
+      createdNew: raw.createdNew === true,
+    },
   };
+}
+
+export async function submitCapacityRescueRequest(
+  params: SubmitCapacityRescueRequestParams,
+): Promise<CapacityRescueReceipt> {
+  const result = await submitCapacityRescueRequestChecked(params);
+  if (result.outcome !== "created") {
+    throw new Error(result.outcome);
+  }
+  return result.receipt;
 }

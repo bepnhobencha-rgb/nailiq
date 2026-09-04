@@ -1692,6 +1692,35 @@ export type UserMessages = {
       invitedToast: (name: string) => string;
       suppressedToast: (name: string) => string;
       errorToast: string;
+      openCustomerDetails: (name: string) => string;
+      detailsTitle: string;
+      detailsDescription: string;
+      closeDetails: string;
+      fullName: string;
+      statusLabel: string;
+      phoneLabel: string;
+      emailLabel: string;
+      serviceLabel: string;
+      dateLabel: string;
+      timeLabel: string;
+      staffLabel: string;
+      joinedAtLabel: string;
+      waitingLabel: string;
+      requestKindLabel: string;
+      sourceLabel: string;
+      anyTime: string;
+      anyStaff: string;
+      individualRequest: string;
+      source: {
+        slot_unavailable: string;
+        booking_conflict: string;
+      };
+      callCustomer: string;
+      copyPhone: string;
+      copyEmail: string;
+      phoneCopied: string;
+      emailCopied: string;
+      copyFailed: string;
     };
     walkin: {
       invalidPhone: string;
@@ -4316,6 +4345,35 @@ export const userEn: UserMessages = {
       suppressedToast: (name) =>
         `Marked ${name} invited — SMS disabled in this environment`,
       errorToast: "Could not send the invite. Please try again.",
+      openCustomerDetails: (name) => `Open details for ${name}`,
+      detailsTitle: "Waitlist customer",
+      detailsDescription: "Private contact and scheduling details for salon staff.",
+      closeDetails: "Close customer details",
+      fullName: "Full name",
+      statusLabel: "Waitlist status",
+      phoneLabel: "Phone",
+      emailLabel: "Email",
+      serviceLabel: "Service",
+      dateLabel: "Preferred date",
+      timeLabel: "Preferred time",
+      staffLabel: "Staff preference",
+      joinedAtLabel: "Joined waitlist",
+      waitingLabel: "Waiting time",
+      requestKindLabel: "Request",
+      sourceLabel: "Reason",
+      anyTime: "Any time",
+      anyStaff: "Any staff",
+      individualRequest: "Individual appointment",
+      source: {
+        slot_unavailable: "Requested time was verified full",
+        booking_conflict: "Slot was taken during booking",
+      },
+      callCustomer: "Call customer",
+      copyPhone: "Copy phone",
+      copyEmail: "Copy email",
+      phoneCopied: "Phone copied.",
+      emailCopied: "Email copied.",
+      copyFailed: "Could not copy. Please try again.",
     },
     walkin: {
       invalidPhone:

@@ -37,7 +37,6 @@ import {
 import { BOOKING_ANY_STAFF_ID } from "@/shared/booking/bookingStaffConstants";
 import {
   getAvailableTimeSlots,
-  minutesToLabel,
   type TimeSlot,
 } from "@/shared/booking/getAvailableTimeSlots";
 import { computeBookingTiming } from "@/shared/booking/bookingTiming";
@@ -267,6 +266,12 @@ export function useBookingFlowState(
   /** Waitlist "Preferred time" — optional. Empty string = "any time" → the
    *  submit sends preferredSlotLabel: null (unchanged legacy behavior). */
   const [waitlistPreferredTime, setWaitlistPreferredTime] = useState<string>("");
+  const [waitlistSlotAvailableLabel, setWaitlistSlotAvailableLabel] = useState<
+    string | null
+  >(null);
+  const [waitlistSource, setWaitlistSource] = useState<
+    "slot_unavailable" | "booking_conflict"
+  >("slot_unavailable");
   /** Task #09-11 — honeypot field, never shown to humans (CSS-hidden +
    *  `tabIndex=-1` + `aria-hidden`). Bots autofilling every `<input>`
    *  in the form will put something here; `submitPublicBooking`
@@ -940,45 +945,14 @@ export function useBookingFlowState(
   useEffect(() => {
     // eslint-disable-next-line react-hooks/set-state-in-effect -- reactive reset when key inputs change
     setWaitlistSlotJoined(false);
+    setWaitlistSlotAvailableLabel(null);
+    setWaitlistSource("slot_unavailable");
   }, [selectedDate, staffId, serviceId, salon.id]);
 
-  /**
-   * Hourly time labels for the selected day's open window — drives the
-   * optional waitlist "Preferred time" select. Empty when the salon is
-   * closed that day (or no hours configured) → the select is hidden.
-   * Marks step every 60 min from the first whole hour at/after open, and
-   * stop strictly before close (so we never offer a slot at closing time).
-   */
+  /** Only offer times the canonical public availability grid proved unavailable. */
   const waitlistTimeOptions = useMemo<string[]>(() => {
-    const week = parseOpeningHours(salon.opening_hours);
-    if (!week) return [];
-    const dayKey = (["sun", "mon", "tue", "wed", "thu", "fri", "sat"] as const)[
-      selectedDate.getDay()
-    ];
-    const day = week[dayKey];
-    if (!day || day.closed) return [];
-    const [openH, openM] = day.open.split(":").map((n) => parseInt(n, 10));
-    const [closeH, closeM] = day.close.split(":").map((n) => parseInt(n, 10));
-    if (
-      Number.isNaN(openH) ||
-      Number.isNaN(openM) ||
-      Number.isNaN(closeH) ||
-      Number.isNaN(closeM)
-    ) {
-      return [];
-    }
-    const openMin = openH * 60 + openM;
-    const closeMin = closeH * 60 + closeM;
-    const out: string[] = [];
-    for (
-      let mark = Math.ceil(openMin / 60) * 60;
-      mark < closeMin;
-      mark += 60
-    ) {
-      out.push(minutesToLabel(mark));
-    }
-    return out;
-  }, [salon.opening_hours, selectedDate]);
+    return timeSlots.filter((slot) => !slot.available).map((slot) => slot.label);
+  }, [timeSlots]);
 
   useEffect(() => {
     if (!timeSlot) return;
@@ -1921,6 +1895,7 @@ export function useBookingFlowState(
         setError("pricing_changed");
       } else if (err instanceof BookingConflictError) {
         bookingSubmitAttemptedRef.current = false;
+        setWaitlistSource("booking_conflict");
         setStepDir(-1);
         setStep("time");
         setError(t.bookingErrors.slotJustTaken);
@@ -2152,7 +2127,7 @@ export function useBookingFlowState(
           requestId: createPublicWaitlistRequestId(),
         };
       }
-      await submitPublicWaitlistEntry({
+      const result = await submitPublicWaitlistEntry({
         shopSlug,
         serviceId,
         staffId,
@@ -2161,11 +2136,22 @@ export function useBookingFlowState(
         clientName: name,
         clientPhone: phone,
         clientEmail: email,
-        source: "slot_unavailable",
+        source: waitlistSource,
         requestId: waitlistRequestRef.current.requestId,
         clientLocale: language,
       });
-      setWaitlistSlotJoined(true);
+      if (result.outcome === "slot_available") {
+        setTimeSlot(result.slotLabel);
+        timeSlotRef.current = result.slotLabel;
+        setWaitlistPreferredTime("");
+        setWaitlistSlotAvailableLabel(result.slotLabel);
+        setWaitlistSlotJoined(false);
+      } else if (result.outcome === "availability_unverified") {
+        setError(t.waitlistAvailabilityUnverified);
+      } else {
+        setWaitlistSlotAvailableLabel(null);
+        setWaitlistSlotJoined(true);
+      }
     } catch (e) {
       setError(
         e instanceof Error && e.message === "invalid_phone"
@@ -2184,6 +2170,7 @@ export function useBookingFlowState(
     clientPhone,
     clientEmail,
     waitlistPreferredTime,
+    waitlistSource,
     selectedDate,
     serviceId,
     salon.id,
@@ -2198,6 +2185,7 @@ export function useBookingFlowState(
     t.bookingErrors.invalidEmail,
     t.waitlistEmailRequired,
     t.waitlistError,
+    t.waitlistAvailabilityUnverified,
   ]);
 
   const backToPhone = useCallback(() => {
@@ -2320,6 +2308,7 @@ export function useBookingFlowState(
     submitting,
     waitlistSubmitting,
     waitlistSlotJoined,
+    waitlistSlotAvailableLabel,
     waitlistPreferredTime,
     setWaitlistPreferredTime,
     waitlistTimeOptions,
