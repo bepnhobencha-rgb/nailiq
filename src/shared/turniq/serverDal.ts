@@ -49,6 +49,7 @@ import { canonicalTurnIqJson, sha256TurnIqHex } from "@/shared/turniq/fingerprin
 import { decideSingleCustomer } from "@/shared/turniq/singleCustomerEngine";
 import type { TurnIqTrustedConfirmationSnapshot } from "@/shared/turniq/trustedSnapshot";
 import type { TurnIqServerActionErrorCode } from "@/shared/turniq/serverContracts";
+import type { TurnIqStaffPinGateway } from "@/shared/turniq/staffPin";
 import {
   parseTurnIqRolloutStage,
   turnIqStageAllowsRead,
@@ -434,6 +435,48 @@ export const turnIqActionGateway: TurnIqActionGateway = {
         p_salon_id: args.salonId,
         p_policy_version_id: args.policyVersionId,
         p_exception_id: args.exceptionId,
+        p_command_type: args.commandType,
+        p_reason: args.reason,
+        p_command_id: args.commandId,
+        p_device_id: args.deviceId,
+        p_local_sequence: args.localSequence,
+        p_actor_user_id: args.actorUserId,
+        p_actor_role: args.actorRole,
+        p_request_fingerprint: args.requestFingerprint,
+        p_occurred_at: args.occurredAt,
+      } as never,
+    );
+    if (error) throw gatewayErrorFromDatabase(error);
+    return data as unknown as TurnIqRpcOutcome;
+  },
+};
+
+export const turnIqStaffPinGateway: TurnIqStaffPinGateway = {
+  resolveContext: resolveTurnIqContext,
+  async configurePin(args) {
+    const { data, error } = await createServiceRoleClient().rpc(
+      "configure_turniq_staff_pin_v1" as never,
+      {
+        p_salon_id: args.salonId,
+        p_staff_id: args.staffId,
+        p_pin: args.pin,
+        p_command_id: args.commandId,
+        p_actor_user_id: args.actorUserId,
+        p_actor_role: args.actorRole,
+        p_occurred_at: args.occurredAt,
+      } as never,
+    );
+    if (error) throw gatewayErrorFromDatabase(error);
+    return data as never;
+  },
+  async applyPinShift(args) {
+    const { data, error } = await createServiceRoleClient().rpc(
+      "apply_turniq_staff_pin_shift_command_v1" as never,
+      {
+        p_salon_id: args.salonId,
+        p_policy_version_id: args.policyVersionId,
+        p_staff_id: args.staffId,
+        p_pin: args.pin,
         p_command_type: args.commandType,
         p_reason: args.reason,
         p_command_id: args.commandId,

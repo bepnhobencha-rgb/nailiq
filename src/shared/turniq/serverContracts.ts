@@ -33,6 +33,37 @@ export const turnIqShiftActionInputSchema = z.object({
   ]),
 });
 
+const staffPin = z
+  .string()
+  .regex(/^\d{4,8}$/, "PIN must contain 4 to 8 digits");
+
+/** Owner/Admin-only PIN setup. The raw PIN is validated server-side and never returned. */
+export const turnIqConfigureStaffPinInputSchema = z.object({
+  slug: turnIqSlugSchema,
+  staffId: uuid,
+  pin: staffPin,
+  commandId: uuid,
+});
+
+/**
+ * Shared-device technician check-in. PIN is deliberately excluded from the
+ * durable command fingerprint; the database stores only a slow password hash.
+ */
+export const turnIqPinShiftActionInputSchema = z.object({
+  ...commandEnvelope,
+  staffId: uuid,
+  pin: staffPin,
+  command: z.discriminatedUnion("type", [
+    z.object({ type: z.literal("check_in") }),
+    z.object({ type: z.literal("check_out") }),
+    z.object({
+      type: z.literal("break"),
+      reason: z.string().trim().min(1).max(500),
+    }),
+    z.object({ type: z.literal("return") }),
+  ]),
+});
+
 export const turnIqAssignmentActionInputSchema = z.object({
   ...commandEnvelope,
   assignmentId: uuid,
@@ -290,6 +321,12 @@ export const turnIqStaggeredGroupConfirmationActionInputSchema = z.object({
 });
 
 export type TurnIqShiftActionInput = z.infer<typeof turnIqShiftActionInputSchema>;
+export type TurnIqConfigureStaffPinInput = z.infer<
+  typeof turnIqConfigureStaffPinInputSchema
+>;
+export type TurnIqPinShiftActionInput = z.infer<
+  typeof turnIqPinShiftActionInputSchema
+>;
 export type TurnIqAssignmentActionInput = z.infer<
   typeof turnIqAssignmentActionInputSchema
 >;
@@ -353,8 +390,23 @@ export type TurnIqServerActionErrorCode =
   | "idempotency_conflict"
   | "offline_read_only"
   | "offline_storage_failed"
+  | "invalid_pin"
+  | "pin_locked"
   | "stale_state"
   | "server_error";
+
+export type TurnIqConfigureStaffPinActionResult =
+  | {
+      ok: true;
+      result: {
+        commandId: string;
+        replayed: boolean;
+        staffId: string;
+        pinVersion: number;
+        configuredAt: string;
+      };
+    }
+  | { ok: false; code: TurnIqServerActionErrorCode };
 
 export type TurnIqCommandActionResult =
   | {

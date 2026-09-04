@@ -18,6 +18,7 @@ import {
   loadTurnIqLiveBoard,
   loadTurnIqStaffView,
   turnIqActionGateway,
+  turnIqStaffPinGateway,
 } from "@/shared/turniq/serverDal";
 import {
   turnIqAssignmentActionInputSchema,
@@ -42,6 +43,8 @@ import {
   turnIqRefusalActionInputSchema,
   turnIqRedoActionInputSchema,
   turnIqShiftActionInputSchema,
+  turnIqConfigureStaffPinInputSchema,
+  turnIqPinShiftActionInputSchema,
   turnIqSwapActionInputSchema,
   type TurnIqAssignmentActionInput,
   type TurnIqCommandActionResult,
@@ -53,8 +56,15 @@ import {
   type TurnIqRefusalActionInput,
   type TurnIqRedoActionInput,
   type TurnIqShiftActionInput,
+  type TurnIqConfigureStaffPinInput,
+  type TurnIqConfigureStaffPinActionResult,
+  type TurnIqPinShiftActionInput,
   type TurnIqSwapActionInput,
 } from "@/shared/turniq/serverContracts";
+import {
+  applyTurnIqPinShiftCommandCore,
+  configureTurnIqStaffPinCore,
+} from "@/shared/turniq/staffPin";
 import {
   applyTrustedTurnIqHandoffPerformerCommand,
   confirmTrustedTurnIqHandoff,
@@ -81,6 +91,30 @@ export async function applyTurnIqShiftCommandAction(
   return applyTurnIqShiftCommandCore(
     parsed.data,
     turnIqActionGateway,
+    () => new Date().toISOString(),
+  );
+}
+
+export async function configureTurnIqStaffPinAction(
+  input: TurnIqConfigureStaffPinInput,
+): Promise<TurnIqConfigureStaffPinActionResult> {
+  const parsed = turnIqConfigureStaffPinInputSchema.safeParse(input);
+  if (!parsed.success) return { ok: false, code: "invalid_input" };
+  return configureTurnIqStaffPinCore(
+    parsed.data,
+    turnIqStaffPinGateway,
+    () => new Date().toISOString(),
+  );
+}
+
+export async function applyTurnIqPinShiftCommandAction(
+  input: TurnIqPinShiftActionInput,
+): Promise<TurnIqCommandActionResult> {
+  const parsed = turnIqPinShiftActionInputSchema.safeParse(input);
+  if (!parsed.success) return { ok: false, code: "invalid_input" };
+  return applyTurnIqPinShiftCommandCore(
+    parsed.data,
+    turnIqStaffPinGateway,
     () => new Date().toISOString(),
   );
 }

@@ -195,7 +195,9 @@ import {
   applyTurnIqRefusalCommandAction,
   applyTurnIqRedoCommandAction,
   applyTurnIqShiftCommandAction,
+  applyTurnIqPinShiftCommandAction,
   applyTurnIqSwapCommandAction,
+  configureTurnIqStaffPinAction,
   createTurnIqDisputeAction,
   createTurnIqSkipDisputeAction,
   loadTurnIqExceptionInboxAction,
@@ -4602,10 +4604,15 @@ function ReceptionistCenterInner({
                     exceptionInbox={turnIqExceptionInbox}
                     language={language === "vi" ? "vi" : "en"}
                     slug={slug}
+                    rolloutStage={turnIqRolloutStage}
+                    offline={isOffline}
                     canManageTeam={viewerRole !== "nail_tech"}
+                    canConfigureStaffPin={viewerRole === "owner" || viewerRole === "admin"}
                     canSeeExceptionInbox={viewerRole === "owner" || viewerRole === "admin"}
                     canCorrectRecords={viewerRole === "owner" || viewerRole === "admin"}
                     onApplyShiftCommand={offlineRuntime.applyShift}
+                    onConfigureStaffPin={configureTurnIqStaffPinAction}
+                    onApplyPinShiftCommand={applyTurnIqPinShiftCommandAction}
                     onApplyAssignmentCommand={offlineRuntime.applyAssignment}
                     onApplyRefusalCommand={applyTurnIqRefusalCommandAction}
                     onApplyRedoCommand={applyTurnIqRedoCommandAction}
