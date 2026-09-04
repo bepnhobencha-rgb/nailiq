@@ -56,6 +56,9 @@ Disposable QA evidence on `osdqutwunokiielbairj`:
   one durable receipt; the competing command fails closed;
 - local browser tests pass on desktop Chromium and mobile WebKit, including an
   ambiguous-response retry that preserves the original command ID;
+- a 12-staff synthetic browser rehearsal preserves exact arrival order on both
+  desktop and mobile; an approved break and return keep staff number 5 in queue
+  position 5;
 - no payment, booking, provider, or notification call was made.
 
 QA evidence is not Production or pilot proof. Preview verification, physical

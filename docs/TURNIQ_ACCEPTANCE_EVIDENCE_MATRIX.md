@@ -13,13 +13,13 @@ Evidence labels:
 
 | # | Acceptance scenario | Current evidence boundary | Remaining proof |
 |---:|---|---|---|
-| 1 | 12 staff check in; queue follows arrival | Automated local fixtures; QA PIN race proves one open shift under concurrent check-in | 12-person tablet run |
+| 1 | 12 staff check in; queue follows arrival | Automated local fixtures plus desktop/mobile browser run with 12 staff in exact arrival order; QA PIN race proves one open shift under concurrent check-in | QA-backed physical 12-person tablet run |
 | 2 | Late staff does not jump from zero credit | Automated local: baseline and fairness invariants | Shadow-day comparison |
 | 3 | Appointment/walk-in/requested service consumes only on completion | Automated local: atomic assignment transitions | QA atomic rollback |
 | 4 | Requested no-show consumes no turn | Automated local: no-show/turn invariant | QA lifecycle |
 | 5 | Skill mismatch skips without penalty | Automated local: single-customer engine | Shadow trace |
 | 6 | Unsafe appointment gap skips without losing place | Automated local: gap safety/invariants | Shadow trace |
-| 7 | Approved break preserves queue position | Automated local shift/PIN transition tests; PIN wrapper applied on QA | QA full break/return lifecycle |
+| 7 | Approved break preserves queue position | Automated local shift/PIN transition tests plus desktop/mobile browser break/return preserving queue position; PIN wrapper applied on QA | QA full break/return RPC lifecycle |
 | 8 | Unapproved departure/refusal moves to end | Automated local: refusal/shift policy boundaries | QA lifecycle |
 | 9 | Two technicians each consume own turn/credit | Automated local: multi-technician handoff engine | QA atomic handoff |
 | 10 | Four-person party gets feasible fair plan | Automated local: constrained group matching | QA group lifecycle |
@@ -50,15 +50,19 @@ gates. Existing live salons remain out of scope until separately approved.
 
 ## Verification snapshot for this local change
 
-- Prior broad TurnIQ unit/invariant/security/component suite: **77 files, 433
-  tests PASS**; post-QA PIN regression slice: **4 files, 19 tests PASS**.
+- Current focused TurnIQ unit/invariant/security/component suite: **76 files,
+  430 tests PASS**.
 - TypeScript: **PASS**.
 - Focused ESLint for all touched executable files: **PASS**.
 - Next.js production build: **PASS**.
 - Migration-history audit: **PASS** with zero duplicate version IDs, zero
   production-only versions, and zero name mismatches.
-- Staff PIN browser story: **4/4 PASS** across desktop Chromium and mobile
-  WebKit, including accessibility checks and same-command retry.
+- Full local TurnIQ browser suite: **46 PASS, 2 physical-offline tests skipped**
+  across desktop Chromium and mobile WebKit. It includes a **12-staff ordered
+  check-in plus break/return story**, accessibility checks, same-command retry,
+  QR lifecycle, customer check-in, rush-hour trust flow and supervised group
+  timing. The two skipped cached-shell outage cases remain assigned to the
+  mandatory physical-device gate.
 - Staff PIN migration plus additive FK-index hotfix: **applied to disposable QA
   only**. RLS/ACL, role denial, five-attempt lockout, rotation, exact retry, and
   concurrent check-in evidence passed. Production is untouched.

@@ -8,8 +8,12 @@ test.describe("TurnIQ M4I supervised staggered local story", () => {
     await expect(page.getByText("Synthetic TurnIQ M4I")).toBeVisible();
 
     await page.getByRole("button", { name: "So sánh 3 cách" }).click();
-    await expect(page.getByText("Đến cùng lúc")).toBeVisible();
-    await expect(page.getByText("Về cùng lúc")).toBeVisible();
+    await expect(
+      page.getByRole("heading", { name: "Đến cùng lúc", exact: true }),
+    ).toBeVisible();
+    await expect(
+      page.getByRole("heading", { name: "Về cùng lúc", exact: true }),
+    ).toBeVisible();
     const wave = page.getByRole("article").filter({
       has: page.getByRole("heading", { name: "Chia đợt thông minh" }),
     });
@@ -20,7 +24,9 @@ test.describe("TurnIQ M4I supervised staggered local story", () => {
       page.getByText(/Đã khóa kế hoạch cho 2 khách để kiểm tra/),
     ).toBeVisible();
     await expect(page.getByText("Kế hoạch đề xuất")).toBeVisible();
-    await expect(page.getByText(/Nếu một khách xung đột, không booking nào bị đổi/)).toBeVisible();
+    await expect(
+      page.getByText(/Nếu một khách xung đột, không booking nào bị đổi/),
+    ).toBeVisible();
     const review = page.getByRole("article").filter({
       has: page.getByRole("heading", { name: "Kế hoạch đề xuất" }),
     });
@@ -41,11 +47,15 @@ test.describe("TurnIQ M4I supervised staggered local story", () => {
       has: page.getByRole("heading", { name: "Chia đợt thông minh" }),
     });
     await wave.getByRole("button", { name: "Chọn kế hoạch này" }).click();
-    await expect(page.getByText(/Không booking nào bị đổi; hãy so sánh lại/)).toBeVisible();
+    await expect(
+      page.getByText(/Không booking nào bị đổi; hãy so sánh lại/),
+    ).toBeVisible();
     await expect(page.getByText("Kế hoạch đề xuất")).toHaveCount(0);
   });
 
-  test("committed plan success survives read-back failure", async ({ page }) => {
+  test("committed plan success survives read-back failure", async ({
+    page,
+  }) => {
     await page.goto(`${PATH}?scenario=refresh_failure`);
     await page.getByRole("button", { name: "So sánh 3 cách" }).click();
     const wave = page.getByRole("article").filter({
@@ -55,14 +65,24 @@ test.describe("TurnIQ M4I supervised staggered local story", () => {
     await expect(
       page.getByText(/Đã khóa kế hoạch cho 2 khách để kiểm tra/),
     ).toBeVisible();
-    await expect(page.getByText(/thử lại sẽ dùng đúng yêu cầu cũ/i)).toHaveCount(0);
+    await expect(
+      page.getByText(/thử lại sẽ dùng đúng yêu cầu cũ/i),
+    ).toHaveCount(0);
   });
 
-  test("offline keeps the party visible and disables every mutation", async ({ page }) => {
+  test("offline keeps the party visible and disables every mutation", async ({
+    page,
+  }) => {
     await page.goto(`${PATH}?scenario=offline`);
     await expect(page.getByText("Đang mất kết nối")).toBeVisible();
-    await expect(page.getByText("Classic Pedicure")).toBeVisible();
-    await expect(page.getByRole("button", { name: "So sánh 3 cách" })).toBeDisabled();
-    await expect(page.getByRole("button", { name: "Tạo kế hoạch an toàn" })).toBeDisabled();
+    await expect(
+      page.locator("p").filter({ hasText: /^Classic Pedicure$/ }),
+    ).toBeVisible();
+    await expect(
+      page.getByRole("button", { name: "So sánh 3 cách" }),
+    ).toBeDisabled();
+    await expect(
+      page.getByRole("button", { name: "Tạo kế hoạch an toàn" }),
+    ).toBeDisabled();
   });
 });
