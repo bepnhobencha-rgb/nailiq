@@ -1216,8 +1216,16 @@ export function WalkinAddForm({
             disabled={formLocked}
             value={actualTimeHm}
             onChange={(event) => {
-              setActualTimeHm(event.target.value);
-              setActualTimeError(null);
+              const nextActualTimeHm = event.target.value;
+              const nextActualTime = resolveWalkinActualTime(
+                nextActualTimeHm,
+                timezone,
+                new Date().toISOString(),
+              );
+              setActualTimeHm(nextActualTimeHm);
+              setActualTimeError(
+                nextActualTime.ok ? null : labels.actualTimeInvalid,
+              );
             }}
             aria-invalid={Boolean(actualTimeError)}
             className={cn(
@@ -1651,7 +1659,8 @@ export function WalkinAddForm({
           submitting ||
           isOffline ||
           !!nameError ||
-          !!phoneError
+          !!phoneError ||
+          !!actualTimeError
         }
         // Soft-disabled (still clickable) while required fields are missing,
         // so a tap surfaces the validation error + focuses the field. Hard
@@ -1660,6 +1669,7 @@ export function WalkinAddForm({
           formLocked ||
           !!nameError ||
           !!phoneError ||
+          !!actualTimeError ||
           clientName.trim().length === 0 ||
           selectedServiceId === null
             ? true
