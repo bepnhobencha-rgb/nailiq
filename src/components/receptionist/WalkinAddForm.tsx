@@ -166,6 +166,8 @@ export interface WalkinAddFormProps {
     walkinSaved: string;
     /** Create committed, but the immediate assignment lost a race. */
     walkinSavedAssignmentPending: string;
+    /** Connection failed after submit; retry keeps the same request identity. */
+    walkinRetrySafe: string;
     relative: {
       justNow: string;
       today: string;
@@ -859,6 +861,10 @@ export function WalkinAddForm({
         } else {
           setErrorMessage(result.error ?? labels.errorRequired);
         }
+      } catch {
+        // The server may have committed before the response was lost. Keep the
+        // form and request identity intact so retry reads the canonical booking.
+        setErrorMessage(labels.walkinRetrySafe);
       } finally {
         submittingRef.current = false;
         setSubmitting(false);
@@ -876,6 +882,7 @@ export function WalkinAddForm({
       labels.autoPickNoStaffAvailable,
       labels.walkinSaved,
       labels.walkinSavedAssignmentPending,
+      labels.walkinRetrySafe,
       onSubmit,
       onAddAndAssign,
       onCheckAvailability,

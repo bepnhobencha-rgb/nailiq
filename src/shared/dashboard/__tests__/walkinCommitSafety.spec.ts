@@ -38,6 +38,7 @@ describe("walk-in committed-success and retry contract", () => {
     expect(form).toContain("requestIdentityRef.current?.fingerprint");
     expect(form.match(/requestId,/g)?.length ?? 0).toBeGreaterThanOrEqual(2);
     expect(center.match(/requestId: input.requestId/g)?.length ?? 0).toBe(2);
+    expect(form).toContain("setErrorMessage(labels.walkinRetrySafe)");
   });
 
   it("returns committed success when immediate assignment loses a race", () => {
