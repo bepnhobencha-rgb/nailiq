@@ -38,6 +38,7 @@ import type {
   AvailabilityResult,
   StaffAvailability,
 } from "@/shared/dashboard/availabilityEngine";
+import { selectWalkinGapSafeRecommendation } from "@/shared/dashboard/walkinGapSafety";
 import { maskPhonePartial } from "@/shared/lib/maskPhone";
 
 export interface WalkinAddFormProps {
@@ -45,6 +46,7 @@ export interface WalkinAddFormProps {
     id: string;
     name: string;
     duration_minutes: number;
+    buffer_minutes?: number | null;
     price_cents: number;
     price_type: string;
     price_max_cents: number | null;
@@ -160,6 +162,10 @@ export interface WalkinAddFormProps {
     walkinContinueAnyway: string;
     /** "Choose different staff" — clears `selectedStaffId`. */
     walkinChooseDifferent: string;
+    /** Durable create acknowledgement. */
+    walkinSaved: string;
+    /** Create committed, but the immediate assignment lost a race. */
+    walkinSavedAssignmentPending: string;
     relative: {
       justNow: string;
       today: string;
@@ -189,7 +195,12 @@ export interface WalkinAddFormProps {
     walkinSource: QueueSource | null;
     walkinPriority: QueuePriority | null;
     walkinRequestTags: QueueRequestTag[];
-  }) => Promise<{ ok: boolean; error?: string }>;
+    requestId: string;
+  }) => Promise<{
+    ok: boolean;
+    error?: string;
+    assignmentPending?: boolean;
+  }>;
   /**
    * Popular service ids derived from today's bookings (server-side).
    * Rendered as shortcut chips above the service grid; tapping a chip
@@ -216,10 +227,9 @@ export interface WalkinAddFormProps {
     serviceId: string;
   }) => Promise<AvailabilityResult>;
   /**
-   * Direct-assign path: bypasses the queue and inserts the booking
-   * already pinned to a staff and start time. Used when the chosen
-   * staff is `isAvailableNow`. The parent server action wraps
-   * addWalkin + assign in one transaction.
+   * Direct-assign path used when the chosen staff is `isAvailableNow`.
+   * Creation is authoritative: if assignment loses a race, the result reports
+   * `assignmentPending` and the customer remains visible in the queue.
    */
   onAddAndAssign?: (input: {
     clientName: string;
@@ -230,10 +240,16 @@ export interface WalkinAddFormProps {
      * start time even with small clock skew. */
     startAtIso: string;
     staffRequestedByClient: boolean;
+    staffRequestNote: string | null;
     walkinSource: QueueSource | null;
     walkinPriority: QueuePriority | null;
     walkinRequestTags: QueueRequestTag[];
-  }) => Promise<{ ok: boolean; error?: string }>;
+    requestId: string;
+  }) => Promise<{
+    ok: boolean;
+    error?: string;
+    assignmentPending?: boolean;
+  }>;
   /**
    * `salons.walkin_auto_assign` (PR #107). When false, the
    * "Assign immediately" button is hidden — every walk-in is added
@@ -356,6 +372,10 @@ export function WalkinAddForm({
   // `disabled={submitting}` applies. This ref blocks the 2nd call
   // immediately — no duplicate POST.
   const submittingRef = useRef(false);
+  const requestIdentityRef = useRef<{
+    requestId: string;
+    fingerprint: string;
+  } | null>(null);
 
   // Move focus to the name field when the parent signals an explicit
   // "+ Walk-in" open (focusNonce bumps). Guarded so the initial
@@ -377,6 +397,7 @@ export function WalkinAddForm({
   const [showDetails, setShowDetails] = useState(false);
   const [submitting, setSubmitting] = useState(false);
   const [errorMessage, setErrorMessage] = useState<string | null>(null);
+  const [successMessage, setSuccessMessage] = useState<string | null>(null);
   const [nameError, setNameError] = useState<string | null>(null);
   const [phoneError, setPhoneError] = useState<string | null>(null);
   // P1.2 — per-field touched gate. We only surface validation errors
@@ -613,6 +634,7 @@ export function WalkinAddForm({
     setSelectedStaffId("");
     setAvailability({ kind: "idle" });
     availabilityRequestSeqRef.current += 1;
+    requestIdentityRef.current = null;
     queueMicrotask(() => nameRef.current?.focus());
   }, []);
 
@@ -632,21 +654,29 @@ export function WalkinAddForm({
     setRequestTags((prev) => prev.filter((t) => t !== tag));
   }, []);
 
-  // The recommended staff and its availability — drives the
-  // assign-vs-queue decision below. When the receptionist picked a
-  // specific staff we use that row; otherwise we use the top-ranked
-  // entry from the engine's reply.
+  // Project the complete service + cleanup buffer through each technician's
+  // future reservations. Being idle this second is not enough: the walk-in
+  // must fit before the next appointment. In auto mode, skip a ranked candidate
+  // whose immediate gap is too short and select the next safe technician.
   const recommendedAvailability = useMemo<StaffAvailability | null>(() => {
-    if (availability.kind !== "ready" || availability.staff.length === 0) {
+    if (
+      availability.kind !== "ready" ||
+      availability.staff.length === 0 ||
+      selectedServiceId === null
+    ) {
       return null;
     }
-    if (selectedStaffId === "") {
-      return availability.staff[0] ?? null;
-    }
-    return (
-      availability.staff.find((s) => s.staffId === selectedStaffId) ?? null
+    const selectedService = services.find(
+      (service) => service.id === selectedServiceId,
     );
-  }, [availability, selectedStaffId]);
+    if (!selectedService) return null;
+    return selectWalkinGapSafeRecommendation(
+      availability.staff,
+      availability.nowIso,
+      selectedService,
+      selectedStaffId,
+    );
+  }, [availability, selectedServiceId, selectedStaffId, services]);
 
   // Task #04-D FIX 16 — detect "this staff has a group booking
   // starting in the next 30 min". Only fires when the receptionist
@@ -716,7 +746,8 @@ export function WalkinAddForm({
         queueMicrotask(() => phoneRef.current?.focus());
         return;
       }
-      if (!validateGuestPhone(trimmedPhone).ok) {
+      const phoneValidation = validateGuestPhone(trimmedPhone);
+      if (!phoneValidation.ok) {
         setPhoneError(labels.invalidPhone);
         queueMicrotask(() => phoneRef.current?.focus());
         return;
@@ -746,13 +777,37 @@ export function WalkinAddForm({
       }
 
       setErrorMessage(null);
+      setSuccessMessage(null);
       setNameError(null);
       setPhoneError(null);
+
+      const normalizedNote = staffRequestNote.trim() || null;
+      const requestFingerprint = JSON.stringify({
+        clientName: trimmedName,
+        clientPhone: phoneValidation.digits,
+        serviceId: selectedServiceId,
+        staffRequestNote: normalizedNote,
+        staffRequestedByClient,
+        walkinSource: walkinSource || null,
+        walkinPriority: walkinPriority || null,
+        walkinRequestTags: requestTags,
+      });
+      if (requestIdentityRef.current?.fingerprint !== requestFingerprint) {
+        requestIdentityRef.current = {
+          requestId: crypto.randomUUID(),
+          fingerprint: requestFingerprint,
+        };
+      }
+      const requestId = requestIdentityRef.current.requestId;
 
       submittingRef.current = true;
       setSubmitting(true);
       try {
-        let result: { ok: boolean; error?: string };
+        let result: {
+          ok: boolean;
+          error?: string;
+          assignmentPending?: boolean;
+        };
         if (
           mode === "immediate" &&
           onAddAndAssign &&
@@ -774,27 +829,33 @@ export function WalkinAddForm({
             // never made (QA ReceptionistCenter ReTest2/3); the #384 server-side
             // default fix was overridden by this client value.
             staffRequestedByClient,
+            staffRequestNote: normalizedNote,
             walkinSource: walkinSource === "" ? null : walkinSource,
             walkinPriority: walkinPriority === "" ? null : walkinPriority,
             walkinRequestTags: requestTags,
+            requestId,
           });
         } else {
           result = await onSubmit({
             clientName: trimmedName,
             clientPhone: trimmedPhone,
             serviceId: selectedServiceId,
-            staffRequestNote: staffRequestNote.trim().length
-              ? staffRequestNote.trim()
-              : null,
+            staffRequestNote: normalizedNote,
             staffRequestedByClient,
             walkinSource: walkinSource === "" ? null : walkinSource,
             walkinPriority: walkinPriority === "" ? null : walkinPriority,
             walkinRequestTags: requestTags,
+            requestId,
           });
         }
 
         if (result.ok) {
           resetAfterSuccess();
+          setSuccessMessage(
+            result.assignmentPending
+              ? labels.walkinSavedAssignmentPending
+              : labels.walkinSaved,
+          );
         } else {
           setErrorMessage(result.error ?? labels.errorRequired);
         }
@@ -813,6 +874,8 @@ export function WalkinAddForm({
       labels.invalidPhone,
       labels.phoneRequired,
       labels.autoPickNoStaffAvailable,
+      labels.walkinSaved,
+      labels.walkinSavedAssignmentPending,
       onSubmit,
       onAddAndAssign,
       onCheckAvailability,
@@ -1465,6 +1528,16 @@ export function WalkinAddForm({
       {errorMessage ? (
         <p className="text-sm text-nq-error" role="alert">
           {errorMessage}
+        </p>
+      ) : null}
+
+      {successMessage ? (
+        <p
+          className="rounded-md border border-emerald-400/50 bg-emerald-400/10 px-3 py-2 text-sm font-semibold text-emerald-700"
+          role="status"
+          data-testid="walkin-submit-success"
+        >
+          {successMessage}
         </p>
       ) : null}
 
