@@ -38,7 +38,7 @@ async function loginAs(page: Page, account: { email: string; password: string })
   );
   await page.locator('input[inputmode="email"]').fill(account.email);
   await page.locator('input[type="password"]').fill(account.password);
-  await page.getByRole("button", { name: /^sign in$/i }).click();
+  await page.getByTestId("password-signin-submit").click();
   await page.waitForURL(/\/dashboard\//, { timeout: 30_000 });
 }
 

@@ -50,7 +50,7 @@ async function loginAs(
   await page.locator('input[inputmode="email"]').fill(account.email);
   await page.locator('input[type="password"]').fill(account.password);
   await page
-    .getByRole("button", { name: /^sign in$/i })
+    .getByTestId("password-signin-submit")
     .click({ noWaitAfter: true });
   await expect(page).toHaveURL(/\/dashboard\//, { timeout: 30_000 });
 }
@@ -68,7 +68,7 @@ async function signInForDirectRoute(
   await page.locator('input[inputmode="email"]').fill(account.email);
   await page.locator('input[type="password"]').fill(account.password);
   await page
-    .getByRole("button", { name: /^sign in$/i })
+    .getByTestId("password-signin-submit")
     .click({ noWaitAfter: true });
   await expect(page).toHaveURL(/\/(?:dashboard\/|register\/setup)/, {
     timeout: 30_000,
@@ -287,7 +287,7 @@ test.describe("Guided Admin Setup", () => {
       );
       await page.locator('input[inputmode="email"]').fill(owner.email);
       await page.locator('input[type="password"]').fill(owner.password);
-      await page.getByRole("button", { name: /^sign in$/i }).click();
+      await page.getByTestId("password-signin-submit").click();
       await expect(page).toHaveURL(/\/register\/setup(?:\?|$)/, {
         timeout: 15_000,
       });

@@ -46,7 +46,7 @@ test.describe("Registration flow", () => {
       await page.locator('input[type="password"]').fill(password);
 
       // Click "Sign in" — signs in to existing account (created by seedTestUser).
-      await page.getByRole("button", { name: /^sign in$/i }).click();
+      await page.getByTestId("password-signin-submit").click();
 
       // A confirmed account with no salon must enter the real setup wizard even
       // though DEMO_OTP=true is enabled for the rest of the E2E suite.

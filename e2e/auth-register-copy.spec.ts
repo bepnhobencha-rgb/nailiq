@@ -37,6 +37,8 @@ test.describe("Registration action hierarchy", () => {
 
       await expect(signUp).toBeVisible();
       await expect(existingAccountSignIn).toBeVisible();
+      await expect(page.getByTestId("password-signup-submit")).toBeVisible();
+      await expect(page.getByTestId("password-signin-submit")).toBeVisible();
       await expect(page.locator('input[type="password"]')).toHaveAttribute(
         "autocomplete",
         "new-password",

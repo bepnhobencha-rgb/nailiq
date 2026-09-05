@@ -92,7 +92,7 @@ async function loginAs(
   await page.locator('input[inputmode="email"]').fill(account.email);
   await page.locator('input[type="password"]').fill(account.password);
   const startedAtMs = Date.now();
-  await page.getByRole("button", { name: /^sign in$/i }).click();
+  await page.getByTestId("password-signin-submit").click();
   await page.waitForURL(new RegExp(`/dashboard/${SLUG}`), { timeout: 30_000 });
   await expect(page.getByRole("heading", { name: SALON_NAME })).toBeVisible({
     timeout: 15_000,

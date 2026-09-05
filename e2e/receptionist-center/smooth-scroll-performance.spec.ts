@@ -163,7 +163,7 @@ async function loginAsOwner(
   );
   await page.locator('input[inputmode="email"]').fill(owner.email);
   await page.locator('input[type="password"]').fill(owner.password);
-  await page.getByRole("button", { name: /^sign in$/i }).click();
+  await page.getByTestId("password-signin-submit").click();
   await page.waitForURL(new RegExp(`/dashboard/${SLUG}(?:[/?]|$)`), {
     timeout: 30_000,
   });

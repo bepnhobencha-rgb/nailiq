@@ -47,7 +47,7 @@ async function loginAndOpenCenter(page: Page, member: TestMember): Promise<void>
   );
   await page.locator('input[inputmode="email"]').fill(member.email);
   await page.locator('input[type="password"]').fill(member.password);
-  await page.getByRole("button", { name: /^sign in$/i }).click();
+  await page.getByTestId("password-signin-submit").click();
   await page.waitForURL(/\/dashboard\//, { timeout: 30_000 });
 
   await page.goto(

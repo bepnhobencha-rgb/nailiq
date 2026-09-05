@@ -465,6 +465,7 @@ export function SocialAuthButtons({
               <div className="flex flex-col gap-2 sm:flex-row">
                 <Button
                   type="button"
+                  data-testid={`password-${primaryPasswordAction}-submit`}
                   variant="primary"
                   size="md"
                   className="w-full min-h-[48px] text-base"
@@ -484,6 +485,7 @@ export function SocialAuthButtons({
                 </Button>
                 <Button
                   type="button"
+                  data-testid={`password-${secondaryPasswordAction}-submit`}
                   variant="secondary"
                   size="md"
                   className="w-full min-h-[48px] text-base"
