@@ -41,11 +41,11 @@ const bookingData = {
   services: [
     {
       id: IDS.service,
-      name: "Hi Lite Deluxe",
-      durationMinutes: 80,
+      name: "Hi Lite VVIP",
+      durationMinutes: 100,
       prepMinutes: 0,
       bufferMinutes: 10,
-      totalMinutes: 90,
+      totalMinutes: 110,
       resourceRequirementMode: "specific",
       requiredResourceKinds: ["bed"],
     },
@@ -75,7 +75,7 @@ const input = {
   serviceId: IDS.service,
   staffId: null,
   bookingDateYmd: "2030-09-05",
-  preferredSlotLabel: "2:00 PM",
+  preferredSlotLabel: "12:00 PM",
 };
 
 describe("verifyIndividualWaitlistAvailability", () => {
@@ -84,22 +84,22 @@ describe("verifyIndividualWaitlistAvailability", () => {
     mocks.loadBookingServicesForSalonSlug.mockResolvedValue(bookingData);
   });
 
-  it("rejects a false waitlist when one of seven staff and beds can serve 2 PM", async () => {
+  it("rejects a false waitlist when two of seven staff and beds can serve noon", async () => {
     mocks.getAvailableTimeSlotsStrict.mockResolvedValue({
       ok: true,
-      slots: [{ label: "2:00 PM", available: true }],
+      slots: [{ label: "12:00 PM", available: true }],
     });
 
     await expect(verifyIndividualWaitlistAvailability(input)).resolves.toEqual({
       outcome: "slot_available",
-      slotLabel: "2:00 PM",
+      slotLabel: "12:00 PM",
     });
     expect(mocks.getAvailableTimeSlotsStrict).toHaveBeenCalledWith(
       expect.objectContaining({
         staffList: staff,
         requiresResource: true,
         eligibleResourceIds: resources.map((resource) => resource.id),
-        serviceDurationMinutes: 90,
+        serviceDurationMinutes: 110,
         trailingBufferMinutes: 10,
       }),
     );
@@ -108,7 +108,7 @@ describe("verifyIndividualWaitlistAvailability", () => {
   it("allows waitlist creation only after the exact slot is verified full", async () => {
     mocks.getAvailableTimeSlotsStrict.mockResolvedValue({
       ok: true,
-      slots: [{ label: "2:00 PM", available: false }],
+      slots: [{ label: "12:00 PM", available: false }],
     });
     await expect(verifyIndividualWaitlistAvailability(input)).resolves.toEqual({
       outcome: "slot_unavailable",
@@ -126,7 +126,10 @@ describe("verifyIndividualWaitlistAvailability", () => {
   });
 
   it("fails closed when the requested label cannot be matched to the canonical grid", async () => {
-    mocks.getAvailableTimeSlotsStrict.mockResolvedValue({ ok: true, slots: [] });
+    mocks.getAvailableTimeSlotsStrict.mockResolvedValue({
+      ok: true,
+      slots: [],
+    });
     await expect(verifyIndividualWaitlistAvailability(input)).resolves.toEqual({
       outcome: "availability_unverified",
     });
@@ -141,7 +144,10 @@ describe("verifyIndividualWaitlistAvailability", () => {
       ],
     });
     await expect(
-      verifyIndividualWaitlistAvailability({ ...input, preferredSlotLabel: null }),
+      verifyIndividualWaitlistAvailability({
+        ...input,
+        preferredSlotLabel: null,
+      }),
     ).resolves.toEqual({ outcome: "slot_available", slotLabel: "2:00 PM" });
   });
 });
@@ -154,37 +160,41 @@ describe("False Waitlist capacity fixtures", () => {
     ]),
   );
   const selectedDate = new Date(2030, 8, 5, 12, 0, 0);
-  const start = new Date(2030, 8, 5, 14, 0, 0).toISOString();
-  const end = new Date(2030, 8, 5, 15, 30, 0).toISOString();
-  const staffList = staff.map(({ id, name, job_role }) => ({ id, name, job_role }));
+  const start = new Date(2030, 8, 5, 12, 0, 0).toISOString();
+  const end = new Date(2030, 8, 5, 13, 10, 0).toISOString();
+  const staffList = staff.map(({ id, name, job_role }) => ({
+    id,
+    name,
+    job_role,
+  }));
   const base = {
     openingHoursRaw: openingHours,
     selectedDate,
     staffId: "any",
     staffList,
-    serviceDurationMinutes: 90,
+    serviceDurationMinutes: 110,
     trailingBufferMinutes: 10,
     nowMs: new Date(2030, 8, 5, 8, 0, 0).getTime(),
     requiresResource: true,
     eligibleResourceIds: resources.map((resource) => resource.id),
   };
 
-  it("keeps 2 PM bookable when only one of seven staff and beds is occupied", () => {
+  it("replays Hi-Lite: noon remains bookable with five of seven staff and beds occupied", () => {
     const slots = computeTimeSlots({
       ...base,
-      occupancy: [
-        {
-          staff_id: staff[0]!.id,
-          resource_id: resources[0]!.id,
-          start_time_utc: start,
-          end_time_utc: end,
-        },
-      ],
+      occupancy: staff.slice(0, 5).map((person, index) => ({
+        staff_id: person.id,
+        resource_id: resources[index]!.id,
+        start_time_utc: start,
+        end_time_utc: end,
+      })),
     });
-    expect(slots.find((slot) => slot.label === "2:00 PM")?.available).toBe(true);
+    expect(slots.find((slot) => slot.label === "12:00 PM")?.available).toBe(
+      true,
+    );
   });
 
-  it("marks 2 PM unavailable when every staff member is occupied", () => {
+  it("marks noon unavailable when every staff member is occupied", () => {
     const slots = computeTimeSlots({
       ...base,
       occupancy: staff.map((person, index) => ({
@@ -194,10 +204,12 @@ describe("False Waitlist capacity fixtures", () => {
         end_time_utc: end,
       })),
     });
-    expect(slots.find((slot) => slot.label === "2:00 PM")?.available).toBe(false);
+    expect(slots.find((slot) => slot.label === "12:00 PM")?.available).toBe(
+      false,
+    );
   });
 
-  it("marks 2 PM unavailable when every eligible bed is occupied", () => {
+  it("marks noon unavailable when every eligible bed is occupied", () => {
     const slots = computeTimeSlots({
       ...base,
       occupancy: resources.map((resource) => ({
@@ -207,6 +219,8 @@ describe("False Waitlist capacity fixtures", () => {
         end_time_utc: end,
       })),
     });
-    expect(slots.find((slot) => slot.label === "2:00 PM")?.available).toBe(false);
+    expect(slots.find((slot) => slot.label === "12:00 PM")?.available).toBe(
+      false,
+    );
   });
 });
