@@ -5,11 +5,12 @@ SET LOCAL request.jwt.claim.role='service_role';
 INSERT INTO public.service_categories(slug,name_en,name_vi)
 VALUES('management-cap-qa','Management QA','Management QA') ON CONFLICT DO NOTHING;
 INSERT INTO public.salons(id,slug,name,phone,timezone,currency_code,feature_flags,opening_hours,
-  self_cancel_fee_enabled,self_cancel_window_hours,self_cancel_fee_percent,noshow_fee_percent)
+  self_cancel_fee_enabled,self_cancel_window_hours,self_cancel_fee_percent,noshow_fee_percent,
+  profile_complete)
 VALUES('d6000000-0000-4000-8000-000000000001','management-cap-qa','Management QA',
   '+16045550100','America/Vancouver','CAD','{"waitlist_auto_book":true}'::jsonb,
   '{"mon":{"open":"00:00","close":"23:59","closed":false},"tue":{"open":"00:00","close":"23:59","closed":false},"wed":{"open":"00:00","close":"23:59","closed":false},"thu":{"open":"00:00","close":"23:59","closed":false},"fri":{"open":"00:00","close":"23:59","closed":false},"sat":{"open":"00:00","close":"23:59","closed":false},"sun":{"open":"00:00","close":"23:59","closed":false}}'::jsonb,
-  true,24,50,100);
+  true,24,50,100,true);
 INSERT INTO public.services(id,salon_id,name,price_cents,duration_minutes,category)
 VALUES('d6000000-0000-4000-8000-000000000002','d6000000-0000-4000-8000-000000000001',
   'Capability service',3000,30,'management-cap-qa');
@@ -69,24 +70,26 @@ UPDATE public.bookings SET idempotency_key='d6000000-0000-4000-8000-000000000096
   public_booking_pricing_fingerprint=repeat('b',64),public_booking_pricing_snapshot='{}'::jsonb
 WHERE id='d6000000-0000-4000-8000-000000000016';
 
--- These rows exercise sequence-independent management capabilities, not the
--- individual public capacity-rescue path. Mark them explicitly as sequence so
--- the individual false-waitlist guard remains fail-closed during rehearsal.
+-- Each individual waitlist request targets the exact occupied slot that the
+-- management action below will free. This proves the new guard accepts a real
+-- unavailable slot while preserving the existing promotion rehearsal.
 INSERT INTO public.booking_waitlist_entries(id,salon_id,service_id,booking_date,client_name,
-  client_phone,client_email,status,source,created_at,request_kind)
+  client_phone,client_email,status,source,created_at,preferred_slot_label)
 VALUES
 ('d6000000-0000-4000-8000-000000000030','d6000000-0000-4000-8000-000000000001',
  'd6000000-0000-4000-8000-000000000002',
  (date_trunc('day',transaction_timestamp() AT TIME ZONE 'America/Vancouver')+interval '3 days')::date,
- 'Reschedule waiter','+16045550130','waiter@example.test','waiting','slot_unavailable',transaction_timestamp()-interval '2 minutes','sequence'),
+ 'Reschedule waiter','+16045550130','waiter@example.test','waiting','slot_unavailable',transaction_timestamp()-interval '2 minutes','12:00 PM'),
 ('d6000000-0000-4000-8000-000000000031','d6000000-0000-4000-8000-000000000001',
  'd6000000-0000-4000-8000-000000000002',
  ((transaction_timestamp()+interval '10 minutes') AT TIME ZONE 'America/Vancouver')::date,
- 'Late waiter','+16045550131','late@example.test','waiting','slot_unavailable',transaction_timestamp()-interval '1 minute','sequence'),
+ 'Late waiter','+16045550131','late@example.test','waiting','slot_unavailable',transaction_timestamp()-interval '1 minute',
+ pg_catalog.to_char((transaction_timestamp()+interval '10 minutes') AT TIME ZONE 'America/Vancouver','FMHH12:MI AM')),
 ('d6000000-0000-4000-8000-000000000032','d6000000-0000-4000-8000-000000000001',
  'd6000000-0000-4000-8000-000000000002',
  ((transaction_timestamp()+interval '45 minutes') AT TIME ZONE 'America/Vancouver')::date,
- 'Near reschedule waiter','+16045550132','near@example.test','waiting','slot_unavailable',transaction_timestamp(),'sequence');
+ 'Near reschedule waiter','+16045550132','near@example.test','waiting','slot_unavailable',transaction_timestamp(),
+ pg_catalog.to_char((transaction_timestamp()+interval '45 minutes') AT TIME ZONE 'America/Vancouver','FMHH12:MI AM'));
 
 DO $behavior$
 DECLARE v_confirm uuid; v_reschedule uuid; v_cancel uuid; v_past uuid; v_fee_cap uuid; v_short uuid;
