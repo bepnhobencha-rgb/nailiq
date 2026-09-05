@@ -44,5 +44,6 @@ describe("TurnIQ M4K customer status ETA security boundary", () => {
     expect(loader).not.toMatch(/stripe|square|twilio|resend/i);
     expect(page).not.toMatch(/staffId|revenue|tip|queuePosition|snapshotVersion/i);
     expect(page).toContain("Showing the last confirmed appointment status");
+    expect(page).toContain("You are on the walk-in list. The salon will assign your time.");
   });
 });

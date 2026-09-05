@@ -40,14 +40,16 @@ export async function GET(request: Request): Promise<NextResponse> {
     return NextResponse.json(inspected, { status: statusFor(inspected.code), headers: PRIVATE_HEADERS });
   }
   const { booking, context } = inspected.inspection;
-  const turnIqEta = await loadTurnIqCustomerStatusEta({
-    salonId: context.salonId,
-    bookingId: context.bookingId,
-    groupId: context.groupId,
-    bookingStatus: booking.status,
-    currentStartTimeUtc: context.currentStartTimeUtc,
-    durationMinutes: context.durationMinutes,
-  });
+  const turnIqEta = context.currentStartTimeUtc && context.durationMinutes
+    ? await loadTurnIqCustomerStatusEta({
+        salonId: context.salonId,
+        bookingId: context.bookingId,
+        groupId: context.groupId,
+        bookingStatus: booking.status,
+        currentStartTimeUtc: context.currentStartTimeUtc,
+        durationMinutes: context.durationMinutes,
+      })
+    : null;
   return NextResponse.json({
     ok: true,
     code: "valid",

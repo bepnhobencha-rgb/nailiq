@@ -82,6 +82,45 @@ export type BookingManagementInspection = {
   group: Record<string, unknown> | null;
 };
 
+export type BookingManagementUnscheduledStatusInspection = Omit<
+  BookingManagementInspection,
+  "action" | "booking" | "context"
+> & {
+  action: "status";
+  booking: Omit<
+    BookingManagementSnapshot,
+    "status" | "startTimeUtc" | "endTimeUtc" | "scheduleModel" | "sequenceReceipt"
+  > & {
+    status: "waiting";
+    startTimeUtc: null;
+    endTimeUtc: null;
+    scheduleModel: "single";
+    sequenceReceipt: null;
+  };
+  context: Omit<
+    BookingManagementInspection["context"],
+    "staffId" | "durationMinutes" | "currentStartTimeUtc" | "currentEndTimeUtc" | "groupId"
+  > & {
+    staffId: null;
+    durationMinutes: null;
+    currentStartTimeUtc: null;
+    currentEndTimeUtc: null;
+    groupId: null;
+  };
+};
+
+export type BookingManagementStatusInspection =
+  | BookingManagementInspection
+  | BookingManagementUnscheduledStatusInspection;
+
+type BookingManagementInspectionResult =
+  | { ok: true; inspection: BookingManagementInspection }
+  | BookingManagementFailure;
+
+type BookingManagementStatusInspectionResult =
+  | { ok: true; inspection: BookingManagementStatusInspection }
+  | BookingManagementFailure;
+
 export type BookingManagementMutationResult = {
   code: string;
   action: IndividualBookingManagementAction;
@@ -253,8 +292,20 @@ export async function exchangePublicBookingCardManagementCapability(input: {
 
 export function parseBookingManagementInspection(
   value: unknown,
+  expectedAction: "status",
+): BookingManagementStatusInspectionResult;
+export function parseBookingManagementInspection(
+  value: unknown,
+  expectedAction: Exclude<IndividualBookingManagementAction, "status">,
+): BookingManagementInspectionResult;
+export function parseBookingManagementInspection(
+  value: unknown,
   expectedAction: IndividualBookingManagementAction,
-): { ok: true; inspection: BookingManagementInspection } | BookingManagementFailure {
+): BookingManagementStatusInspectionResult | BookingManagementInspectionResult;
+export function parseBookingManagementInspection(
+  value: unknown,
+  expectedAction: IndividualBookingManagementAction,
+): BookingManagementStatusInspectionResult | BookingManagementInspectionResult {
   const row = record(value);
   if (!row || row.ok !== true) return { ok: false, code: safeCode(row?.code) };
 
@@ -291,20 +342,32 @@ export function parseBookingManagementInspection(
   const currentStartTimeUtc = string(context?.current_start_time_utc);
   const currentEndTimeUtc = string(context?.current_end_time_utc);
   const groupId = context?.group_id == null ? null : string(context.group_id);
+  const hasValidScheduledTiming = Boolean(
+    startTimeUtc && endTimeUtc && durationMinutes !== null &&
+    currentStartTimeUtc && currentEndTimeUtc &&
+    Number.isFinite(Date.parse(startTimeUtc)) && Number.isFinite(Date.parse(endTimeUtc)) &&
+    Number.isFinite(Date.parse(currentStartTimeUtc)) &&
+    Number.isFinite(Date.parse(currentEndTimeUtc)),
+  );
+  const isUnscheduledWaitingStatus = expectedAction === "status" && status === "waiting" &&
+    parsedScopeKind === "booking_own" && scheduleModel === "single" &&
+    booking?.sequence_receipt == null && context?.staff_id == null && context?.group_id == null &&
+    booking?.staff_name == null && context?.is_group_organizer === false &&
+    booking?.start_time_utc == null && booking?.end_time_utc == null &&
+    context?.duration_minutes == null && context?.current_start_time_utc == null &&
+    context?.current_end_time_utc == null;
 
   if (
     row.code !== "valid" || parsedAction !== expectedAction || !parsedScopeKind || epoch === null ||
     !expiresAt || !Number.isFinite(Date.parse(expiresAt)) || !booking || !status ||
-    !startTimeUtc || !endTimeUtc || !salonSlug || !salonName || !salonTimezone || !scheduleModel ||
+    !salonSlug || !salonName || !salonTimezone || !scheduleModel ||
     (scheduleModel === "single" && booking.sequence_receipt != null) ||
     (scheduleModel === "segments_v1" && !sequenceReceipt) ||
     !isValidIanaTimeZone(salonTimezone) || salonTimezone !== timezone || !context || !bookingId ||
     !isBookingManagementToken(bookingId) || !salonId || !isBookingManagementToken(salonId) ||
     !serviceId || !isBookingManagementToken(serviceId) ||
     (context.staff_id != null && (!staffId || !isBookingManagementToken(staffId))) ||
-    durationMinutes === null || !timezone || !isValidIanaTimeZone(timezone) ||
-    !currentStartTimeUtc || !currentEndTimeUtc ||
-    !Number.isFinite(Date.parse(currentStartTimeUtc)) || !Number.isFinite(Date.parse(currentEndTimeUtc)) ||
+    !timezone || !isValidIanaTimeZone(timezone) ||
     (context.group_id != null && (!groupId || !isBookingManagementToken(groupId))) ||
     typeof context.is_group_organizer !== "boolean" || !cancelPreview || !cardManage ||
     typeof cancelPreview.start_past !== "boolean" || typeof cancelPreview.within_window !== "boolean" ||
@@ -316,7 +379,7 @@ export function parseBookingManagementInspection(
     nullableCardField(cardManage.card_last4) === undefined ||
     nullableCardField(cardManage.card_brand) === undefined ||
     nullableCardField(cardManage.charge_status) === undefined ||
-    !Number.isFinite(Date.parse(startTimeUtc)) || !Number.isFinite(Date.parse(endTimeUtc))
+    (!hasValidScheduledTiming && !isUnscheduledWaitingStatus)
   ) return { ok: false, code: "invalid_management_response" };
   if (
     sequenceReceipt && (
@@ -326,6 +389,66 @@ export function parseBookingManagementInspection(
       sequenceReceipt.parentStartTimeUtc !== startTimeUtc ||
       sequenceReceipt.parentEndTimeUtc !== endTimeUtc
     )
+  ) return { ok: false, code: "invalid_management_response" };
+
+  if (isUnscheduledWaitingStatus) {
+    return {
+      ok: true,
+      inspection: {
+        action: "status",
+        scopeKind: parsedScopeKind,
+        epoch,
+        expiresAt,
+        booking: {
+          status: "waiting",
+          attendanceStatus: parsedAttendanceStatus,
+          startTimeUtc: null,
+          endTimeUtc: null,
+          serviceName: string(booking.service_name),
+          staffName: string(booking.staff_name),
+          salonSlug,
+          salonName,
+          salonTimezone,
+          scheduleModel: "single",
+          sequenceReceipt: null,
+        },
+        context: {
+          bookingId,
+          salonId,
+          serviceId,
+          staffId: null,
+          durationMinutes: null,
+          timezone,
+          currentStartTimeUtc: null,
+          currentEndTimeUtc: null,
+          groupId: null,
+          isGroupOrganizer: context.is_group_organizer,
+        },
+        cancelPreview: {
+          startPast: cancelPreview.start_past,
+          withinWindow: cancelPreview.within_window,
+          willCharge: cancelPreview.will_charge,
+          policyLockedByReschedule: cancelPreview.policy_locked_by_reschedule,
+          feeCents: integer(cancelPreview.fee_cents)!,
+          cardLast4: string(cancelPreview.card_last4),
+          cardBrand: string(cancelPreview.card_brand),
+          currency: string(cancelPreview.currency)!,
+        },
+        cardManage: {
+          hasCard: cardManage.has_card,
+          cardFingerprint: string(cardManage.card_fingerprint)!,
+          cardLast4: nullableCardField(cardManage.card_last4)!,
+          cardBrand: nullableCardField(cardManage.card_brand)!,
+          chargeStatus: nullableCardField(cardManage.charge_status)!,
+        },
+        group: record(row.group),
+      },
+    };
+  }
+
+  if (
+    !startTimeUtc || !endTimeUtc || durationMinutes === null ||
+    !currentStartTimeUtc || !currentEndTimeUtc
   ) return { ok: false, code: "invalid_management_response" };
 
   return {
@@ -502,10 +625,22 @@ export function parseBookingManagementMutation(
   };
 }
 
+export function inspectBookingManagementCapability(input: {
+  tokenId: string;
+  expectedAction: "status";
+}): Promise<BookingManagementStatusInspectionResult>;
+export function inspectBookingManagementCapability(input: {
+  tokenId: string;
+  expectedAction: Exclude<IndividualBookingManagementAction, "status">;
+}): Promise<BookingManagementInspectionResult>;
+export function inspectBookingManagementCapability(input: {
+  tokenId: string;
+  expectedAction: IndividualBookingManagementAction;
+}): Promise<BookingManagementStatusInspectionResult | BookingManagementInspectionResult>;
 export async function inspectBookingManagementCapability(input: {
   tokenId: string;
   expectedAction: IndividualBookingManagementAction;
-}): Promise<{ ok: true; inspection: BookingManagementInspection } | BookingManagementFailure> {
+}): Promise<BookingManagementStatusInspectionResult | BookingManagementInspectionResult> {
   if (!isBookingManagementToken(input.tokenId)) return { ok: false, code: "invalid_request" };
   const { data, error } = await createServiceRoleClient().rpc(
     "inspect_booking_management_capability_with_sequence" as never,

@@ -10,8 +10,8 @@ import {
 
 type Snapshot = {
   status: string;
-  startTimeUtc: string;
-  endTimeUtc: string;
+  startTimeUtc: string | null;
+  endTimeUtc: string | null;
   serviceName: string | null;
   staffName: string | null;
   salonSlug: string;
@@ -93,8 +93,12 @@ export default function BookingStatusPage() {
             {snapshot.serviceName && <p className="mt-3 font-medium text-white">{snapshot.serviceName}</p>}
             {snapshot.staffName && <p>{snapshot.staffName}</p>}
             <p className="mt-2">
-              {formatBookingManagementTime(snapshot.startTimeUtc, snapshot.salonTimezone) ??
-                "Salon local time unavailable — please contact the salon."}
+              {snapshot.startTimeUtc
+                ? formatBookingManagementTime(snapshot.startTimeUtc, snapshot.salonTimezone) ??
+                  "Salon local time unavailable — please contact the salon."
+                : snapshot.status === "waiting"
+                  ? "You are on the walk-in list. The salon will assign your time."
+                  : "Salon local time unavailable — please contact the salon."}
             </p>
             {etaPresentation && (
               <section
