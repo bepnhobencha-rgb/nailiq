@@ -31,6 +31,9 @@ describe("Remote QA Certification safety boundary", () => {
     expect(workflow).toContain("scripts/check-schema-parity.ts");
     expect(workflow).toContain("scripts/seed-e2e.ts");
     expect(workflow).toContain("NAILIQ_DISPOSABLE_DB: \"1\"");
+    expect(workflow).toContain(
+      "NEXT_PUBLIC_APP_URL: http://127.0.0.1:3000",
+    );
     expect(workflow).not.toContain("fshmobzyjhmtvndobwsy");
     expect(workflow).not.toContain("nailiq.ca");
     expect(workflow).not.toMatch(/\$\{\{\s*secrets\./);

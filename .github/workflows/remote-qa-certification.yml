@@ -30,6 +30,7 @@ jobs:
       CI: "true"
       TZ: America/Los_Angeles
       NEXT_PUBLIC_SITE_URL: http://127.0.0.1:3000
+      NEXT_PUBLIC_APP_URL: http://127.0.0.1:3000
       BASE_URL: http://127.0.0.1:3000
       PLAYWRIGHT_BASE_URL: http://127.0.0.1:3000
       NEXT_PUBLIC_DEMO_OTP: "true"
