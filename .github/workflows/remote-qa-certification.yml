@@ -1,0 +1,276 @@
+name: Remote QA Certification
+
+on:
+  workflow_dispatch:
+    inputs:
+      candidate_sha:
+        description: Exact 40-character commit SHA to certify
+        required: true
+        type: string
+  pull_request:
+    branches: [main]
+    paths:
+      - .github/workflows/remote-qa-certification.yml
+      - src/shared/security/__tests__/remoteQaCertificationBoundary.spec.ts
+      - docs/qa/REMOTE-QA-CERTIFICATION.md
+
+concurrency:
+  group: remote-qa-certification-${{ github.event.pull_request.number || inputs.candidate_sha }}
+  cancel-in-progress: true
+
+permissions:
+  contents: read
+
+jobs:
+  certify:
+    name: Release-critical UI — disposable Supabase
+    runs-on: ubuntu-latest
+    timeout-minutes: 55
+    env:
+      CI: "true"
+      TZ: America/Los_Angeles
+      NEXT_PUBLIC_SITE_URL: http://127.0.0.1:3000
+      BASE_URL: http://127.0.0.1:3000
+      PLAYWRIGHT_BASE_URL: http://127.0.0.1:3000
+      NEXT_PUBLIC_DEMO_OTP: "true"
+      DEMO_OTP: "true"
+      NAILIQ_TEST_BYPASS_SLUG_PIN: "1"
+      NAILIQ_DISPOSABLE_DB: "1"
+
+      # Hard outbound boundaries. A remote QA run must never contact a real
+      # customer, payment provider, AI provider, or third-party webhook.
+      DISABLE_OUTBOUND_SMS: "1"
+      DISABLE_OUTBOUND_EMAIL: "1"
+      DISABLE_OUTBOUND_CALLS: "1"
+      NAILIQ_APPROVED_CANCELLATION_FEE_DISPATCH: "false"
+      NAILIQ_APPROVED_NO_SHOW_CHARGE_DISPATCH: "false"
+      NAILIQ_SQUARE_PAYMENT_WEBHOOK_INGESTION: "false"
+      NAILIQ_SQUARE_INBOUND_LOCAL_APPROVAL: "false"
+      NAILIQ_QA_SQUARE_RESPONSE_LOSS_ENABLED: "false"
+      PAYMENT_LEDGER_WORKERS_ENABLED: "false"
+      SQUARE_EMAIL_CONSENT_SEND: "false"
+      SQUARE_EMAIL_CONSENT_SYNC: "false"
+      SMART_CHECKOUT_PROVIDER_ENVIRONMENT: ""
+      SMART_CHECKOUT_SANDBOX_DISPATCH_ENABLED: "0"
+      SMART_CHECKOUT_SANDBOX_PROVIDER_READS_ENABLED: "0"
+      SMART_CHECKOUT_SANDBOX_PAIRING_ENABLED: "0"
+      SMART_CHECKOUT_SANDBOX_WEBHOOK_INGESTION_ENABLED: "0"
+      SMART_CHECKOUT_RECONCILIATION_ENABLED: "0"
+      SQUARE_PUBLIC_DEPOSIT_RECONCILIATION_ENVIRONMENT: ""
+
+      TWILIO_ACCOUNT_SID: ""
+      TWILIO_AUTH_TOKEN: ""
+      TWILIO_VERIFY_SERVICE_SID: ""
+      TWILIO_PHONE_NUMBER: ""
+      RESEND_API_KEY: ""
+      RESEND_FROM: ""
+      RESEND_WEBHOOK_SECRET: ""
+      STRIPE_SECRET_KEY: ""
+      STRIPE_WEBHOOK_SECRET: ""
+      STRIPE_SMART_CHECKOUT_WEBHOOK_SECRET: ""
+      NEXT_PUBLIC_STRIPE_PUBLISHABLE_KEY: ""
+      STRIPE_PRICE_PRO: ""
+      STRIPE_PRICE_PREMIUM: ""
+      SQUARE_WEBHOOK_PROFILES_JSON: "[]"
+      ANTHROPIC_API_KEY: ""
+      OPENAI_API_KEY: ""
+      WIX_API_KEY: ""
+      WIX_WEBHOOK_PUBLIC_KEY: ""
+      CRON_SECRET: ""
+
+    steps:
+      - name: Resolve immutable candidate SHA
+        id: target
+        env:
+          DISPATCH_SHA: ${{ inputs.candidate_sha }}
+          PR_SHA: ${{ github.event.pull_request.head.sha }}
+        run: |
+          set -euo pipefail
+          if [ "${GITHUB_EVENT_NAME}" = "workflow_dispatch" ]; then
+            target="${DISPATCH_SHA}"
+          else
+            target="${PR_SHA}"
+          fi
+          if ! [[ "${target}" =~ ^[0-9a-f]{40}$ ]]; then
+            echo "::error::Remote QA requires an exact 40-character lowercase commit SHA"
+            exit 1
+          fi
+          echo "sha=${target}" >> "$GITHUB_OUTPUT"
+
+      - uses: actions/checkout@v6
+        with:
+          ref: ${{ steps.target.outputs.sha }}
+          persist-credentials: false
+
+      - name: Verify exact source and schema baseline
+        run: |
+          set -euo pipefail
+          test "$(git rev-parse HEAD)" = "${{ steps.target.outputs.sha }}"
+          test -f supabase/bootstrap/schema.sql
+          if grep -Eq '^(COPY |INSERT INTO )' supabase/bootstrap/schema.sql; then
+            echo "::error::The schema-only baseline unexpectedly contains data statements"
+            exit 1
+          fi
+
+      - uses: actions/setup-node@v6
+        with:
+          node-version: 20
+          cache: npm
+
+      - run: npm ci
+
+      - name: Verify Remote QA safety contract
+        run: >-
+          npx vitest run
+          src/shared/security/__tests__/remoteQaCertificationBoundary.spec.ts
+
+      - uses: supabase/setup-cli@v2
+        with:
+          version: 2.109.1
+
+      - name: Start disposable Supabase
+        run: |
+          set -euo pipefail
+          parked="$RUNNER_TEMP/nailiq-remote-qa-migrations"
+          mv supabase/migrations "$parked"
+          mkdir -p supabase/migrations
+          restore_migrations() {
+            rm -rf supabase/migrations
+            mv "$parked" supabase/migrations
+          }
+          trap restore_migrations EXIT
+          supabase start --exclude studio,edge-runtime,logflare,vector
+
+      - name: Guard, build schema, verify parity and seed
+        run: |
+          set -euo pipefail
+          supabase status -o env > "$RUNNER_TEMP/supabase.env"
+          set -a
+          . "$RUNNER_TEMP/supabase.env"
+          set +a
+
+          echo "::add-mask::${SERVICE_ROLE_KEY}"
+          echo "::add-mask::${ANON_KEY}"
+          internal_secret="$(openssl rand -hex 24)"
+          echo "::add-mask::${internal_secret}"
+
+          {
+            echo "NEXT_PUBLIC_SUPABASE_URL=${API_URL}"
+            echo "SUPABASE_INTERNAL_URL=${API_URL}"
+            echo "NEXT_PUBLIC_SUPABASE_ANON_KEY=${ANON_KEY}"
+            echo "SUPABASE_SERVICE_ROLE_KEY=${SERVICE_ROLE_KEY}"
+            echo "DB_URL=${DB_URL}"
+            echo "INTERNAL_API_SECRET=${internal_secret}"
+            echo "CRON_SECRET=${internal_secret}"
+          } >> "$GITHUB_ENV"
+
+          export NEXT_PUBLIC_SUPABASE_URL="${API_URL}"
+          export SUPABASE_INTERNAL_URL="${API_URL}"
+          export NEXT_PUBLIC_SUPABASE_ANON_KEY="${ANON_KEY}"
+          export SUPABASE_SERVICE_ROLE_KEY="${SERVICE_ROLE_KEY}"
+
+          npx tsx scripts/assert-e2e-not-production.ts
+          bash scripts/apply-baseline.sh "${DB_URL}"
+          DB_URL="${DB_URL}" npx tsx scripts/check-schema-parity.ts
+          npx tsx scripts/seed-e2e.ts
+          npx tsx scripts/seed-e2e.ts
+
+      - name: Install certification browsers
+        run: npx playwright install --with-deps chromium webkit
+
+      - name: Build exact candidate
+        run: npm run build
+
+      - name: Start production-mode QA server
+        id: server
+        run: |
+          set -euo pipefail
+          mkdir -p tmp
+          nohup npx next start --hostname 127.0.0.1 --port 3000 > tmp/remote-qa-server.log 2>&1 &
+          echo "$!" > tmp/remote-qa-server.pid
+          npx --yes wait-on http://127.0.0.1:3000 --timeout 30000 --interval 500 || {
+            tail -n 200 tmp/remote-qa-server.log || true
+            exit 1
+          }
+
+      - name: Desktop release-critical journeys
+        id: desktop
+        if: steps.server.outcome == 'success'
+        run: |
+          set +e
+          npx playwright test \
+            e2e/smoke \
+            e2e/booking-conflict.spec.ts \
+            e2e/group-booking/happy-path.spec.ts \
+            e2e/group-booking/seat-together.spec.ts \
+            e2e/noshow-waitlist.spec.ts \
+            e2e/reschedule-waitlist-tz.spec.ts \
+            e2e/waitlist-advance-cron.spec.ts \
+            e2e/receptionist-center/operator-journey.spec.ts \
+            e2e/turniq-checkin-manager-local.spec.ts \
+            e2e/turniq-customer-checkin-local.spec.ts \
+            e2e/turniq-rush-hour-local.spec.ts \
+            e2e/turniq-staff-pin-local.spec.ts \
+            e2e/turniq-supervised-staggered-local.spec.ts \
+            --project=chromium --reporter=list,html
+          status=$?
+          set -e
+          test -d playwright-report && mv playwright-report playwright-report-desktop || true
+          test -d test-results && mv test-results test-results-desktop || true
+          exit "$status"
+
+      - name: Mobile receptionist and trust journeys
+        id: mobile
+        if: always() && steps.server.outcome == 'success'
+        run: |
+          set +e
+          npx playwright test \
+            e2e/receptionist-center/mobile-layout.spec.ts \
+            e2e/group-booking/happy-path.spec.ts \
+            e2e/turniq-rush-hour-local.spec.ts \
+            --project=mobile --reporter=list,html
+          status=$?
+          set -e
+          test -d playwright-report && mv playwright-report playwright-report-mobile || true
+          test -d test-results && mv test-results test-results-mobile || true
+          exit "$status"
+
+      - name: Remote QA summary
+        if: always()
+        run: |
+          {
+            echo "## NailIQ Remote QA Certification"
+            echo
+            echo "- Candidate SHA: \`${{ steps.target.outputs.sha }}\`"
+            echo "- Database: disposable Supabase Local"
+            echo "- Desktop journeys: \`${{ steps.desktop.outcome }}\`"
+            echo "- Mobile journeys: \`${{ steps.mobile.outcome }}\`"
+            echo "- SMS/email/call/payment/provider dispatch: disabled"
+            echo "- Production access: none"
+          } >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Server log
+        if: always()
+        run: tail -n 200 tmp/remote-qa-server.log || true
+
+      - name: Sweep marker-owned fixtures
+        if: always()
+        run: npx tsx scripts/e2e-sweep.ts
+
+      - name: Destroy disposable Supabase
+        if: always()
+        run: supabase stop --no-backup
+
+      - name: Upload QA evidence
+        if: always()
+        uses: actions/upload-artifact@v7
+        with:
+          name: remote-qa-${{ steps.target.outputs.sha }}
+          path: |
+            playwright-report-desktop/
+            playwright-report-mobile/
+            test-results-desktop/
+            test-results-mobile/
+            tmp/remote-qa-server.log
+          if-no-files-found: warn
+          retention-days: 14
