@@ -12,16 +12,17 @@ const salon="d9000000-0000-4000-8000-000000000001",service="d9000000-0000-4000-8
 async function cleanup(){await sql(`delete from public.salons where id='${salon}';delete from public.service_categories where slug='waitlist-concurrency-qa'`);}
 try{
  await cleanup();
- await sql(`insert into public.service_categories(slug,name_en,name_vi) values('waitlist-concurrency-qa','Waitlist concurrency','Waitlist concurrency');
- insert into public.salons(id,slug,name,phone,timezone,feature_flags) values('${salon}','waitlist-concurrency-qa','Waitlist concurrency','+16045550888','UTC','{}');
+ await sql(`select set_config('request.jwt.claim.role','service_role',false);
+ insert into public.service_categories(slug,name_en,name_vi) values('waitlist-concurrency-qa','Waitlist concurrency','Waitlist concurrency');
+ insert into public.salons(id,slug,name,phone,timezone,feature_flags,profile_complete,opening_hours) values('${salon}','waitlist-concurrency-qa','Waitlist concurrency','+16045550888','UTC','{}',true,'{"mon":{"open":"00:00","close":"23:59","closed":false},"tue":{"open":"00:00","close":"23:59","closed":false},"wed":{"open":"00:00","close":"23:59","closed":false},"thu":{"open":"00:00","close":"23:59","closed":false},"fri":{"open":"00:00","close":"23:59","closed":false},"sat":{"open":"00:00","close":"23:59","closed":false},"sun":{"open":"00:00","close":"23:59","closed":false}}'::jsonb);
  insert into public.services(id,salon_id,name,price_cents,duration_minutes,category) values('${service}','${salon}','Waitlist service',2000,30,'waitlist-concurrency-qa');
  insert into public.staff(id,salon_id,name,status) values('${staff}','${salon}','Waitlist staff','active');
- insert into public.booking_waitlist_entries(id,salon_id,service_id,booking_date,client_name,client_phone,status,source,notified_at,claim_token) values
- ('${entry}','${salon}','${service}',current_date+1,'Waitlist concurrent','${phone}','notified','slot_unavailable',clock_timestamp(),'${legacy}'),
- ('d9000000-0000-4000-8000-000000000031','${salon}','${service}',current_date+2,'FIFO first','${phone}','waiting','slot_unavailable',null,null),
- ('d9000000-0000-4000-8000-000000000032','${salon}','${service}',current_date+2,'FIFO second','${phone}','waiting','slot_unavailable',null,null);
- insert into public.booking_waitlist_entries(id,salon_id,service_id,booking_date,client_name,client_phone,status,source)
- values('d9000000-0000-4000-8000-000000000033','${salon}','${service}',current_date+3,'Manual exact','${phone}','waiting','slot_unavailable');
+ insert into public.booking_waitlist_entries(id,salon_id,service_id,booking_date,client_name,client_phone,status,source,notified_at,claim_token,preferred_slot_label) values
+ ('${entry}','${salon}','${service}',current_date+1,'Waitlist concurrent','${phone}','notified','slot_unavailable',clock_timestamp(),'${legacy}','11:59 PM'),
+ ('d9000000-0000-4000-8000-000000000031','${salon}','${service}',current_date+2,'FIFO first','${phone}','waiting','slot_unavailable',null,null,'11:59 PM'),
+ ('d9000000-0000-4000-8000-000000000032','${salon}','${service}',current_date+2,'FIFO second','${phone}','waiting','slot_unavailable',null,null,'11:59 PM');
+ insert into public.booking_waitlist_entries(id,salon_id,service_id,booking_date,client_name,client_phone,status,source,preferred_slot_label)
+ values('d9000000-0000-4000-8000-000000000033','${salon}','${service}',current_date+3,'Manual exact','${phone}','waiting','slot_unavailable','11:59 PM');
  insert into public.bookings(id,salon_id,service_id,staff_id,client_name,start_time_utc,end_time_utc,status,price_cents)
  values('${freed}','${salon}','${service}','${staff}','Freed booking',clock_timestamp()+interval '2 days',clock_timestamp()+interval '2 days 30 minutes','cancelled',2000)`);
  const expiry=new Date(Date.now()+1800_000).toISOString();

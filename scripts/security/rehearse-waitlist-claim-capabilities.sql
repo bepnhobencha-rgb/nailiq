@@ -3,8 +3,9 @@ BEGIN;
 SET LOCAL request.jwt.claim.role='service_role';
 INSERT INTO public.service_categories(slug,name_en,name_vi)
 VALUES('waitlist-cap-qa','Waitlist QA','Waitlist QA') ON CONFLICT DO NOTHING;
-INSERT INTO public.salons(id,slug,name,phone,timezone,feature_flags)
-VALUES('d7000000-0000-4000-8000-000000000001','waitlist-cap-qa','Waitlist QA','+16045550200','UTC','{}');
+INSERT INTO public.salons(id,slug,name,phone,timezone,feature_flags,profile_complete,opening_hours)
+VALUES('d7000000-0000-4000-8000-000000000001','waitlist-cap-qa','Waitlist QA','+16045550200','UTC','{}',true,
+  '{"mon":{"open":"00:00","close":"23:59","closed":false},"tue":{"open":"00:00","close":"23:59","closed":false},"wed":{"open":"00:00","close":"23:59","closed":false},"thu":{"open":"00:00","close":"23:59","closed":false},"fri":{"open":"00:00","close":"23:59","closed":false},"sat":{"open":"00:00","close":"23:59","closed":false},"sun":{"open":"00:00","close":"23:59","closed":false}}'::jsonb);
 INSERT INTO public.services(id,salon_id,name,price_cents,duration_minutes,category)
 VALUES('d7000000-0000-4000-8000-000000000002','d7000000-0000-4000-8000-000000000001',
   'Waitlist service',2500,30,'waitlist-cap-qa');
@@ -12,39 +13,40 @@ INSERT INTO public.staff(id,salon_id,name,status)
 VALUES('d7000000-0000-4000-8000-000000000003','d7000000-0000-4000-8000-000000000001',
   'Waitlist staff','active');
 INSERT INTO public.booking_waitlist_entries(id,salon_id,service_id,booking_date,client_name,
-  client_phone,status,source,notified_at,claim_token)
+  client_phone,status,source,notified_at,claim_token,preferred_slot_label)
 VALUES('d7000000-0000-4000-8000-000000000010','d7000000-0000-4000-8000-000000000001',
   'd7000000-0000-4000-8000-000000000002',current_date+1,'Waitlist QA','+16045550201',
-  'notified','slot_unavailable',transaction_timestamp(),'d7000000-0000-4000-8000-000000000011'),
+  'notified','slot_unavailable',transaction_timestamp(),'d7000000-0000-4000-8000-000000000011','11:59 PM'),
 ('d7000000-0000-4000-8000-000000000012','d7000000-0000-4000-8000-000000000001',
   'd7000000-0000-4000-8000-000000000002',current_date+2,'Waitlist late worker','+16045550201',
-  'notified','slot_unavailable',transaction_timestamp(),'d7000000-0000-4000-8000-000000000013');
+  'notified','slot_unavailable',transaction_timestamp(),'d7000000-0000-4000-8000-000000000013','11:59 PM');
 INSERT INTO public.booking_waitlist_entries(id,salon_id,service_id,booking_date,client_name,
-  client_phone,status,source,notified_at,claim_token,offered_staff_id,offered_start_utc,offered_end_utc)
+  client_phone,status,source,notified_at,claim_token,offered_staff_id,offered_start_utc,offered_end_utc,
+  preferred_slot_label)
 VALUES('d7000000-0000-4000-8000-000000000014','d7000000-0000-4000-8000-000000000001',
   'd7000000-0000-4000-8000-000000000002',current_date+3,'Waitlist failed auto-book','+16045550201',
   'notified','slot_unavailable',transaction_timestamp(),'d7000000-0000-4000-8000-000000000015',
   'd7000000-0000-4000-8000-000000000003',transaction_timestamp()+interval '3 days',
-  transaction_timestamp()+interval '3 days 30 minutes');
+  transaction_timestamp()+interval '3 days 30 minutes','11:59 PM');
 INSERT INTO public.booking_waitlist_entries(id,salon_id,service_id,booking_date,client_name,
-  client_phone,status,source,notified_at,claim_token,created_at)
+  client_phone,status,source,notified_at,claim_token,created_at,preferred_slot_label)
 VALUES
 ('d7000000-0000-4000-8000-000000000018','d7000000-0000-4000-8000-000000000001',
  'd7000000-0000-4000-8000-000000000002',current_date+5,'Expired offer','+16045550201',
  'notified','slot_unavailable',transaction_timestamp()-interval '30 minutes',
- 'd7000000-0000-4000-8000-000000000020',transaction_timestamp()-interval '40 minutes'),
+ 'd7000000-0000-4000-8000-000000000020',transaction_timestamp()-interval '40 minutes','11:59 PM'),
 ('d7000000-0000-4000-8000-000000000019','d7000000-0000-4000-8000-000000000001',
  'd7000000-0000-4000-8000-000000000002',current_date+5,'Next FIFO','+16045550201',
- 'waiting','slot_unavailable',NULL,NULL,transaction_timestamp()-interval '20 minutes'),
+ 'waiting','slot_unavailable',NULL,NULL,transaction_timestamp()-interval '20 minutes','11:59 PM'),
 ('d7000000-0000-4000-8000-000000000024','d7000000-0000-4000-8000-000000000001',
  'd7000000-0000-4000-8000-000000000002',current_date+3,'Freed booking FIFO','+16045550201',
- 'waiting','slot_unavailable',NULL,NULL,transaction_timestamp()-interval '10 minutes'),
+ 'waiting','slot_unavailable',NULL,NULL,transaction_timestamp()-interval '10 minutes','11:59 PM'),
 ('d7000000-0000-4000-8000-000000000025','d7000000-0000-4000-8000-000000000001',
  'd7000000-0000-4000-8000-000000000002',current_date+6,'Cancel wrapper FIFO','+16045550201',
- 'waiting','slot_unavailable',NULL,NULL,transaction_timestamp()-interval '9 minutes'),
+ 'waiting','slot_unavailable',NULL,NULL,transaction_timestamp()-interval '9 minutes','11:59 PM'),
 ('d7000000-0000-4000-8000-000000000026','d7000000-0000-4000-8000-000000000001',
  'd7000000-0000-4000-8000-000000000002',current_date+7,'No-show wrapper FIFO','+16045550201',
- 'waiting','slot_unavailable',NULL,NULL,transaction_timestamp()-interval '8 minutes');
+ 'waiting','slot_unavailable',NULL,NULL,transaction_timestamp()-interval '8 minutes','11:59 PM');
 INSERT INTO public.bookings(id,salon_id,service_id,staff_id,client_name,start_time_utc,end_time_utc,
   status,price_cents)
 VALUES('d7000000-0000-4000-8000-000000000016','d7000000-0000-4000-8000-000000000001',

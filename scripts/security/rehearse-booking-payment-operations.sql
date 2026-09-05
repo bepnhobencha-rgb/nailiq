@@ -24,9 +24,10 @@ DECLARE
 BEGIN
   INSERT INTO public.service_categories(slug,name_en,name_vi)
   VALUES ('payment-operation-rehearsal','Payment operation rehearsal','Payment operation rehearsal');
-  INSERT INTO public.salons(id,slug,name,phone,timezone,currency_code)
+  INSERT INTO public.salons(id,slug,name,phone,timezone,currency_code,profile_complete,opening_hours)
   VALUES (v_salon,'payment-operation-rehearsal','Payment operation rehearsal',
-    '+16045550151','UTC','CAD');
+    '+16045550151','UTC','CAD',true,
+    '{"mon":{"open":"00:00","close":"23:59","closed":false},"tue":{"open":"00:00","close":"23:59","closed":false},"wed":{"open":"00:00","close":"23:59","closed":false},"thu":{"open":"00:00","close":"23:59","closed":false},"fri":{"open":"00:00","close":"23:59","closed":false},"sat":{"open":"00:00","close":"23:59","closed":false},"sun":{"open":"00:00","close":"23:59","closed":false}}'::jsonb);
   INSERT INTO public.services(id,salon_id,name,price_cents,duration_minutes,category)
   VALUES (v_service,v_salon,'Payment rehearsal service',5000,30,'payment-operation-rehearsal');
   INSERT INTO public.staff(id,salon_id,name,status,deleted_at)
@@ -586,10 +587,11 @@ BEGIN
     'pi_desk_saga_pending','nq:'||v_parent::text,'succeeded','{}',now()
   );
   INSERT INTO public.booking_waitlist_entries(
-    salon_id,service_id,booking_date,client_name,client_phone,source,status
+    salon_id,service_id,booking_date,client_name,client_phone,source,status,
+    preferred_slot_label
   ) VALUES (
     v_salon,v_service,(v_start AT TIME ZONE 'UTC')::date,
-    'Desk saga waiter','+16045551909','booking_conflict','waiting'
+    'Desk saga waiter','+16045551909','booking_conflict','waiting','11:59 PM'
   );
   v_claim:=public.cancel_booking_with_deposit_refund_saga(
     v_salon,v_booking,v_request,400,false,NULL
