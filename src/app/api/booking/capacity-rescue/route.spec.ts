@@ -64,21 +64,36 @@ function chainResult(data: unknown, error: unknown = null) {
   return chain;
 }
 
-function database(existing: unknown = null) {
+function database(
+  existing: unknown = null,
+  capacityResult: unknown = [
+    {
+      id: IDS.entry,
+      status: "waiting",
+      created_new: true,
+      guard_outcome: "slot_unavailable",
+      slot_label: null,
+    },
+  ],
+) {
+  const auditInsert = vi.fn().mockResolvedValue({ data: null, error: null });
   const rpc = vi.fn(async (name: string) =>
     name === "rate_limit_hit"
       ? { data: true, error: null }
       : {
-          data: [{ id: IDS.entry, status: "waiting", created_new: true }],
+          data: capacityResult,
           error: null,
         },
   );
   return {
     rpc,
+    auditInsert,
     from: vi.fn((table: string) =>
       table === "salons"
         ? chainResult({ id: IDS.salon, slug: "hilite-anaheim" })
-        : chainResult(existing),
+        : table === "capacity_rescue_decision_events"
+          ? { insert: auditInsert }
+          : chainResult(existing),
     ),
   };
 }
@@ -101,8 +116,22 @@ describe("POST /api/booking/capacity-rescue", () => {
       slotLabel: "2:00 PM",
     });
     expect(db.rpc).not.toHaveBeenCalledWith(
-      "create_public_capacity_rescue_request",
+      "create_public_capacity_rescue_request_v2",
       expect.anything(),
+    );
+    expect(db.auditInsert).toHaveBeenCalledWith(
+      expect.objectContaining({
+        salon_id: IDS.salon,
+        request_id: IDS.request,
+        outcome: "slot_available",
+      }),
+    );
+    expect(db.auditInsert.mock.calls[0]?.[0]).not.toHaveProperty("client_name");
+    expect(db.auditInsert.mock.calls[0]?.[0]).not.toHaveProperty(
+      "client_phone",
+    );
+    expect(db.auditInsert.mock.calls[0]?.[0]).not.toHaveProperty(
+      "client_email",
     );
   });
 
@@ -119,7 +148,7 @@ describe("POST /api/booking/capacity-rescue", () => {
       code: "availability_unverified",
     });
     expect(db.rpc).not.toHaveBeenCalledWith(
-      "create_public_capacity_rescue_request",
+      "create_public_capacity_rescue_request_v2",
       expect.anything(),
     );
   });
@@ -138,9 +167,38 @@ describe("POST /api/booking/capacity-rescue", () => {
       receipt: { requestId: IDS.entry, createdNew: true },
     });
     expect(db.rpc).toHaveBeenCalledWith(
-      "create_public_capacity_rescue_request",
-      expect.anything(),
+      "create_public_capacity_rescue_request_v2",
+      expect.objectContaining({ p_app_version: null }),
     );
+  });
+
+  it("lets the database guard override a stale unavailable app decision", async () => {
+    const db = database(null, [
+      {
+        id: null,
+        status: null,
+        created_new: false,
+        guard_outcome: "slot_available",
+        slot_label: "2:00 PM",
+        eligible_staff_count: 7,
+        eligible_resource_count: 7,
+        free_staff_count: 2,
+        free_resource_count: 2,
+      },
+    ]);
+    mocks.createServiceRoleClient.mockReturnValue(db);
+    mocks.verifyIndividualWaitlistAvailability.mockResolvedValue({
+      outcome: "slot_unavailable",
+    });
+
+    const result = await POST(request());
+
+    expect(result.status).toBe(409);
+    expect(await result.json()).toEqual({
+      ok: false,
+      code: "slot_available",
+      slotLabel: "2:00 PM",
+    });
   });
 
   it("returns the prior receipt on an exact request retry before revalidating", async () => {
@@ -165,7 +223,7 @@ describe("POST /api/booking/capacity-rescue", () => {
     });
     expect(mocks.verifyIndividualWaitlistAvailability).not.toHaveBeenCalled();
     expect(db.rpc).not.toHaveBeenCalledWith(
-      "create_public_capacity_rescue_request",
+      "create_public_capacity_rescue_request_v2",
       expect.anything(),
     );
   });
@@ -185,7 +243,9 @@ describe("POST /api/booking/capacity-rescue", () => {
       intent_json: body.intent,
     });
     mocks.createServiceRoleClient.mockReturnValue(db);
-    const result = await POST(request({ ...body, clientName: "Different Name" }));
+    const result = await POST(
+      request({ ...body, clientName: "Different Name" }),
+    );
     expect(result.status).toBe(409);
     expect(await result.json()).toMatchObject({ code: "request_id_conflict" });
   });

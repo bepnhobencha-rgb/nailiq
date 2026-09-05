@@ -182,6 +182,9 @@ import { execFileSync } from "node:child_process";
  * triggers, and 13 primary/foreign-key/lookup indexes. Direct table
  * reachability is service_role-only; browser roles receive no table or RPC
  * privilege.
+ * The 20260905204123 false-waitlist guard adds one PII-free service-role-only
+ * decision table with 18 columns, three database guard functions, one insert
+ * trigger, and three primary/lookup indexes.
  * Refresh these
  * with each schema-changing forward migration — they
  * are a tripwire, not a spec.
@@ -189,7 +192,7 @@ import { execFileSync } from "node:child_process";
 const PRODUCTION = {
   // +1 PII-free Twilio terminal-receipt inbox.
   // +25 private TurnIQ policy, ledger, replay, group, check-in, offline, and rollout tables.
-  tables: 234,
+  tables: 235,
   // +2 from 20260815190000_add_salon_closure_notice.sql: closure_notice
   // added to both salons (base table) and public_salon_profiles (view) —
   // both count as columns in information_schema.
@@ -250,7 +253,8 @@ const PRODUCTION = {
   // +21 TurnIQ controlled SHADOW allowlist and immutable activation-receipt columns.
   // +53 TurnIQ multi-technician handoff plan, performer, and item columns.
   // +28 TurnIQ staff PIN credential and immutable receipt columns.
-  columns: 3590,
+  // +18 PII-free individual waitlist capacity-decision evidence columns.
+  columns: 3608,
   // The upsell migration replaces two legacy member-write policies with one
   // service-role-only immutable claim policy. The staff-lifecycle hardening
   // removes the browser DELETE policy so hard deletion cannot bypass the
@@ -322,7 +326,8 @@ const PRODUCTION = {
   // lifecycle functions.
   // +3 TurnIQ staff PIN tenant assertion, configuration, and shift functions.
   // +1 server-only Waitlist source-provenance normalization function.
-  functions: 514,
+  // +3 individual waitlist capacity evaluator, insert guard, and v2 RPC functions.
+  functions: 517,
   // +4 pending-receipt correlation triggers across notification/staff INSERT
   // and provider-SID transitions.
   // +1 V1 terminal-booking policy trigger.
@@ -345,7 +350,8 @@ const PRODUCTION = {
   // +2 TurnIQ handoff performer/item immutable-ledger triggers.
   // +5 TurnIQ staff PIN tenant and immutable-receipt triggers.
   // +1 Waitlist source-provenance normalization trigger.
-  triggers: 151,
+  // +1 fail-closed individual waitlist insert trigger.
+  triggers: 152,
   // Transition/capability PKs, unique keys and focused due/salon indexes.
   // The refund inbox and customer identity map each add PK, unique, and two
   // focused indexes.
@@ -373,7 +379,8 @@ const PRODUCTION = {
   // +4 controlled SHADOW allowlist/receipt primary, unique, and history indexes.
   // +28 TurnIQ handoff primary, unique, tenant, foreign-key, and lookup indexes.
   // +13 TurnIQ staff PIN primary, foreign-key, and lookup indexes.
-  indexes: 965,
+  // +3 PII-free capacity-decision primary and lookup indexes.
+  indexes: 968,
 } as const;
 
 /**
@@ -425,6 +432,7 @@ const CRITICAL_TABLES = [
   "turniq_staff_pin_configuration_receipts",
   "turniq_staff_pin_shift_receipts",
   "booking_waitlist_entries",
+  "capacity_rescue_decision_events",
   "client_profiles",
   "salon_members",
   "owner_booking_notification_outbox",
@@ -574,6 +582,9 @@ const CRITICAL_FUNCTIONS = [
   "configure_turniq_staff_pin_v1",
   "apply_turniq_staff_pin_shift_command_v1",
   "create_public_capacity_rescue_request",
+  "create_public_capacity_rescue_request_v2",
+  "evaluate_individual_waitlist_capacity",
+  "reject_false_individual_waitlist_entry",
   "guard_complex_capacity_rescue_autonomy",
   "compute_no_show_risk",
   "claim_ai_execution_jobs",
@@ -970,7 +981,7 @@ function main() {
   // mutation-through-RPC only and intentionally grants no table reachability.
   // TurnIQ adds thirty-three private tables reachable only by service_role. Neither
   // browser role gains direct table reachability.
-  const GRANTS = { anon: 56, authenticated: 78, service_role: 221 } as const;
+  const GRANTS = { anon: 56, authenticated: 78, service_role: 222 } as const;
   for (const [role, want] of Object.entries(GRANTS)) {
     const got = num(
       `select count(distinct table_name) from (

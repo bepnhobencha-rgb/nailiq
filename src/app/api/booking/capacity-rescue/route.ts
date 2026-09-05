@@ -64,15 +64,50 @@ function stableJson(value: unknown): string {
   return JSON.stringify(value) ?? "null";
 }
 
+async function recordApplicationDecision(input: {
+  salonId: string;
+  requestId: string;
+  requestKind: "individual" | "sequence" | "group";
+  serviceId: string;
+  staffId: string | null;
+  bookingDateYmd: string;
+  preferredSlotLabel: string | null;
+  outcome: "slot_available" | "availability_unverified";
+}) {
+  try {
+    await createServiceRoleClient()
+      .from("capacity_rescue_decision_events")
+      .insert({
+        salon_id: input.salonId,
+        request_id: input.requestId,
+        decision_source: "application_precheck",
+        request_kind: input.requestKind,
+        service_id: input.serviceId,
+        staff_id: input.staffId,
+        booking_date: input.bookingDateYmd,
+        preferred_slot_label: input.preferredSlotLabel,
+        outcome: input.outcome,
+        reason_code: input.outcome,
+        app_version: process.env.VERCEL_GIT_COMMIT_SHA?.trim() || null,
+      });
+  } catch {
+    // Decision evidence is best-effort; it must never weaken the fail-closed
+    // booking response or expose customer PII through error logging.
+  }
+}
+
 export async function POST(request: NextRequest) {
-  if (!sameOrigin(request)) return response({ ok: false, code: "forbidden" }, 403);
+  if (!sameOrigin(request))
+    return response({ ok: false, code: "forbidden" }, 403);
 
   const length = Number(request.headers.get("content-length") ?? "0");
   if (!Number.isFinite(length) || length < 0 || length > 16_384) {
     return response({ ok: false, code: "invalid_request" }, 400);
   }
 
-  const allowed = await rateLimitAllowed(`capacity-rescue:ip:${clientIp(request)}`);
+  const allowed = await rateLimitAllowed(
+    `capacity-rescue:ip:${clientIp(request)}`,
+  );
   if (allowed === null) {
     return response({ ok: false, code: "availability_unverified" }, 503);
   }
@@ -81,7 +116,8 @@ export async function POST(request: NextRequest) {
   const parsed = capacityRescueRequestSchema.safeParse(
     await request.json().catch(() => null),
   );
-  if (!parsed.success) return response({ ok: false, code: "invalid_request" }, 400);
+  if (!parsed.success)
+    return response({ ok: false, code: "invalid_request" }, 400);
 
   const input = parsed.data;
   const phone = validateGuestPhone(input.clientPhone);
@@ -160,9 +196,29 @@ export async function POST(request: NextRequest) {
       preferredSlotLabel: input.preferredSlotLabel,
     });
     if (availability.outcome === "availability_unverified") {
+      await recordApplicationDecision({
+        salonId: input.salonId,
+        requestId: input.requestId,
+        requestKind: input.requestKind,
+        serviceId: input.primaryServiceId,
+        staffId: input.staffId,
+        bookingDateYmd: input.bookingDateYmd,
+        preferredSlotLabel: input.preferredSlotLabel,
+        outcome: availability.outcome,
+      });
       return response({ ok: false, code: "availability_unverified" }, 503);
     }
     if (availability.outcome === "slot_available") {
+      await recordApplicationDecision({
+        salonId: input.salonId,
+        requestId: input.requestId,
+        requestKind: input.requestKind,
+        serviceId: input.primaryServiceId,
+        staffId: input.staffId,
+        bookingDateYmd: input.bookingDateYmd,
+        preferredSlotLabel: input.preferredSlotLabel,
+        outcome: availability.outcome,
+      });
       return response(
         {
           ok: false,
@@ -175,7 +231,7 @@ export async function POST(request: NextRequest) {
   }
 
   const { data, error } = await db.rpc(
-    "create_public_capacity_rescue_request" as never,
+    "create_public_capacity_rescue_request_v2" as never,
     {
       p_salon_id: input.salonId,
       p_request_id: input.requestId,
@@ -190,6 +246,7 @@ export async function POST(request: NextRequest) {
       p_client_email: input.clientEmail.trim().toLowerCase(),
       p_client_locale: input.clientLocale,
       p_intent_json: input.intent,
+      p_app_version: process.env.VERCEL_GIT_COMMIT_SHA?.trim() || null,
     } as never,
   );
   if (error) return response({ ok: false, code: "request_failed" }, 503);
@@ -199,9 +256,27 @@ export async function POST(request: NextRequest) {
     return response({ ok: false, code: "request_failed" }, 503);
   }
   const raw = row as Record<string, unknown>;
+  if (raw.guard_outcome === "availability_unverified") {
+    return response({ ok: false, code: "availability_unverified" }, 503);
+  }
+  if (raw.guard_outcome === "slot_available") {
+    return response(
+      {
+        ok: false,
+        code: "slot_available",
+        ...(typeof raw.slot_label === "string"
+          ? { slotLabel: raw.slot_label }
+          : {}),
+      },
+      409,
+    );
+  }
   if (
     typeof raw.id !== "string" ||
-    !["waiting", "review_required", "notified"].includes(String(raw.status))
+    !["waiting", "review_required", "notified"].includes(String(raw.status)) ||
+    !["slot_unavailable", "capacity_not_applicable"].includes(
+      String(raw.guard_outcome),
+    )
   ) {
     return response({ ok: false, code: "request_failed" }, 503);
   }
