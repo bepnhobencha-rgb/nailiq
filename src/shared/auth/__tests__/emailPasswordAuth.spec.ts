@@ -54,4 +54,64 @@ describe("email/password auth server boundary", () => {
       password: "Password1",
     });
   });
+
+  it.each([
+    [
+      { code: "email_address_invalid", message: "Email address is invalid" },
+      "email_address_unusable",
+    ],
+    [
+      {
+        code: "email_address_not_authorized",
+        message: "Email address is not authorized",
+      },
+      "confirmation_email_unavailable",
+    ],
+    [
+      {
+        code: "unexpected_failure",
+        message: "Error sending confirmation email",
+      },
+      "confirmation_email_unavailable",
+    ],
+    [
+      {
+        code: "over_email_send_rate_limit",
+        message: "Email rate limit exceeded",
+      },
+      "rate_limited",
+    ],
+    [
+      { code: "user_already_exists", message: "User already registered" },
+      "account_exists",
+    ],
+    [{ code: "unexpected_failure", message: "Database unavailable" }, "server_error"],
+    [
+      { code: "unexpected_failure", message: "Too many database connections" },
+      "server_error",
+    ],
+  ] as const)(
+    "returns actionable signup truth for provider error %#",
+    async (providerError, expectedError) => {
+      mocks.signUp.mockResolvedValue({ data: { session: null }, error: providerError });
+
+      await expect(
+        authenticateWithEmailPassword(
+          "new-owner@example.com",
+          "Password1",
+          "signup",
+        ),
+      ).resolves.toEqual({ ok: false, error: expectedError });
+    },
+  );
+
+  it("returns confirmation_required only when the provider accepted signup", async () => {
+    await expect(
+      authenticateWithEmailPassword(
+        "new-owner@example.com",
+        "Password1",
+        "signup",
+      ),
+    ).resolves.toEqual({ ok: true, status: "confirmation_required" });
+  });
 });

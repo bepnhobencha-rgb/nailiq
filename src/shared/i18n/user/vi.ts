@@ -763,6 +763,12 @@ export const userVi: UserMessages = {
     signInFailed: "Email hoặc mật khẩu chưa đúng. Vui lòng thử lại.",
     signUpFailed: "Không tạo được tài khoản. Vui lòng thử lại.",
     accountExists: "Email này đã có tài khoản. Bấm Đăng nhập nhé.",
+    emailAddressUnusable:
+      "Email này không thể nhận link xác nhận. Hãy dùng hộp thư bạn có thể mở.",
+    confirmationEmailUnavailable:
+      "NailIQ chưa gửi được email xác nhận. Hãy thử đăng nhập bằng Google hoặc dùng email khác. Nếu vẫn lỗi, liên hệ NailIQ hỗ trợ.",
+    authRateLimited:
+      "Bạn đã thử quá nhiều lần. Hãy đợi vài phút rồi thử lại.",
     signUpConfirmEmailTitle: "Xác nhận email",
     signUpConfirmEmailBody:
       "Chúng tôi đã gửi link xác nhận đến {email}. Nhấp vào link để kích hoạt tài khoản.",

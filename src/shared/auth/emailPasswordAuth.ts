@@ -11,11 +11,55 @@ export type EmailPasswordAuthResult =
         | "invalid_input"
         | "invalid_credentials"
         | "account_exists"
+        | "email_address_unusable"
+        | "confirmation_email_unavailable"
         | "rate_limited"
         | "server_error";
     };
 
 const EMAIL_RE = /^\S+@\S+\.\S+$/;
+
+type AuthProviderError = {
+  code?: unknown;
+  message?: unknown;
+};
+
+function classifySignupError(error: AuthProviderError): EmailPasswordAuthResult {
+  const code = typeof error.code === "string" ? error.code.toLowerCase() : "";
+  const message =
+    typeof error.message === "string" ? error.message.toLowerCase() : "";
+
+  if (
+    code === "user_already_exists" ||
+    code === "email_exists" ||
+    message.includes("already") ||
+    message.includes("registered")
+  ) {
+    return { ok: false, error: "account_exists" };
+  }
+
+  if (code === "email_address_invalid") {
+    return { ok: false, error: "email_address_unusable" };
+  }
+
+  if (
+    code === "over_email_send_rate_limit" ||
+    message.includes("email rate limit") ||
+    message.includes("too many requests")
+  ) {
+    return { ok: false, error: "rate_limited" };
+  }
+
+  if (
+    code === "email_address_not_authorized" ||
+    message.includes("sending confirmation email") ||
+    message.includes("confirmation email")
+  ) {
+    return { ok: false, error: "confirmation_email_unavailable" };
+  }
+
+  return { ok: false, error: "server_error" };
+}
 
 export async function authenticateWithEmailPassword(
   emailRaw: string,
@@ -59,14 +103,7 @@ export async function authenticateWithEmailPassword(
       },
     });
     if (error) {
-      const message = error.message?.toLowerCase() ?? "";
-      return {
-        ok: false,
-        error:
-          message.includes("already") || message.includes("registered")
-            ? "account_exists"
-            : "server_error",
-      };
+      return classifySignupError(error);
     }
     return {
       ok: true,

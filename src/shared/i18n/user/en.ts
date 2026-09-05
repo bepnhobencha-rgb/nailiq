@@ -514,6 +514,12 @@ export type UserMessages = {
     signUpFailed: string;
     /** Shown when signUp is called but the email is already registered. */
     accountExists: string;
+    /** Supabase rejects an address that cannot receive an auth confirmation. */
+    emailAddressUnusable: string;
+    /** The address is valid, but the auth provider could not dispatch confirmation. */
+    confirmationEmailUnavailable: string;
+    /** The auth provider or NailIQ limiter rejected repeated attempts. */
+    authRateLimited: string;
     /** Sign-up + email confirmation enabled: ask the user to check inbox. */
     signUpConfirmEmailTitle: string;
     /** {email} placeholder is substituted client-side. */
@@ -3268,6 +3274,12 @@ export const userEn: UserMessages = {
     signInFailed: "Email or password is incorrect. Please try again.",
     signUpFailed: "Could not create your account. Please try again.",
     accountExists: "This email is already registered. Try signing in instead.",
+    emailAddressUnusable:
+      "This email cannot receive a confirmation link. Use an inbox you can open.",
+    confirmationEmailUnavailable:
+      "We could not send the confirmation email. Try Google sign-in or use another email. If this continues, contact NailIQ support.",
+    authRateLimited:
+      "Too many attempts. Wait a few minutes, then try again.",
     signUpConfirmEmailTitle: "Confirm your email",
     signUpConfirmEmailBody:
       "We sent a confirmation link to {email}. Click it to activate your account.",

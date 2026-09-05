@@ -209,6 +209,12 @@ export function SocialAuthButtons({
           setError(t.signInFailed);
         } else if (result.error === "account_exists") {
           setError(t.accountExists);
+        } else if (result.error === "email_address_unusable") {
+          setError(t.emailAddressUnusable);
+        } else if (result.error === "confirmation_email_unavailable") {
+          setError(t.confirmationEmailUnavailable);
+        } else if (result.error === "rate_limited") {
+          setError(t.authRateLimited);
         } else {
           setError(t.signUpFailed);
         }
