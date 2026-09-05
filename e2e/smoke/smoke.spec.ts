@@ -149,10 +149,18 @@ test.describe("@smoke — the flows that must never break", () => {
     const failedBookingCalls: string[] = [];
     page.on("response", (res) => {
       const u = res.url();
+      // Remote QA intentionally turns SMS off. The post-commit confirmation
+      // endpoint therefore returns 503 after the booking row is durable; that
+      // is notification truth, not a failed booking. Permit only this exact
+      // kill-switch response while continuing to fail on every other 4xx/5xx.
+      const expectedSmsSuppression =
+        process.env.DISABLE_OUTBOUND_SMS === "1" &&
+        res.status() === 503 &&
+        new URL(u).pathname === "/api/booking/sms-confirm";
       const isBooking =
         u.includes("/rest/v1/rpc/create_public_booking") ||
         u.includes("/api/booking");
-      if (isBooking && res.status() >= 400) {
+      if (isBooking && res.status() >= 400 && !expectedSmsSuppression) {
         failedBookingCalls.push(`${res.status()} ${u}`);
       }
     });
