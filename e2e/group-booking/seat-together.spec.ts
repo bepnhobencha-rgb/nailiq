@@ -4,6 +4,7 @@ import { expect, test } from "@playwright/test";
 import { cleanupTestSalon } from "../helpers/db";
 import {
   fillMemberCard,
+  enterGroupConfirmAndAwaitQuote,
   gotoGroupFlow,
   nextOpenDateYmd,
   pickDateInCalendar,
@@ -69,7 +70,7 @@ async function bookGroupOfTwo(
   const bestCard = page.getByTestId("group-arrangement-best");
   await expect(bestCard).toBeVisible({ timeout: 20_000 });
   await bestCard.click();
-  await page.getByTestId("group-arrangement-next").click();
+  await enterGroupConfirmAndAwaitQuote(page);
 
   await page
     .getByTestId("group-step-confirm-panel")
@@ -157,7 +158,7 @@ test.describe("Group booking — seat together / couple", () => {
       const bestCard = page.getByTestId("group-arrangement-best");
       await expect(bestCard).toBeVisible({ timeout: 20_000 });
       await bestCard.click();
-      await page.getByTestId("group-arrangement-next").click();
+      await enterGroupConfirmAndAwaitQuote(page);
 
       await page
         .getByTestId("group-step-confirm-panel")

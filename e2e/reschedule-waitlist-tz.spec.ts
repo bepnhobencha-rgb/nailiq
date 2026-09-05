@@ -10,7 +10,11 @@
  * by the reschedule.
  */
 import { test, expect } from "@playwright/test";
-import { cleanupTestSalon, seedTestSalon } from "./helpers/db";
+import {
+  cleanupTestSalon,
+  mintBookingActionCapability,
+  seedTestSalon,
+} from "./helpers/db";
 import { createServiceRoleClient } from "../src/shared/lib/supabase/serviceRole";
 import { salonWallTimeToUtcIso } from "../src/shared/lib/salonTime";
 
@@ -74,15 +78,11 @@ test.describe("Reschedule — freed-slot waitlist (salon tz)", () => {
       .select("id").single();
     const bookingId = (booking as { id: string }).id;
 
-    const { data: token } = await supabase
-      .from("booking_reminder_tokens" as never)
-      .insert({
-        booking_id: bookingId,
-        salon_id: salonId,
-        expires_at: new Date(Date.now() + 48 * 60 * 60 * 1000).toISOString(),
-      })
-      .select("id").single();
-    tokenId = (token as unknown as { id: string }).id;
+    tokenId = await mintBookingActionCapability({
+      salonId,
+      bookingId,
+      action: "reschedule",
+    });
 
     // Waiting entry for the freed slot, keyed by the SALON-LOCAL date.
     const { data: wl } = await supabase

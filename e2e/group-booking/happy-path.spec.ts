@@ -3,6 +3,7 @@ import { expect, test } from "@playwright/test";
 import { cleanupTestSalon, getGroupBookingStamps } from "../helpers/db";
 import {
   fillMemberCard,
+  enterGroupConfirmAndAwaitQuote,
   gotoGroupFlow,
   nextOpenDateYmd,
   pickDateInCalendar,
@@ -67,7 +68,7 @@ test.describe("Group booking — happy path", () => {
     await expect(bestCard).toBeVisible({ timeout: 20_000 });
     await bestCard.click();
     await expect(bestCard).toHaveAttribute("aria-pressed", "true");
-    await page.getByTestId("group-arrangement-next").click();
+    await enterGroupConfirmAndAwaitQuote(page);
 
     // ── STEP 5 — confirm ─────────────────────────────────────
     await page

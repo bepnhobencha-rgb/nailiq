@@ -241,6 +241,28 @@ export async function fillMemberCard(
 }
 
 /**
+ * Enter the confirmation step and prove its authoritative quote completed.
+ * A disabled Confirm button is otherwise opaque in CI; surfacing the typed
+ * endpoint response keeps Remote QA failures actionable without logging any
+ * production data (these specs use synthetic salons and contacts only).
+ */
+export async function enterGroupConfirmAndAwaitQuote(page: Page): Promise<void> {
+  const quoteResponse = page.waitForResponse(
+    (response) =>
+      new URL(response.url()).pathname === "/api/booking/group-quote" &&
+      response.request().method() === "POST",
+  );
+  await page.getByTestId("group-arrangement-next").click();
+  const response = await quoteResponse;
+  const body = await response.text();
+  if (!response.ok()) {
+    throw new Error(
+      `group quote failed (${response.status()}): ${body.slice(0, 500)}`,
+    );
+  }
+}
+
+/**
  * Click a calendar cell for the target YMD in the group flow's
  * step-3 date picker (the visual calendar that replaced the native
  * `<input type="date">` in 2026-05-12). Each cell carries
