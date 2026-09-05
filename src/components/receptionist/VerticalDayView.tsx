@@ -695,7 +695,7 @@ function BookingCard({
                   "inline-flex items-center gap-1 rounded-full px-2 py-0.5 text-[10px] font-semibold",
                   latenessTier === "critical"
                     ? "bg-nq-error/25 text-red-200"
-                    : "bg-nq-warning/20 text-nq-warning",
+                    : "bg-nq-warning/20 text-amber-100",
                 )}
               >
                 <Clock size={11} aria-hidden />
