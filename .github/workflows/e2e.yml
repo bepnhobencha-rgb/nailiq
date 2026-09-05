@@ -738,6 +738,7 @@ jobs:
         env:
           COMMIT_MSG: ${{ github.event.head_commit.message }}
         run: |
+          COMMIT_MSG="${COMMIT_MSG:-$(git log -1 --pretty=%B)}"
           if echo "$COMMIT_MSG" | grep -qiF "[update-snapshots]"; then
             echo "flag=--update-snapshots" >> "$GITHUB_OUTPUT"
             echo "::notice::Commit message contains [update-snapshots] — refreshing visual baselines"
