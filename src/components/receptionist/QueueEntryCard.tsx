@@ -49,6 +49,11 @@ export type QueueEntryCardProps = {
   /** Position number rendered as `1`, `2`, etc. */
   position: number;
   customerName: string;
+  /** Opens the authorized contact/details drawer. */
+  onOpenDetails?: () => void;
+  openDetailsLabel?: string;
+  contactState?: "missing" | "reachable" | "stepped_out";
+  contactStateLabel?: string;
   serviceName: string;
   /** Total wait time in minutes; rendered with a color step at 10 / 20 min. */
   waitMinutes: number;
@@ -122,6 +127,10 @@ export type QueueEntryCardProps = {
 export function QueueEntryCard({
   position,
   customerName,
+  onOpenDetails,
+  openDetailsLabel,
+  contactState = "missing",
+  contactStateLabel,
   serviceName,
   waitMinutes,
   serviceDurationMinutes,
@@ -180,7 +189,18 @@ export function QueueEntryCard({
           {position}
         </span>
         <div className="min-w-0 flex-1">
-          <p className="truncate text-sm font-semibold text-nq-foreground">{customerName}</p>
+          {onOpenDetails ? (
+            <button
+              type="button"
+              onClick={onOpenDetails}
+              aria-label={openDetailsLabel}
+              className="block max-w-full truncate rounded-sm text-left text-sm font-semibold text-nq-foreground underline-offset-2 hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-nq-primary/45"
+            >
+              {customerName}
+            </button>
+          ) : (
+            <p className="truncate text-sm font-semibold text-nq-foreground">{customerName}</p>
+          )}
           <p className="truncate text-[11px] text-nq-muted">{serviceName}</p>
         </div>
         {actions ? <div className="shrink-0">{actions}</div> : null}
@@ -216,9 +236,31 @@ export function QueueEntryCard({
         </span>
         <div className="min-w-0 flex-1">
           <div className="flex flex-wrap items-center gap-1.5">
-            <span className="truncate text-sm font-semibold text-nq-foreground">
-              {customerName}
-            </span>
+            {onOpenDetails ? (
+              <button
+                type="button"
+                onClick={onOpenDetails}
+                aria-label={openDetailsLabel}
+                className="max-w-full truncate rounded-sm text-left text-sm font-semibold text-nq-foreground underline-offset-2 hover:underline focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-nq-primary/45"
+                data-testid="queue-customer-details"
+              >
+                {customerName}
+              </button>
+            ) : (
+              <span className="truncate text-sm font-semibold text-nq-foreground">
+                {customerName}
+              </span>
+            )}
+            {contactStateLabel ? (
+              <Badge
+                size="sm"
+                state="subtle"
+                variant={contactState === "missing" ? "neutral" : contactState === "stepped_out" ? "warning" : "success"}
+                data-testid="queue-contact-state"
+              >
+                {contactStateLabel}
+              </Badge>
+            ) : null}
             {priority && !isSimple ? (
               <Badge
                 size="sm"

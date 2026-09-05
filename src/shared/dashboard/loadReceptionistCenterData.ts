@@ -302,6 +302,10 @@ export interface ReceptionistCenterData {
     id: string;
     client_name: string;
     client_phone: string | null;
+    client_email: string | null;
+    /** True only when consent was captured through an existing customer-owned
+     * consent boundary. Staff-entered contact never sets this flag. */
+    sms_consent_at: string | null;
     service_id: string;
     service_name: string;
     service_duration_minutes: number;
@@ -1068,6 +1072,8 @@ export async function loadReceptionistCenterData(
       id,
       client_name,
       client_phone,
+      client_email,
+      sms_consent_at,
       service_id,
       staff_id,
       staff_request_note,
@@ -1179,6 +1185,8 @@ export async function loadReceptionistCenterData(
     id: string;
     client_name: string;
     client_phone: string | null;
+    client_email: string | null;
+    sms_consent_at: string | null;
     service_id: string;
     staff_id: string | null;
     staff_request_note: string | null;
@@ -1311,6 +1319,8 @@ export async function loadReceptionistCenterData(
         id: row.id,
         client_name: row.client_name,
         client_phone: row.client_phone ?? null,
+        client_email: row.client_email ?? null,
+        sms_consent_at: row.sms_consent_at ?? null,
         service_id: row.service_id,
         service_name: svc?.name ?? "—",
         service_duration_minutes: spanMin,

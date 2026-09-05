@@ -23,6 +23,7 @@ export type BookingEventType =
   | "booking_status_changed"
   | "booking_price_set"
   | "walkin_added"
+  | "walkin_contact_updated"
   | "addon_added"
   /* Operational metrics (PR #104) — feed future analytics on
    * walk-away rate, average wait acceptance, queue conversion. */

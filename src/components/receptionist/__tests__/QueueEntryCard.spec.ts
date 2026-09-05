@@ -46,4 +46,37 @@ describe("QueueEntryCard", () => {
       }
     }
   });
+
+  it("renders an accessible details button and contact-readiness badge", () => {
+    const html = renderToStaticMarkup(
+      createElement(QueueEntryCard, {
+        position: 2,
+        customerName: "Walk-in guest",
+        serviceName: "Classic manicure",
+        waitMinutes: 3,
+        timezone: "America/Vancouver",
+        onOpenDetails: () => undefined,
+        openDetailsLabel: "Open contact details for Walk-in guest",
+        contactState: "reachable",
+        contactStateLabel: "Reachable",
+        labels: {
+          waitHeroSuffix: "waiting",
+          priorityHigh: "High",
+          priorityMedium: "Medium",
+          priorityLow: "Low",
+          partySizeLabel: (n) => `Party of ${n}`,
+          sourceFallback: "Walk-in",
+          vipAria: "VIP",
+          readyAroundShort: "Ready ~{time}",
+          requestedByClientLine: "Customer requested this staff member",
+          softHoldCountdown: (minutes) => `${minutes} minutes left`,
+          softHoldLabel: "Held",
+        },
+      }),
+    );
+
+    expect(html).toContain("Open contact details for Walk-in guest");
+    expect(html).toContain("queue-contact-state");
+    expect(html).toContain("Reachable");
+  });
 });
