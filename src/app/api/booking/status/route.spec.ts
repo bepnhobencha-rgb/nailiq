@@ -128,6 +128,59 @@ describe("booking status capability route", () => {
     );
   });
 
+  it("returns an unscheduled waiting walk-in without treating the valid link as expired", async () => {
+    inspect.mockResolvedValue({
+      ok: true,
+      inspection: {
+        action: "status",
+        scopeKind: "booking_own",
+        epoch: 1,
+        expiresAt: "2099-08-20T19:00:00.000Z",
+        booking: {
+          status: "waiting",
+          startTimeUtc: null,
+          endTimeUtc: null,
+          serviceName: "Manicure",
+          staffName: null,
+          salonSlug: "qa-salon",
+          salonName: "QA Salon",
+          salonTimezone: "America/Los_Angeles",
+          scheduleModel: "single",
+          sequenceReceipt: null,
+        },
+        context: {
+          bookingId: "22222222-2222-4222-8222-222222222222",
+          salonId: "33333333-3333-4333-8333-333333333333",
+          serviceId: "44444444-4444-4444-8444-444444444444",
+          staffId: null,
+          durationMinutes: null,
+          timezone: "America/Los_Angeles",
+          currentStartTimeUtc: null,
+          currentEndTimeUtc: null,
+          groupId: null,
+          isGroupOrganizer: false,
+        },
+        group: null,
+      },
+    });
+
+    const response = await GET(new Request(
+      `https://nailiq.test/api/booking/status?token=${TOKEN}`,
+    ));
+    expect(response.status).toBe(200);
+    expect(await response.json()).toMatchObject({
+      ok: true,
+      code: "valid",
+      booking: {
+        status: "waiting",
+        startTimeUtc: null,
+        endTimeUtc: null,
+      },
+      turnIqEta: null,
+    });
+    expect(eta).not.toHaveBeenCalled();
+  });
+
   it("fails closed without leaking dependency details", async () => {
     inspect.mockResolvedValue({ ok: false, code: "management_unavailable" });
     const response = await GET(new Request(

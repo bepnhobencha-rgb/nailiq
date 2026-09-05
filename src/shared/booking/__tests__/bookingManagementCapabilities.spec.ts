@@ -13,6 +13,81 @@ import {
   parseBookingManagementMutation,
 } from "../bookingManagementCapabilities";
 
+function scheduledInspectionResponse() {
+  return {
+    ok: true,
+    code: "valid",
+    action: "confirm",
+    scope_kind: "booking_own",
+    epoch: 1,
+    expires_at: "2099-08-20T18:00:00.000Z",
+    booking: {
+      status: "pending",
+      attendance_status: null,
+      start_time_utc: "2099-08-20T17:00:00.000Z",
+      end_time_utc: "2099-08-20T18:00:00.000Z",
+      service_name: "Manicure",
+      staff_name: "QA Staff",
+      salon_slug: "qa-salon",
+      salon_name: "QA Salon",
+      salon_timezone: "America/Los_Angeles",
+      schedule_model: "single",
+      sequence_receipt: null,
+    },
+    context: {
+      booking_id: "33333333-3333-4333-8333-333333333333",
+      salon_id: "11111111-1111-4111-8111-111111111111",
+      service_id: "44444444-4444-4444-8444-444444444444",
+      staff_id: "55555555-5555-4555-8555-555555555555",
+      duration_minutes: 60,
+      timezone: "America/Los_Angeles",
+      current_start_time_utc: "2099-08-20T17:00:00.000Z",
+      current_end_time_utc: "2099-08-20T18:00:00.000Z",
+      group_id: null,
+      is_group_organizer: false,
+    },
+    cancel_preview: {
+      start_past: false,
+      within_window: false,
+      will_charge: false,
+      policy_locked_by_reschedule: false,
+      fee_cents: 0,
+      card_last4: null,
+      card_brand: null,
+      currency: "CAD",
+    },
+    card_manage: {
+      has_card: false,
+      card_fingerprint: "a".repeat(64),
+      card_last4: null,
+      card_brand: null,
+      charge_status: null,
+    },
+  };
+}
+
+function unscheduledWaitingInspectionResponse() {
+  const response = scheduledInspectionResponse();
+  return {
+    ...response,
+    action: "status",
+    booking: {
+      ...response.booking,
+      status: "waiting",
+      start_time_utc: null,
+      end_time_utc: null,
+      staff_name: null,
+    },
+    context: {
+      ...response.context,
+      staff_id: null,
+      duration_minutes: null,
+      current_start_time_utc: null,
+      current_end_time_utc: null,
+    },
+  };
+}
+
 describe("booking management capability response parsing", () => {
   beforeEach(() => vi.clearAllMocks());
 
@@ -44,56 +119,7 @@ describe("booking management capability response parsing", () => {
     });
   });
   it("accepts the exact PII-free confirm inspection contract", () => {
-    const parsed = parseBookingManagementInspection({
-      ok: true,
-      code: "valid",
-      action: "confirm",
-      scope_kind: "booking_own",
-      epoch: 1,
-      expires_at: "2099-08-20T18:00:00.000Z",
-      booking: {
-        status: "pending",
-        attendance_status: null,
-        start_time_utc: "2099-08-20T17:00:00.000Z",
-        end_time_utc: "2099-08-20T18:00:00.000Z",
-        service_name: "Manicure",
-        staff_name: "QA Staff",
-        salon_slug: "qa-salon",
-        salon_name: "QA Salon",
-        salon_timezone: "America/Los_Angeles",
-        schedule_model: "single",
-        sequence_receipt: null,
-      },
-      context: {
-        booking_id: "33333333-3333-4333-8333-333333333333",
-        salon_id: "11111111-1111-4111-8111-111111111111",
-        service_id: "44444444-4444-4444-8444-444444444444",
-        staff_id: "55555555-5555-4555-8555-555555555555",
-        duration_minutes: 60,
-        timezone: "America/Los_Angeles",
-        current_start_time_utc: "2099-08-20T17:00:00.000Z",
-        current_end_time_utc: "2099-08-20T18:00:00.000Z",
-        group_id: null,
-        is_group_organizer: false,
-      },
-      cancel_preview: {
-        start_past: false,
-        within_window: false,
-        will_charge: false,
-        policy_locked_by_reschedule: false,
-        fee_cents: 0,
-        card_last4: null,
-        card_brand: null,
-        currency: "CAD",
-      },
-      card_manage: {
-        has_card: false,
-        card_fingerprint: "a".repeat(64),
-        card_last4: null,
-        card_brand: null,
-        charge_status: null,
-      },
-    }, "confirm");
+    const parsed = parseBookingManagementInspection(scheduledInspectionResponse(), "confirm");
     expect(parsed).toMatchObject({
       ok: true,
       inspection: {
@@ -102,6 +128,49 @@ describe("booking management capability response parsing", () => {
       },
     });
     expect(JSON.stringify(parsed)).not.toContain("client_");
+  });
+
+  it("accepts a PII-free unscheduled waiting walk-in for status only", () => {
+    const response = unscheduledWaitingInspectionResponse();
+
+    expect(parseBookingManagementInspection(response, "status")).toMatchObject({
+      ok: true,
+      inspection: {
+        action: "status",
+        booking: {
+          status: "waiting",
+          startTimeUtc: null,
+          endTimeUtc: null,
+          staffName: null,
+        },
+        context: {
+          staffId: null,
+          durationMinutes: null,
+          currentStartTimeUtc: null,
+          currentEndTimeUtc: null,
+        },
+      },
+    });
+  });
+
+  it("rejects unscheduled or partially scheduled data outside the exact waiting status contract", () => {
+    const waitingResponse = unscheduledWaitingInspectionResponse();
+    const unscheduledConfirm = { ...waitingResponse, action: "confirm" };
+    expect(parseBookingManagementInspection(unscheduledConfirm, "confirm")).toEqual({
+      ok: false,
+      code: "invalid_management_response",
+    });
+
+    const scheduled = scheduledInspectionResponse();
+    const partialWaiting = {
+      ...scheduled,
+      action: "status",
+      booking: { ...scheduled.booking, status: "waiting", start_time_utc: null },
+    };
+    expect(parseBookingManagementInspection(partialWaiting, "status")).toEqual({
+      ok: false,
+      code: "invalid_management_response",
+    });
   });
 
   it("rejects action confusion and incomplete authoritative snapshots", () => {
