@@ -4,7 +4,7 @@ import { validateGuestPhone } from "@/shared/booking/validateGuestPhone";
 import { isValidEmailFormat } from "@/shared/lib/emailFormat";
 import { isValidCustomerName } from "@/shared/lib/nameFormat";
 import { createPublicClient } from "@/shared/lib/supabase/publicClient";
-import { submitCapacityRescueRequest } from "@/shared/booking/submitCapacityRescueRequest";
+import { submitCapacityRescueRequestChecked } from "@/shared/booking/submitCapacityRescueRequest";
 
 export type SubmitPublicWaitlistParams = {
   shopSlug: string;
@@ -34,7 +34,11 @@ export function createPublicWaitlistRequestId(): string {
 
 export async function submitPublicWaitlistEntry(
   params: SubmitPublicWaitlistParams,
-): Promise<{ waitlistId: string }> {
+): Promise<
+  | { outcome: "created"; waitlistId: string }
+  | { outcome: "slot_available"; slotLabel: string }
+  | { outcome: "availability_unverified" }
+> {
   const {
     shopSlug,
     serviceId,
@@ -78,7 +82,7 @@ export async function submitPublicWaitlistEntry(
       ? null
       : staffId;
 
-  const receipt = await submitCapacityRescueRequest({
+  const result = await submitCapacityRescueRequestChecked({
     salonId: salon.id,
     requestId: params.requestId ?? createPublicWaitlistRequestId(),
     requestKind: "individual",
@@ -97,11 +101,12 @@ export async function submitPublicWaitlistEntry(
       source,
     },
   });
-  const wid = receipt.requestId;
+  if (result.outcome !== "created") return result;
+  const wid = result.receipt.requestId;
 
   // The database records the owner-notification intent atomically with the
   // Waitlist row. Provider delivery happens later through the leased worker;
   // the customer never waits for email and retries cannot duplicate it.
 
-  return { waitlistId: wid };
+  return { outcome: "created", waitlistId: wid };
 }

@@ -12,6 +12,7 @@ import type { ReceptionistCenterData } from "@/shared/dashboard/loadReceptionist
 import { waitlistAgeMinutes } from "@/shared/dashboard/waitlistAttention";
 import { classifyCapacityRescueAutonomy } from "@/shared/booking/capacityRescueAutonomy";
 import { Badge, type BadgeVariant } from "@/components/ui/Badge";
+import { Drawer } from "@/components/ui/Drawer";
 import type {
   WaitlistChannelDeliveryTruth,
   WaitlistDeliveryTruth,
@@ -45,6 +46,17 @@ function initialOf(name: string): string {
   return c ? c.toUpperCase() : "?";
 }
 
+function maskPhone(phone: string): string {
+  const digits = phone.replace(/\D/g, "");
+  return digits.length >= 4 ? `••• ••• ${digits.slice(-4)}` : "••••";
+}
+
+function maskEmail(email: string): string {
+  const [local, domain] = email.trim().split("@");
+  if (!local || !domain) return "—";
+  return `${local.slice(0, 1)}•••@${domain}`;
+}
+
 /**
  * Online waitlist panel for the Receptionist Center — sits next to the walk-in
  * queue so staff see online customers waiting for a full slot and can invite
@@ -71,6 +83,10 @@ export function OnlineWaitlistPanel({
   >({});
   const [pendingId, setPendingId] = useState<string | null>(null);
   const [toast, setToast] = useState<ToastState>(null);
+  const [selectedEntry, setSelectedEntry] = useState<WaitlistEntry | null>(null);
+  const [drawerVariant, setDrawerVariant] = useState<"bottom" | "right">(
+    "bottom",
+  );
   const toastTimer = useRef<number | null>(null);
   useEffect(() => {
     return () => {
@@ -78,10 +94,27 @@ export function OnlineWaitlistPanel({
     };
   }, []);
 
+  useEffect(() => {
+    const media = window.matchMedia("(min-width: 768px)");
+    const update = () => setDrawerVariant(media.matches ? "right" : "bottom");
+    update();
+    media.addEventListener("change", update);
+    return () => media.removeEventListener("change", update);
+  }, []);
+
   function flashToast(next: NonNullable<ToastState>) {
     setToast(next);
     if (toastTimer.current !== null) window.clearTimeout(toastTimer.current);
     toastTimer.current = window.setTimeout(() => setToast(null), 4000);
+  }
+
+  async function copyContact(value: string, successText: string) {
+    try {
+      await navigator.clipboard.writeText(value);
+      flashToast({ kind: "success", text: successText });
+    } catch {
+      flashToast({ kind: "error", text: t.copyFailed });
+    }
   }
 
   async function onInvite(entry: WaitlistEntry) {
@@ -269,9 +302,14 @@ export function OnlineWaitlistPanel({
                   </span>
                   <div className="min-w-0 flex-1">
                     <div className="flex items-center justify-between gap-2">
-                      <p className="truncate text-sm font-medium text-nq-foreground">
+                      <button
+                        type="button"
+                        onClick={() => setSelectedEntry(entry)}
+                        aria-label={t.openCustomerDetails(name)}
+                        className="min-h-11 min-w-0 truncate rounded-md text-left text-sm font-medium text-nq-foreground underline decoration-nq-border underline-offset-4 outline-none focus-visible:ring-2 focus-visible:ring-nq-primary"
+                      >
                         {name}
-                      </p>
+                      </button>
                       <span
                         className={cn(
                           "shrink-0 rounded-full border px-2 py-0.5 text-[11px] font-medium",
@@ -336,12 +374,9 @@ export function OnlineWaitlistPanel({
                         {t.waitingMinutes(waitingMinutes)}
                       </p>
                     ) : null}
-                    {/* Staff need the phone to follow up on a claimed or complex request. */}
-                    {(isClaimed || isReviewRequired) && entry.phone.trim() ? (
-                      <p className="mt-0.5 truncate font-mono text-xs text-nq-muted">
-                        {entry.phone}
-                      </p>
-                    ) : null}
+                    <p className="mt-0.5 truncate font-mono text-xs text-nq-muted">
+                      {entry.phone.trim() ? maskPhone(entry.phone) : maskEmail(entry.email)}
+                    </p>
                     {(isNotified || isClaimed) ? (
                       <div
                         className="mt-2 flex flex-wrap gap-2"
@@ -420,6 +455,161 @@ export function OnlineWaitlistPanel({
           {toast.text}
         </output>
       ) : null}
+
+      <Drawer
+        isOpen={selectedEntry !== null}
+        onClose={() => setSelectedEntry(null)}
+        variant={drawerVariant}
+        size="md"
+        title={selectedEntry ? displayCustomerName(selectedEntry.clientName, removedGuest) : t.detailsTitle}
+        description={t.detailsDescription}
+        closeButtonLabel={t.closeDetails}
+      >
+        {selectedEntry ? (
+          <div data-testid="waitlist-customer-details" className="space-y-5">
+            <dl className="grid grid-cols-1 gap-4 text-sm sm:grid-cols-2">
+              <div>
+                <dt className="text-xs font-medium text-nq-muted">{t.fullName}</dt>
+                <dd className="mt-1 text-nq-foreground">
+                  {displayCustomerName(selectedEntry.clientName, removedGuest)}
+                </dd>
+              </div>
+              <div>
+                <dt className="text-xs font-medium text-nq-muted">{t.statusLabel}</dt>
+                <dd className="mt-1 text-nq-foreground">
+                  {effectiveStatus(selectedEntry) === "claimed"
+                    ? t.claimed
+                    : effectiveStatus(selectedEntry) === "review_required"
+                      ? t.needsPlan
+                      : effectiveStatus(selectedEntry) === "notified"
+                        ? t.invited
+                        : t.statusWaiting}
+                </dd>
+              </div>
+              <div>
+                <dt className="text-xs font-medium text-nq-muted">{t.phoneLabel}</dt>
+                <dd className="mt-1 break-all font-mono text-nq-foreground">
+                  {selectedEntry.phone || "—"}
+                </dd>
+              </div>
+              <div>
+                <dt className="text-xs font-medium text-nq-muted">{t.emailLabel}</dt>
+                <dd className="mt-1 break-all text-nq-foreground">
+                  {selectedEntry.email || "—"}
+                </dd>
+              </div>
+              <div>
+                <dt className="text-xs font-medium text-nq-muted">{t.serviceLabel}</dt>
+                <dd className="mt-1 text-nq-foreground">{selectedEntry.serviceName}</dd>
+              </div>
+              <div>
+                <dt className="text-xs font-medium text-nq-muted">{t.dateLabel}</dt>
+                <dd className="mt-1 text-nq-foreground">{selectedEntry.bookingDate}</dd>
+              </div>
+              <div>
+                <dt className="text-xs font-medium text-nq-muted">{t.timeLabel}</dt>
+                <dd className="mt-1 text-nq-foreground">
+                  {selectedEntry.preferredSlotLabel || t.anyTime}
+                </dd>
+              </div>
+              <div>
+                <dt className="text-xs font-medium text-nq-muted">{t.staffLabel}</dt>
+                <dd className="mt-1 text-nq-foreground">
+                  {selectedEntry.preferredStaffName || t.anyStaff}
+                </dd>
+              </div>
+              <div>
+                <dt className="text-xs font-medium text-nq-muted">{t.joinedAtLabel}</dt>
+                <dd className="mt-1 text-nq-foreground">
+                  {selectedEntry.createdAt
+                    ? new Intl.DateTimeFormat(language === "vi" ? "vi-VN" : "en-CA", {
+                        dateStyle: "medium",
+                        timeStyle: "short",
+                      }).format(new Date(selectedEntry.createdAt))
+                    : "—"}
+                </dd>
+              </div>
+              <div>
+                <dt className="text-xs font-medium text-nq-muted">{t.waitingLabel}</dt>
+                <dd className="mt-1 text-nq-foreground">
+                  {(() => {
+                    const minutes = waitlistAgeMinutes(
+                      selectedEntry.createdAt,
+                      observedAtIso ?? new Date().toISOString(),
+                    );
+                    return minutes === null ? "—" : t.waitingMinutes(minutes);
+                  })()}
+                </dd>
+              </div>
+              <div>
+                <dt className="text-xs font-medium text-nq-muted">{t.requestKindLabel}</dt>
+                <dd className="mt-1 text-nq-foreground">
+                  {selectedEntry.requestKind === "group"
+                    ? t.groupRequest(selectedEntry.partySize, selectedEntry.serviceCount)
+                    : selectedEntry.requestKind === "sequence"
+                      ? t.sequenceRequest(selectedEntry.serviceCount)
+                      : t.individualRequest}
+                </dd>
+              </div>
+              <div>
+                <dt className="text-xs font-medium text-nq-muted">{t.sourceLabel}</dt>
+                <dd className="mt-1 text-nq-foreground">
+                  {t.source[selectedEntry.source]}
+                </dd>
+              </div>
+            </dl>
+
+            <div>
+              <p className="mb-2 text-xs font-medium text-nq-muted">{t.deliveryHeading}</p>
+              <div className="flex flex-wrap gap-2">
+                {deliveryBadge(t.smsChannel, effectiveDelivery(selectedEntry).sms)}
+                {deliveryBadge(t.emailChannel, effectiveDelivery(selectedEntry).email)}
+              </div>
+            </div>
+
+            <div className="grid grid-cols-1 gap-2 sm:grid-cols-2">
+              {selectedEntry.phone ? (
+                <a
+                  href={`tel:${selectedEntry.phone.replace(/[^+\d]/g, "")}`}
+                  className="inline-flex min-h-11 items-center justify-center rounded-lg bg-nq-primary px-3 text-sm font-semibold text-nq-bg"
+                >
+                  {t.callCustomer}
+                </a>
+              ) : null}
+              {selectedEntry.phone ? (
+                <button
+                  type="button"
+                  onClick={() => void copyContact(selectedEntry.phone, t.phoneCopied)}
+                  className="min-h-11 rounded-lg border border-nq-border px-3 text-sm font-semibold text-nq-foreground"
+                >
+                  {t.copyPhone}
+                </button>
+              ) : null}
+              {selectedEntry.email ? (
+                <button
+                  type="button"
+                  onClick={() => void copyContact(selectedEntry.email, t.emailCopied)}
+                  className="min-h-11 rounded-lg border border-nq-border px-3 text-sm font-semibold text-nq-foreground"
+                >
+                  {t.copyEmail}
+                </button>
+              ) : null}
+              {effectiveStatus(selectedEntry) === "claimed" && onCreateBooking ? (
+                <button
+                  type="button"
+                  onClick={() => {
+                    setSelectedEntry(null);
+                    onCreateBooking(selectedEntry);
+                  }}
+                  className="min-h-11 rounded-lg bg-nq-primary px-3 text-sm font-semibold text-nq-bg"
+                >
+                  {t.createBooking}
+                </button>
+              ) : null}
+            </div>
+          </div>
+        ) : null}
+      </Drawer>
     </section>
   );
 }

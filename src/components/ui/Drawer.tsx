@@ -43,6 +43,7 @@ export type DrawerProps = {
   description?: ReactNode;
   footer?: ReactNode;
   showCloseButton?: boolean;
+  closeButtonLabel?: string;
   className?: string;
   children?: ReactNode;
   "aria-label"?: string;
@@ -57,6 +58,7 @@ export function Drawer({
   description,
   footer,
   showCloseButton = true,
+  closeButtonLabel = "Close",
   className,
   children,
   "aria-label": ariaLabel,
@@ -215,7 +217,7 @@ export function Drawer({
                 <button
                   type="button"
                   onClick={onClose}
-                  aria-label="Close"
+                  aria-label={closeButtonLabel}
                   className={cn(
                     "inline-flex shrink-0 items-center justify-center rounded-full",
                     "min-h-11 min-w-11 text-nq-muted",

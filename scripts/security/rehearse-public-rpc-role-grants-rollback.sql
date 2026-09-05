@@ -24,6 +24,21 @@ GRANT EXECUTE ON FUNCTION public.create_public_booking(
   text,
   uuid
 ) TO anon, authenticated;
+GRANT EXECUTE ON FUNCTION public.create_public_capacity_rescue_request(
+  uuid,
+  uuid,
+  text,
+  uuid,
+  uuid,
+  date,
+  text,
+  integer,
+  text,
+  text,
+  text,
+  text,
+  jsonb
+) TO PUBLIC, anon, authenticated;
 GRANT EXECUTE ON FUNCTION public.create_public_waitlist_entry(
   uuid,
   uuid,
@@ -64,6 +79,7 @@ BEGIN
         ('public.add_booking_addons(uuid,uuid[])', false),
         ('public.check_group_slots_available(jsonb)', true),
         ('public.create_public_booking(uuid,uuid,uuid,text,text,timestamp with time zone,timestamp with time zone,text,integer,text,uuid,integer,text,uuid)', false),
+        ('public.create_public_capacity_rescue_request(uuid,uuid,text,uuid,uuid,date,text,integer,text,text,text,text,jsonb)', true),
         ('public.create_public_waitlist_entry(uuid,uuid,uuid,date,text,text,text,text,text)', true),
         ('public.get_booking_client_snapshot(uuid,text,uuid)', false),
         ('public.insert_group_bookings(jsonb)', false),

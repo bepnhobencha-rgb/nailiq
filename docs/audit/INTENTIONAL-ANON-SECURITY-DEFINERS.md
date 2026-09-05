@@ -2,8 +2,8 @@
 
 Audited against the 2026-09-01 service-resource capacity candidate.
 
-The release candidate contains twelve anonymous-executable `SECURITY DEFINER`
-signatures (eleven function names; `create_public_booking` has old/new rollout
+The release candidate contains ten anonymous-executable `SECURITY DEFINER`
+signatures (nine function names; `create_public_booking` has old/new rollout
 overloads). They are not unreviewed exceptions: they are
 the complete allowlist of public booking RPCs that must cross RLS without
 granting anonymous users direct access to customer, booking, OTP, or salon
@@ -25,8 +25,6 @@ Every entry is required to satisfy the executable proof in
 | `add_booking_addons` | Adds catalog-validated add-ons to a booking created in the preceding 15 minutes. | Maximum eight add-ons; same-salon active add-ons only. |
 | `check_group_slots_available` | Reads protected booking occupancy for the public group scheduler. | Returns availability and caller-supplied member indexes, never booking/customer fields. |
 | `create_public_booking` (legacy + fingerprinted overloads) | Public booking must insert through business-rule and rate-limit enforcement because direct anonymous booking inserts are revoked. The legacy signature remains only for the Phase-A asset overlap. | Both overloads derive money server-side and enforce salon/phone limits; the new overload also requires payload-bound idempotency and an accepted pricing fingerprint. |
-| `create_public_capacity_rescue_request` | Individual, multi-service, and group demand need one durable opt-in receipt when exact capacity is unavailable, while direct waitlist writes remain closed. | Validates salon/service/staff, allowlisted scheduling-only intent keys, payload-bound request IDs, party limits, and returns only receipt ID/status/newness. Complex requests stay `review_required`; this RPC never books, charges, or notifies. |
-| `create_public_waitlist_entry` | Public waitlist submission needs a controlled insert while direct table access remains RLS-blocked. | Allowlisted source plus same-salon service/staff validation. |
 | `finalize_public_booking_profile` | A newly committed booking must atomically persist OTP trust and explicit marketing consent without reopening direct profile writes. | Recent booking capability; durable profile link; exact OTP salon, phone, expiry, and single-use state. |
 | `get_booking_client_snapshot` | A just-created booking may request a small returning-client snapshot without exposing client profiles. | Booking ID, salon, canonical phone, and ten-minute freshness must all match. |
 | `public_booking_capacity_for_range` | Resource-aware public scheduling needs staff and physical-resource conflicts but must not read booking, segment, or customer records. | Returns only staff/resource IDs and occupied start/end timestamps for the requested salon and range; terminal states are excluded. |
@@ -38,6 +36,13 @@ Every entry is required to satisfy the executable proof in
 traffic now crosses the metered application boundary and the service-only
 `quote_group_booking` / `create_group_bookings` contract. The legacy writer is
 retained for scoped service-role compatibility only.
+
+`create_public_capacity_rescue_request` and
+`create_public_waitlist_entry` are also deliberately absent. Public web
+capacity-rescue submissions now cross a same-origin, rate-limited application
+route that revalidates current booking availability before its service-role
+write. The legacy waitlist RPC remains service-role-only for the connected
+Voice AI path. Anonymous direct table access remains closed.
 
 ## Decision
 

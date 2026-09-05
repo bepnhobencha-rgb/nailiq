@@ -326,6 +326,7 @@ export function BookingFlow({
             clientEmail={flow.clientEmail}
             waitlistSubmitting={flow.waitlistSubmitting}
             waitlistSlotJoined={flow.waitlistSlotJoined}
+            waitlistSlotAvailableLabel={flow.waitlistSlotAvailableLabel}
             waitlistPreferredTime={flow.waitlistPreferredTime}
             onWaitlistPreferredTimeChange={flow.setWaitlistPreferredTime}
             waitlistTimeOptions={flow.waitlistTimeOptions}

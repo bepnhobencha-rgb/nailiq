@@ -321,7 +321,8 @@ const PRODUCTION = {
   // +5 TurnIQ handoff assertion, fingerprint, plan, confirmation, and performer
   // lifecycle functions.
   // +3 TurnIQ staff PIN tenant assertion, configuration, and shift functions.
-  functions: 513,
+  // +1 server-only Waitlist source-provenance normalization function.
+  functions: 514,
   // +4 pending-receipt correlation triggers across notification/staff INSERT
   // and provider-SID transitions.
   // +1 V1 terminal-booking policy trigger.
@@ -343,7 +344,8 @@ const PRODUCTION = {
   // +1 controlled SHADOW activation-receipt append-only trigger.
   // +2 TurnIQ handoff performer/item immutable-ledger triggers.
   // +5 TurnIQ staff PIN tenant and immutable-receipt triggers.
-  triggers: 150,
+  // +1 Waitlist source-provenance normalization trigger.
+  triggers: 151,
   // Transition/capability PKs, unique keys and focused due/salon indexes.
   // The refund inbox and customer identity map each add PK, unique, and two
   // focused indexes.
@@ -872,6 +874,7 @@ const CRITICAL_FUNCTIONS = [
   "load_public_group_sequence_readiness",
   "resolve_public_group_sequence_quote",
   "quote_public_group_booking_sequences",
+  "normalize_capacity_rescue_waitlist_source",
 ] as const;
 
 const dbUrl = process.env.DB_URL;
