@@ -11,6 +11,7 @@ on:
       - "scripts/security/check-branch-tenant-isolation-boundary.sql"
       - "scripts/security/rehearse-branch-tenant-isolation.sql"
       - "scripts/security/check-no-duplicate-appointments-boundary.sql"
+      - "scripts/security/rehearse-individual-waitlist-capacity.sql"
       - "scripts/security/check-setup-catalog-mutation-rls.sql"
       - "scripts/security/assert-setup-catalog-denied.psql"
       - "scripts/security/rehearse-no-duplicate-appointments-concurrency.mjs"
@@ -143,6 +144,8 @@ jobs:
             -f scripts/security/rehearse-server-only-customer-rpc-rollback.sql
           psql "$DB_URL" -v ON_ERROR_STOP=1 -q \
             -f scripts/security/check-public-rpc-role-grants.sql
+          psql "$DB_URL" -v ON_ERROR_STOP=1 -q \
+            -f scripts/security/rehearse-individual-waitlist-capacity.sql
           psql "$DB_URL" -v ON_ERROR_STOP=1 -q \
             -f scripts/security/rehearse-public-rpc-role-grants-rollback.sql
           psql "$DB_URL" -v ON_ERROR_STOP=1 -q \
