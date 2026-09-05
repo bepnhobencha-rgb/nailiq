@@ -1523,11 +1523,43 @@ export type UserMessages = {
         openLink: string;
         closeAria: string;
       };
+      contact: {
+        openDetails: (name: string) => string;
+        missingBadge: string;
+        reachableBadge: string;
+        steppedOutBadge: string;
+        title: string;
+        stepOutTitle: string;
+        description: string;
+        stepOutDescription: string;
+        close: string;
+        phone: string;
+        email: string;
+        phonePlaceholder: string;
+        emailPlaceholder: string;
+        noContact: string;
+        stepOutContactRequired: string;
+        contactReady: string;
+        smsConsentYes: string;
+        smsConsentNo: string;
+        consentTruth: string;
+        invalidPhone: string;
+        invalidEmail: string;
+        save: string;
+        saveAndHold: string;
+        saving: string;
+        call: string;
+        copyPhone: string;
+        copyEmail: string;
+        copied: string;
+        saveFailed: string;
+      };
       /** Short CTA in the header bar to open the add-walk-in panel. */
       addWalkinCta: string;
       addForm: {
         namePlaceholder: string;
         phonePlaceholder: string;
+        phoneOptionalHint: string;
         notePlaceholder: string;
         addButton: string;
         incompleteHint: string;
@@ -4185,9 +4217,9 @@ export const userEn: UserMessages = {
       overloadBanner: ({ name, queueAhead }) =>
         `⚠️ ${name} — ${queueAhead} customer${queueAhead === 1 ? "" : "s"} waiting. Consider another staff.`,
       overloadBannerDismiss: "Dismiss",
-      softHoldButton: "Hold seat",
+      softHoldButton: "Customer steps out",
       softHoldClear: "Customer returned",
-      softHoldLabel: "Hold",
+      softHoldLabel: "Stepped out",
       softHoldCountdown: (n: number) => `${n} min left`,
       softHoldExpiredNotice: "{name}'s hold expired",
       waitLinkButton: "Send wait link",
@@ -4199,9 +4231,41 @@ export const userEn: UserMessages = {
         openLink: "Open link",
         closeAria: "Close",
       },
+      contact: {
+        openDetails: (name) => `Open contact details for ${name}`,
+        missingBadge: "At salon",
+        reachableBadge: "Reachable",
+        steppedOutBadge: "Stepped out",
+        title: "Walk-in details",
+        stepOutTitle: "Customer is stepping out",
+        description: "Contact stays private to this salon booking.",
+        stepOutDescription: "Add one contact method, then NailIQ will hold their place for 10 minutes.",
+        close: "Close walk-in details",
+        phone: "Phone (optional)",
+        email: "Email (optional)",
+        phonePlaceholder: PHONE_INPUT_PLACEHOLDER_NANP,
+        emailPlaceholder: "customer@example.com",
+        noContact: "No contact needed while the customer stays here",
+        stepOutContactRequired: "Add a phone number or email before the customer steps out.",
+        contactReady: "Contact ready",
+        smsConsentYes: "SMS consent already verified",
+        smsConsentNo: "SMS consent not verified",
+        consentTruth: "Staff-entered contact is saved but never treated as customer SMS consent and sends nothing automatically. Use the customer QR/link for live wait updates.",
+        invalidPhone: "Enter a valid phone number.",
+        invalidEmail: "Enter a valid email address.",
+        save: "Save contact",
+        saveAndHold: "Save & hold 10 min",
+        saving: "Saving…",
+        call: "Call",
+        copyPhone: "Copy phone",
+        copyEmail: "Copy email",
+        copied: "Copied",
+        saveFailed: "Could not save contact. Try again.",
+      },
       addForm: {
         namePlaceholder: "Guest name",
-        phonePlaceholder: PHONE_INPUT_PLACEHOLDER_NANP,
+        phonePlaceholder: `${PHONE_INPUT_PLACEHOLDER_NANP} (optional)`,
+        phoneOptionalHint: "Optional now · add contact if the customer steps out",
         notePlaceholder:
           "Note for staff — e.g. polish color, prefers window seat",
         addButton: "Add customer",

@@ -111,6 +111,7 @@ import {
   setBookingFinalPrice,
   undoCancelBooking,
   cancelWaitingWalkin,
+  updateWalkinContact,
   undoWalkinAssignment,
   deskClaimPartySlotAction,
 } from "@/shared/dashboard/receptionistActions";
@@ -1512,6 +1513,27 @@ function ReceptionistCenterInner({
     return { ok: true };
   };
 
+  const onUpdateWalkinContact = async (input: {
+    bookingId: string;
+    clientPhone: string | null;
+    clientEmail: string | null;
+  }) => {
+    const result = await updateWalkinContact(slug, {
+      salonId: data.salon.id,
+      ...input,
+    });
+    if (!result.ok) {
+      setShakeMessage(mutationMessage(messages.receptionist, result.error));
+      return {
+        ok: false as const,
+        error: mutationMessage(messages.receptionist, result.error),
+      };
+    }
+    await reloadCurrentDay();
+    router.refresh();
+    return { ok: true as const };
+  };
+
   // Auto-expire sweep — minute tick checks the queue for any held
   // rows whose hold has passed, then clears them server-side. Each
   // clear logs a `soft_hold_expired` event and surfaces a notice
@@ -2514,7 +2536,7 @@ function ReceptionistCenterInner({
 
   const onAddWalkin = async (input: {
     clientName: string;
-    clientPhone: string;
+    clientPhone: string | null;
     serviceId: string;
     staffRequestNote: string | null;
     staffRequestedByClient?: boolean;
@@ -2552,7 +2574,7 @@ function ReceptionistCenterInner({
 
   const onAddAndAssign = async (input: {
     clientName: string;
-    clientPhone: string;
+    clientPhone: string | null;
     serviceId: string;
     staffId: string;
     startAtIso: string;
@@ -5246,6 +5268,7 @@ function ReceptionistCenterInner({
                 overloadedStaff={overloadedStaff}
                 onSetSoftHold={onSetSoftHold}
                 onClearSoftHold={onClearSoftHold}
+                onUpdateContact={onUpdateWalkinContact}
                 rushMode={rush.active}
                 waitLinkEnabled
                 waitLinkSalonSlug={slug}
@@ -5318,10 +5341,10 @@ function ReceptionistCenterInner({
                   softHoldCountdown: rcMessages.queue.softHoldCountdown,
                   waitLinkButton: rcMessages.queue.waitLinkButton,
                   waitLinkModal: rcMessages.queue.waitLinkModal,
+                  contact: rcMessages.queue.contact,
                   addForm: {
                     ...rcMessages.queue.addForm,
                     invalidPhone: rcMessages.walkin.invalidPhone,
-                    phoneRequired: rcMessages.walkin.phoneRequired,
                     nameRequired: rcMessages.walkin.nameRequired,
                     nameTooLong: rcMessages.walkin.nameTooLong,
                     invalidNameChars: rcMessages.walkin.invalidNameChars,

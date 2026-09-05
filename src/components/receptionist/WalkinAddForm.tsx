@@ -77,6 +77,7 @@ export interface WalkinAddFormProps {
   labels: {
     namePlaceholder: string;
     phonePlaceholder: string;
+    phoneOptionalHint: string;
     notePlaceholder: string;
     addButton: string;
     incompleteHint: string;
@@ -84,7 +85,6 @@ export interface WalkinAddFormProps {
     submitting: string;
     errorRequired: string;
     invalidPhone: string;
-    phoneRequired: string;
     nameRequired: string;
     nameTooLong: string;
     invalidNameChars: string;
@@ -197,7 +197,7 @@ export interface WalkinAddFormProps {
   /** Async callback — parent calls server action */
   onSubmit: (input: {
     clientName: string;
-    clientPhone: string;
+    clientPhone: string | null;
     serviceId: string;
     staffRequestNote: string | null;
     /** Explicit "khách yêu cầu thợ này" checkbox. Walk-ins where the
@@ -247,7 +247,7 @@ export interface WalkinAddFormProps {
    */
   onAddAndAssign?: (input: {
     clientName: string;
-    clientPhone: string;
+    clientPhone: string | null;
     serviceId: string;
     staffId: string;
     /** Caller's "now" — keeps form and server in agreement on the
@@ -754,7 +754,7 @@ export function WalkinAddForm({
       // so any per-field validators below should always render their
       // messages regardless of whether the user blurred first.
       nameTouchedRef.current = true;
-      phoneTouchedRef.current = true;
+      phoneTouchedRef.current = clientPhone.trim().length > 0;
       const trimmedName = clientName.trim();
       if (trimmedName.length === 0) {
         setNameError(labels.nameRequired);
@@ -772,13 +772,10 @@ export function WalkinAddForm({
         return;
       }
       const trimmedPhone = clientPhone.trim();
-      if (trimmedPhone.length === 0) {
-        setPhoneError(labels.phoneRequired);
-        queueMicrotask(() => phoneRef.current?.focus());
-        return;
-      }
-      const phoneValidation = validateGuestPhone(trimmedPhone);
-      if (!phoneValidation.ok) {
+      const phoneValidation = trimmedPhone
+        ? validateGuestPhone(trimmedPhone)
+        : null;
+      if (phoneValidation && !phoneValidation.ok) {
         setPhoneError(labels.invalidPhone);
         queueMicrotask(() => phoneRef.current?.focus());
         return;
@@ -825,7 +822,7 @@ export function WalkinAddForm({
       const normalizedNote = staffRequestNote.trim() || null;
       const requestFingerprint = JSON.stringify({
         clientName: trimmedName,
-        clientPhone: phoneValidation.digits,
+        clientPhone: phoneValidation?.ok ? phoneValidation.digits : null,
         serviceId: selectedServiceId,
         staffRequestNote: normalizedNote,
         staffRequestedByClient,
@@ -858,7 +855,7 @@ export function WalkinAddForm({
         ) {
           result = await onAddAndAssign({
             clientName: trimmedName,
-            clientPhone: trimmedPhone,
+            clientPhone: trimmedPhone || null,
             serviceId: selectedServiceId,
             staffId: recommendedAvailability.staffId,
             startAtIso:
@@ -879,7 +876,7 @@ export function WalkinAddForm({
         } else {
           result = await onSubmit({
             clientName: trimmedName,
-            clientPhone: trimmedPhone,
+            clientPhone: trimmedPhone || null,
             serviceId: selectedServiceId,
             staffRequestNote: normalizedNote,
             staffRequestedByClient,
@@ -918,7 +915,6 @@ export function WalkinAddForm({
       labels.nameTooLong,
       labels.invalidNameChars,
       labels.invalidPhone,
-      labels.phoneRequired,
       labels.actualTimeInvalid,
       labels.autoPickNoStaffAvailable,
       labels.walkinSaved,
@@ -1158,6 +1154,9 @@ export function WalkinAddForm({
             formLocked && "opacity-60",
           )}
         />
+        <p className="text-xs text-nq-muted" data-testid="walkin-phone-optional-hint">
+          {labels.phoneOptionalHint}
+        </p>
         {phoneError ? (
           <p
             className="text-base text-nq-error"

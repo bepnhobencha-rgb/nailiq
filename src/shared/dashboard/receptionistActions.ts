@@ -17,6 +17,7 @@ import { createServiceRoleClient } from "@/shared/lib/supabase/serviceRole";
 import { buildPaymentRequestSms } from "@/shared/lib/smsTemplateRegistry";
 import { BOOKING_GUEST_NAME_MAX } from "@/shared/booking/bookingGuestContactLimits";
 import { validateGuestPhone } from "@/shared/booking/validateGuestPhone";
+import { normalizeWalkinContact } from "@/shared/dashboard/walkinContact";
 import {
   submitGroupBooking,
   type GroupBookingMember,
@@ -561,13 +562,9 @@ export async function addWalkinToQueue(
   const serviceId = String(input.serviceId ?? "").trim();
   if (!serviceId || !isUuidLike(serviceId)) return fail("invalid_service");
 
-  const phoneRaw = String(input.clientPhone ?? "").trim();
-  if (!phoneRaw) return fail("invalid_phone");
-
-  const phoneOk = validateGuestPhone(phoneRaw);
-  if (!phoneOk.ok) return fail("invalid_phone");
-
-  const clientPhoneClean: string | null = phoneOk.digits;
+  const contact = normalizeWalkinContact({ clientPhone: input.clientPhone });
+  if (!contact.ok) return fail(contact.error);
+  const clientPhoneClean = contact.phone;
 
   let note: string | null = null;
   if (
@@ -1067,6 +1064,74 @@ export async function assignWalkinToSlot(
   });
 
   return { ok: true };
+}
+
+/**
+ * Enrich a waiting walk-in after the fast name + service intake. Contact data
+ * remains booking-local: this action neither merges a global customer profile
+ * nor records SMS consent on the customer's behalf, and it never sends a
+ * notification or calls an external provider.
+ */
+export async function updateWalkinContact(
+  slug: string,
+  input: {
+    salonId: string;
+    bookingId: string;
+    clientPhone?: string | null;
+    clientEmail?: string | null;
+  },
+): Promise<
+  | { ok: true; phone: string | null; email: string | null }
+  | { ok: false; error: string }
+> {
+  const ctx = await getDashboardWriteClient(slug);
+  if (!ctx) return fail("unauthorized");
+  if (ctx.salon.id !== String(input.salonId).trim()) {
+    return fail("salon_mismatch");
+  }
+
+  const bookingId = String(input.bookingId ?? "").trim();
+  if (!isUuidLike(bookingId)) return fail("invalid_booking");
+
+  const contact = normalizeWalkinContact(input);
+  if (!contact.ok) return fail(contact.error);
+
+  const { data: updated, error } = await ctx.supabase
+    .from("bookings")
+    .update({
+      client_phone: contact.phone,
+      client_email: contact.email,
+    })
+    .eq("id", bookingId)
+    .eq("salon_id", ctx.salon.id)
+    .eq("source", "walkin")
+    .eq("status", "waiting")
+    .select("id")
+    .maybeSingle();
+
+  if (error) {
+    console.error("[updateWalkinContact] update", {
+      code: error.code,
+      bookingId,
+      salonId: ctx.salon.id,
+    });
+    return fail("server_error");
+  }
+  if (!updated?.id) return fail("invalid_state");
+
+  void logBookingEvent({
+    bookingId,
+    salonId: ctx.salon.id,
+    actorUserId: ctxActorUserId(ctx),
+    actorRole: ctxActorRole(ctx),
+    eventType: "walkin_contact_updated",
+    payload: {
+      hasPhone: contact.phone !== null,
+      hasEmail: contact.email !== null,
+    },
+  });
+
+  return { ok: true, phone: contact.phone, email: contact.email };
 }
 
 /** Remove walk-in from queue by marking cancelled (waiting only). */
@@ -2772,7 +2837,7 @@ export async function addWalkinAndAssign(
   input: {
     salonId: string;
     clientName: string;
-    clientPhone: string;
+    clientPhone?: string | null;
     serviceId: string;
     staffId: string;
     /** ISO start time. Falls back to `now()` when omitted. */

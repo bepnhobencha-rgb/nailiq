@@ -32,11 +32,17 @@ import type {
 import { QueueEntryCard } from "./QueueEntryCard";
 import { WalkinAddForm, type WalkinAddFormProps } from "./WalkinAddForm";
 import { CustomerWaitLinkModal } from "./CustomerWaitLinkModal";
+import {
+  WalkinContactDrawer,
+  type WalkinContactDrawerLabels,
+} from "./WalkinContactDrawer";
 
 export interface QueueItem {
   id: string;
   client_name: string;
   client_phone: string | null;
+  client_email: string | null;
+  sms_consent_at: string | null;
   /** Service FK for ghost width / assignment span (caller supplies from loader row). */
   service_id: string;
   service_name: string;
@@ -120,6 +126,12 @@ export interface WalkinQueueSidebarProps {
       openLink: string;
       closeAria: string;
     };
+    contact: WalkinContactDrawerLabels & {
+      openDetails: (name: string) => string;
+      missingBadge: string;
+      reachableBadge: string;
+      steppedOutBadge: string;
+    };
   };
   /** Callbacks */
   onAddWalkin: WalkinAddFormProps["onSubmit"];
@@ -150,6 +162,11 @@ export interface WalkinQueueSidebarProps {
   onClearSoftHold?: (
     bookingId: string,
   ) => Promise<{ ok: boolean; error?: string }>;
+  onUpdateContact?: (input: {
+    bookingId: string;
+    clientPhone: string | null;
+    clientEmail: string | null;
+  }) => Promise<{ ok: boolean; error?: string }>;
   /** True when the desk is in rush hour. Cards enlarge the wait
    * number and the form header gets a subtle peripheral fade upstream. */
   rushMode?: boolean;
@@ -258,6 +275,7 @@ export function WalkinQueueSidebar({
   overloadedStaff,
   onSetSoftHold,
   onClearSoftHold,
+  onUpdateContact,
   rushMode = false,
   waitLinkEnabled = false,
   waitLinkSalonSlug,
@@ -293,6 +311,10 @@ export function WalkinQueueSidebar({
   );
   const [waitLinkUrl, setWaitLinkUrl] = useState<string | null>(null);
   const [waitLinkLoadingForId, setWaitLinkLoadingForId] = useState<string | null>(null);
+  const [contactDrawer, setContactDrawer] = useState<{
+    bookingId: string;
+    mode: "details" | "step_out";
+  } | null>(null);
   // Per-session dismissals — receptionist can suppress a specific
   // staff's overload warning until the page is reloaded. We key by
   // name (only field surfaced today) so the dismissed set survives
@@ -559,6 +581,14 @@ export function WalkinQueueSidebar({
                     if (item.staff_request_note) {
                       tags.push(item.staff_request_note);
                     }
+                    const isHeld = !!item.soft_hold_until &&
+                      Date.parse(item.soft_hold_until) > Date.parse(nowIso);
+                    const hasContact = Boolean(item.client_phone || item.client_email);
+                    const contactState = isHeld
+                      ? "stepped_out" as const
+                      : hasContact
+                        ? "reachable" as const
+                        : "missing" as const;
 
                     return (
                       <SortableQueueItem
@@ -580,6 +610,20 @@ export function WalkinQueueSidebar({
                     <QueueEntryCard
                       position={idx + 1}
                       customerName={displayCustomerName(item.client_name, labels.removedGuest)}
+                      onOpenDetails={() =>
+                        setContactDrawer({ bookingId: item.id, mode: "details" })
+                      }
+                      openDetailsLabel={labels.contact.openDetails(
+                        displayCustomerName(item.client_name, labels.removedGuest),
+                      )}
+                      contactState={contactState}
+                      contactStateLabel={
+                        contactState === "stepped_out"
+                          ? labels.contact.steppedOutBadge
+                          : contactState === "reachable"
+                            ? labels.contact.reachableBadge
+                            : labels.contact.missingBadge
+                      }
                       serviceName={item.service_name}
                       waitMinutes={waited}
                       serviceDurationMinutes={item.service_duration_minutes}
@@ -655,8 +699,6 @@ export function WalkinQueueSidebar({
                             </button>
                           </div>
                           {onSetSoftHold || onClearSoftHold ? (() => {
-                            const isHeld = !!item.soft_hold_until &&
-                              Date.parse(item.soft_hold_until) > Date.parse(nowIso);
                             if (isHeld && onClearSoftHold) {
                               return (
                                 <button
@@ -678,9 +720,16 @@ export function WalkinQueueSidebar({
                                 <button
                                   type="button"
                                   disabled={blockOthers}
-                                  onClick={() =>
-                                    void onSetSoftHold(item.id, 10)
-                                  }
+                                  onClick={() => {
+                                    if (hasContact) {
+                                      void onSetSoftHold(item.id, 10);
+                                      return;
+                                    }
+                                    setContactDrawer({
+                                      bookingId: item.id,
+                                      mode: "step_out",
+                                    });
+                                  }}
                                   data-testid={`queue-soft-hold-${item.id}`}
                                   className={cn(
                                     "min-h-11 w-full touch-manipulation rounded-lg border border-nq-muted/35 bg-transparent px-3 text-xs font-medium text-nq-muted transition-colors hover:border-nq-muted hover:text-nq-foreground",
@@ -749,6 +798,36 @@ export function WalkinQueueSidebar({
           />
         );
       })() : null}
+
+      <WalkinContactDrawer
+        item={
+          contactDrawer
+            ? items.find((entry) => entry.id === contactDrawer.bookingId) ?? null
+            : null
+        }
+        mode={contactDrawer?.mode ?? "details"}
+        onClose={() => setContactDrawer(null)}
+        labels={labels.contact}
+        onSave={async ({
+          bookingId,
+          clientPhone,
+          clientEmail,
+          holdAfterSave,
+        }) => {
+          if (!onUpdateContact) return { ok: false, error: labels.contact.saveFailed };
+          const updated = await onUpdateContact({
+            bookingId,
+            clientPhone,
+            clientEmail,
+          });
+          if (!updated.ok) return updated;
+          if (holdAfterSave) {
+            if (!onSetSoftHold) return { ok: false, error: labels.contact.saveFailed };
+            return onSetSoftHold(bookingId, 10);
+          }
+          return { ok: true };
+        }}
+      />
     </aside>
   );
 }
