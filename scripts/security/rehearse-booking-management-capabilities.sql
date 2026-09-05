@@ -69,21 +69,24 @@ UPDATE public.bookings SET idempotency_key='d6000000-0000-4000-8000-000000000096
   public_booking_pricing_fingerprint=repeat('b',64),public_booking_pricing_snapshot='{}'::jsonb
 WHERE id='d6000000-0000-4000-8000-000000000016';
 
+-- These rows exercise sequence-independent management capabilities, not the
+-- individual public capacity-rescue path. Mark them explicitly as sequence so
+-- the individual false-waitlist guard remains fail-closed during rehearsal.
 INSERT INTO public.booking_waitlist_entries(id,salon_id,service_id,booking_date,client_name,
-  client_phone,client_email,status,source,created_at)
+  client_phone,client_email,status,source,created_at,request_kind)
 VALUES
 ('d6000000-0000-4000-8000-000000000030','d6000000-0000-4000-8000-000000000001',
  'd6000000-0000-4000-8000-000000000002',
  (date_trunc('day',transaction_timestamp() AT TIME ZONE 'America/Vancouver')+interval '3 days')::date,
- 'Reschedule waiter','+16045550130','waiter@example.test','waiting','slot_unavailable',transaction_timestamp()-interval '2 minutes'),
+ 'Reschedule waiter','+16045550130','waiter@example.test','waiting','slot_unavailable',transaction_timestamp()-interval '2 minutes','sequence'),
 ('d6000000-0000-4000-8000-000000000031','d6000000-0000-4000-8000-000000000001',
  'd6000000-0000-4000-8000-000000000002',
  ((transaction_timestamp()+interval '10 minutes') AT TIME ZONE 'America/Vancouver')::date,
- 'Late waiter','+16045550131','late@example.test','waiting','slot_unavailable',transaction_timestamp()-interval '1 minute'),
+ 'Late waiter','+16045550131','late@example.test','waiting','slot_unavailable',transaction_timestamp()-interval '1 minute','sequence'),
 ('d6000000-0000-4000-8000-000000000032','d6000000-0000-4000-8000-000000000001',
  'd6000000-0000-4000-8000-000000000002',
  ((transaction_timestamp()+interval '45 minutes') AT TIME ZONE 'America/Vancouver')::date,
- 'Near reschedule waiter','+16045550132','near@example.test','waiting','slot_unavailable',transaction_timestamp());
+ 'Near reschedule waiter','+16045550132','near@example.test','waiting','slot_unavailable',transaction_timestamp(),'sequence');
 
 DO $behavior$
 DECLARE v_confirm uuid; v_reschedule uuid; v_cancel uuid; v_past uuid; v_fee_cap uuid; v_short uuid;
