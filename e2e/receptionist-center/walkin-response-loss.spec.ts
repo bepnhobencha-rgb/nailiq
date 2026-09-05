@@ -120,24 +120,67 @@ test("an assignment race keeps the committed customer in the queue", async ({ pa
   );
 
   const now = Date.now();
-  const blockerStart = new Date(now - 5 * 60_000).toISOString();
+  const blockerStart = new Date(now).toISOString();
   const blockerEnd = new Date(now + 90 * 60_000).toISOString();
   const blockerName = `${testClientNameMarker()}Blocker`;
-  const { error: blockError } = await supabaseAdmin.from("bookings").insert(
-    fx.staffIds.map((staffId, index) => ({
-      salon_id: fx.salonId,
-      service_id: fx.serviceIds[0]!,
-      staff_id: staffId,
-      client_name: `${blockerName}${index}`,
-      client_phone: "6045551234",
-      start_time_utc: blockerStart,
-      end_time_utc: blockerEnd,
-      status: "confirmed",
-      source: "appointment",
-      price_cents: 4500,
-    })),
-  );
-  if (blockError) throw new Error(blockError.message);
+
+  // The shared fixture contains fixed-time baseline appointments. Depending on
+  // the CI wall clock, one can already cover "now" or begin inside this
+  // 90-minute race window. Treat a technician who is busy now as blocked, and
+  // end each synthetic blocker at their next appointment so the fixture itself
+  // never violates the database's authoritative no-overlap constraint.
+  const { data: activeBookings, error: activeBookingsError } =
+    await supabaseAdmin
+      .from("bookings")
+      .select("staff_id, start_time_utc, end_time_utc")
+      .eq("salon_id", fx.salonId)
+      .in("status", ["pending", "confirmed", "in_progress"])
+      .not("staff_id", "is", null)
+      .lt("start_time_utc", blockerEnd)
+      .gt("end_time_utc", blockerStart);
+  if (activeBookingsError) throw new Error(activeBookingsError.message);
+
+  const blockerRows = fx.staffIds.flatMap((staffId, index) => {
+    const staffBookings = (activeBookings ?? [])
+      .filter((booking) => booking.staff_id === staffId)
+      .sort(
+        (left, right) =>
+          Date.parse(left.start_time_utc) - Date.parse(right.start_time_utc),
+      );
+    const busyNow = staffBookings.some(
+      (booking) =>
+        Date.parse(booking.start_time_utc) <= now &&
+        Date.parse(booking.end_time_utc) > now,
+    );
+    if (busyNow) return [];
+
+    const nextStart = staffBookings.find(
+      (booking) => Date.parse(booking.start_time_utc) > now,
+    )?.start_time_utc;
+    const safeBlockerEnd = nextStart ?? blockerEnd;
+
+    return [
+      {
+        salon_id: fx.salonId,
+        service_id: fx.serviceIds[0]!,
+        staff_id: staffId,
+        client_name: `${blockerName}${index}`,
+        client_phone: "6045551234",
+        start_time_utc: blockerStart,
+        end_time_utc: safeBlockerEnd,
+        status: "confirmed",
+        source: "appointment",
+        price_cents: 4500,
+      },
+    ];
+  });
+
+  if (blockerRows.length > 0) {
+    const { error: blockError } = await supabaseAdmin
+      .from("bookings")
+      .insert(blockerRows);
+    if (blockError) throw new Error(blockError.message);
+  }
 
   await clickWalkinSubmit(page);
   await expect(page.getByTestId("walkin-submit-success")).toContainText(

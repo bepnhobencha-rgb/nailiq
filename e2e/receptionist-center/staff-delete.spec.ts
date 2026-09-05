@@ -78,7 +78,7 @@ async function gotoSetupStaff(
   );
   await page.locator('input[inputmode="email"]').fill(account.email);
   await page.locator('input[type="password"]').fill(account.password);
-  await page.getByRole("button", { name: /^sign in$/i }).click();
+  await page.getByTestId("password-signin-submit").click();
   await page.waitForURL(/\/dashboard\//, { timeout: 30_000 });
   await page.goto(`/dashboard/${encodeURIComponent(slug)}/setup/staff`);
   await page.getByRole("heading", { name: "Staff", exact: false }).first().waitFor({

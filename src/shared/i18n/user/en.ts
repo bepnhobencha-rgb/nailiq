@@ -471,6 +471,8 @@ export type UserMessages = {
     googleHelperText: string;
     /** Label above the email section in open layout. */
     emailSectionLabel: string;
+    /** Registration-specific label above the email section. */
+    emailSignupSectionLabel: string;
     /** Magic-link fallback link shown below the password form. */
     forgotPasswordLinkText: string;
     /** Toggle reveals magic-link form (legacy "compact" layout). */
@@ -502,6 +504,8 @@ export type UserMessages = {
     passwordRequirements: string;
     signInButton: string;
     signUpButton: string;
+    /** Secondary sign-in action on the registration page. */
+    existingAccountSignInButton: string;
     signingIn: string;
     signingUp: string;
     showPasswordToggle: string;
@@ -3233,6 +3237,7 @@ export const userEn: UserMessages = {
     continueWithGoogle: "Continue with Google",
     googleHelperText: "Fastest · No password needed",
     emailSectionLabel: "Sign in with email",
+    emailSignupSectionLabel: "Create an account with email",
     forgotPasswordLinkText: "Forgot password? Send a login link",
     otherOptions: "Other options",
     hideOptions: "Hide options",
@@ -3255,6 +3260,7 @@ export const userEn: UserMessages = {
     passwordRequirements: "8+ characters, 1 uppercase, 1 number recommended",
     signInButton: "Sign in",
     signUpButton: "Sign up",
+    existingAccountSignInButton: "Already have an account? Sign in",
     signingIn: "Signing in…",
     signingUp: "Creating account…",
     showPasswordToggle: "Sign in with email & password",

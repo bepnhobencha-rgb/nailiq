@@ -230,6 +230,20 @@ export function SocialAuthButtons({
 
   const magicLinkButtonLabel =
     mode === "login" ? t.sendLoginLink : t.sendSignupLink;
+  const primaryPasswordAction = mode === "register" ? "signup" : "signin";
+  const secondaryPasswordAction = mode === "register" ? "signin" : "signup";
+  const primaryPasswordLabel =
+    primaryPasswordAction === "signup" ? t.signUpButton : t.signInButton;
+  const secondaryPasswordLabel =
+    mode === "register" ? t.existingAccountSignInButton : t.signUpButton;
+
+  const passwordActionLabel = (
+    action: "signin" | "signup",
+    defaultLabel: string,
+  ) => {
+    if (!pending || pendingAction !== action) return defaultLabel;
+    return action === "signup" ? t.signingUp : t.signingIn;
+  };
 
   // ── Post-action confirmation screens ──────────────────────────────────
   if (emailSentTo) {
@@ -362,7 +376,11 @@ export function SocialAuthButtons({
         <div id={emailSectionId} className="flex flex-col gap-3">
           {/* In open+password mode: label above the email section */}
           {passwordSupported ? (
-            <p className="text-sm font-semibold text-nq-foreground">{t.emailSectionLabel}</p>
+            <p className="text-sm font-semibold text-nq-foreground">
+              {mode === "register"
+                ? t.emailSignupSectionLabel
+                : t.emailSectionLabel}
+            </p>
           ) : null}
 
           {/* Email input — shared by both magic-link and password flows */}
@@ -398,7 +416,9 @@ export function SocialAuthButtons({
               <Input
                 id="password-input"
                 type="password"
-                autoComplete={showPassword ? "current-password" : "new-password"}
+                autoComplete={
+                  mode === "register" ? "new-password" : "current-password"
+                }
                 placeholder={t.passwordPlaceholder}
                 className="text-base min-h-[48px]"
                 value={password}
@@ -445,25 +465,43 @@ export function SocialAuthButtons({
               <div className="flex flex-col gap-2 sm:flex-row">
                 <Button
                   type="button"
+                  data-testid={`password-${primaryPasswordAction}-submit`}
                   variant="primary"
                   size="md"
                   className="w-full min-h-[48px] text-base"
-                  loading={pending && pendingAction === "signin"}
-                  disabled={!isHydrated || pending}
-                  onClick={() => onPasswordSubmit("signin")}
+                  loading={pending && pendingAction === primaryPasswordAction}
+                  disabled={
+                    !isHydrated ||
+                    pending ||
+                    (primaryPasswordAction === "signup" &&
+                      !isPasswordAcceptable)
+                  }
+                  onClick={() => onPasswordSubmit(primaryPasswordAction)}
                 >
-                  {pending && pendingAction === "signin" ? t.signingIn : t.signInButton}
+                  {passwordActionLabel(
+                    primaryPasswordAction,
+                    primaryPasswordLabel,
+                  )}
                 </Button>
                 <Button
                   type="button"
+                  data-testid={`password-${secondaryPasswordAction}-submit`}
                   variant="secondary"
                   size="md"
                   className="w-full min-h-[48px] text-base"
-                  loading={pending && pendingAction === "signup"}
-                  disabled={!isHydrated || pending || !isPasswordAcceptable}
-                  onClick={() => onPasswordSubmit("signup")}
+                  loading={pending && pendingAction === secondaryPasswordAction}
+                  disabled={
+                    !isHydrated ||
+                    pending ||
+                    (secondaryPasswordAction === "signup" &&
+                      !isPasswordAcceptable)
+                  }
+                  onClick={() => onPasswordSubmit(secondaryPasswordAction)}
                 >
-                  {pending && pendingAction === "signup" ? t.signingUp : t.signUpButton}
+                  {passwordActionLabel(
+                    secondaryPasswordAction,
+                    secondaryPasswordLabel,
+                  )}
                 </Button>
               </div>
               {/* Magic-link as "forgot password" fallback */}

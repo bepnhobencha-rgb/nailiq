@@ -139,7 +139,7 @@ async function loginOwner(page: import("@playwright/test").Page): Promise<void> 
   await page.getByTestId("social-auth-controls").waitFor({ state: "attached" });
   await page.locator('input[inputmode="email"]').fill(owner.email);
   await page.locator('input[type="password"]').fill(owner.password);
-  await page.getByRole("button", { name: /^sign in$/i }).click();
+  await page.getByTestId("password-signin-submit").click();
   await page.waitForURL(/\/dashboard\//, { timeout: 30_000 });
   await page.goto(
     `/dashboard/${encodeURIComponent(fixture.slug)}/center?date=${fixture.dateYmd}`,

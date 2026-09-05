@@ -340,7 +340,7 @@ async function loginMember(
   );
   await page.locator('input[inputmode="email"]').fill(user.email);
   await page.locator('input[type="password"]').fill(user.password);
-  await page.getByRole("button", { name: /^sign in$/i }).click();
+  await page.getByTestId("password-signin-submit").click();
   const expectedDashboardPath = `/dashboard/${encodeURIComponent(targetFx.slug)}`;
   await page.waitForURL(
     (url) =>

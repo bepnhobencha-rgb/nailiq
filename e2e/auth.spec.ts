@@ -46,7 +46,7 @@ test.describe("Auth Flows — Registration", () => {
       await page.locator('input[type="password"]').fill(password);
 
       // Submit
-      await page.getByRole("button", { name: /^sign in$/i }).click();
+      await page.getByTestId("password-signin-submit").click();
 
       // Should redirect to setup or dashboard (new user lands on setup, returning user on dashboard)
       await expect(page).toHaveURL(/register\/(setup|success)|dashboard\//, {
@@ -523,7 +523,8 @@ test.describe("Auth Flows — Accessibility", () => {
       await page.keyboard.press("Tab");
       await page.locator('input[type="password"]').fill(password);
 
-      // Tab to submit button
+      // Tab to the primary Sign up button, then to the returning-owner sign-in action.
+      await page.keyboard.press("Tab");
       await page.keyboard.press("Tab");
 
       // Press Enter on focused submit button
@@ -719,7 +720,7 @@ test.describe("Auth Flows — Session & State", () => {
 
       await page.locator('input[inputMode="email"]').fill(email);
       await page.locator('input[type="password"]').fill(password);
-      await page.getByRole("button", { name: /^sign in$/i }).click();
+      await page.getByTestId("password-signin-submit").click();
 
       // Wait for redirect to complete
       await page.waitForTimeout(2_000);
