@@ -27,7 +27,6 @@ export function RegisterPageClient() {
     <RegisterStepShell
       title={t.signInOrSignUpTitle}
       subtext={t.signInOrSignUpSubtext}
-      helperHint={t.registerMicrotrust}
       showBrandPanel
       step={{ current: 1, total: 3 }}
     >

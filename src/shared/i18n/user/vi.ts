@@ -769,13 +769,21 @@ export const userVi: UserMessages = {
       "NailIQ chưa gửi được email xác nhận. Hãy thử đăng nhập bằng Google hoặc dùng email khác. Nếu vẫn lỗi, liên hệ NailIQ hỗ trợ.",
     authRateLimited:
       "Bạn đã thử quá nhiều lần. Hãy đợi vài phút rồi thử lại.",
-    signUpConfirmEmailTitle: "Xác nhận email",
+    signUpConfirmEmailTitle: "Kiểm tra email để hoàn tất",
+    signUpSyntheticEmailTitle: "Đã tạo tài khoản thử nghiệm QA",
     signUpConfirmEmailBody:
-      "Chúng tôi đã gửi link xác nhận đến {email}. Nhấp vào link để kích hoạt tài khoản.",
+      "Tài khoản đã được tạo và yêu cầu gửi link xác nhận đến {email} đã được tiếp nhận. Nhấp vào link để kích hoạt tài khoản.",
+    signUpSyntheticEmailBody:
+      "Đã tạo tài khoản thử nghiệm QA cho {email}. Đây là địa chỉ synthetic không có hộp thư thật nên sẽ không nhận email xác nhận.",
+    signUpDeliveryHelp:
+      "Email có thể mất 1–2 phút. Hãy kiểm tra cả thư Spam hoặc Thư rác.",
+    signUpResendButton: "Yêu cầu gửi lại link xác nhận",
+    signUpResendCountdown: "Có thể yêu cầu lại sau {seconds} giây",
+    signUpResendRequested: "Đã yêu cầu gửi lại email xác nhận.",
     magicLinkSentTitle: "Kiểm tra hộp thư",
     magicLinkSentBody:
       "Chúng tôi đã gửi link đăng nhập đến {email}. Nhấp vào link để tiếp tục — link có hiệu lực trong 60 phút.",
-    useDifferentEmail: "Dùng email khác",
+    useDifferentEmail: "Đổi email",
     backHome: "← Trang chủ",
     registerMicrotrust: "14 ngày dùng thử miễn phí · Không cần thẻ tín dụng",
     forgotPasswordPageTitle: "Đặt lại mật khẩu",

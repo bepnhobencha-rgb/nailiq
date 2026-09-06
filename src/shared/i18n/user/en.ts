@@ -522,8 +522,17 @@ export type UserMessages = {
     authRateLimited: string;
     /** Sign-up + email confirmation enabled: ask the user to check inbox. */
     signUpConfirmEmailTitle: string;
+    /** Preview-only title for a synthetic account with no deliverable inbox. */
+    signUpSyntheticEmailTitle: string;
     /** {email} placeholder is substituted client-side. */
     signUpConfirmEmailBody: string;
+    /** Preview-only truth for a synthetic address that has no real inbox. */
+    signUpSyntheticEmailBody: string;
+    /** Delivery timing and spam-folder guidance after a real request. */
+    signUpDeliveryHelp: string;
+    signUpResendButton: string;
+    signUpResendCountdown: string;
+    signUpResendRequested: string;
     /** Magic-link confirmation screen (shared title/body). */
     magicLinkSentTitle: string;
     magicLinkSentBody: string;
@@ -3280,13 +3289,21 @@ export const userEn: UserMessages = {
       "We could not send the confirmation email. Try Google sign-in or use another email. If this continues, contact NailIQ support.",
     authRateLimited:
       "Too many attempts. Wait a few minutes, then try again.",
-    signUpConfirmEmailTitle: "Confirm your email",
+    signUpConfirmEmailTitle: "Check your email to finish",
+    signUpSyntheticEmailTitle: "QA test account created",
     signUpConfirmEmailBody:
-      "We sent a confirmation link to {email}. Click it to activate your account.",
+      "Your account was created and the request to send a confirmation link to {email} was accepted. Click the link to activate your account.",
+    signUpSyntheticEmailBody:
+      "QA test account created for {email}. This synthetic address has no real inbox, so no confirmation email is expected.",
+    signUpDeliveryHelp:
+      "Delivery can take 1–2 minutes. Check Spam or Junk if it is not in your inbox.",
+    signUpResendButton: "Request another confirmation link",
+    signUpResendCountdown: "Request another link in {seconds}s",
+    signUpResendRequested: "Another confirmation email was requested.",
     magicLinkSentTitle: "Check your inbox",
     magicLinkSentBody:
       "We sent a sign-in link to {email}. Click it to continue — the link expires in 60 minutes.",
-    useDifferentEmail: "Use a different email",
+    useDifferentEmail: "Change email",
     backHome: "← Home",
     registerMicrotrust: "14-day free trial · No credit card required",
     forgotPasswordPageTitle: "Reset your password",
