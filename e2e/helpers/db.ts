@@ -1678,6 +1678,11 @@ export async function completeBookingEntryGate(
   const nameInput = page.getByTestId("booking-entry-name");
   await nameInput.waitFor({ state: "visible", timeout: 8_000 });
   await nameInput.fill(opts?.name ?? GATE_NAME);
+  // Commit the debounced identity before entering the service flow. When SMS
+  // is enabled, checking consent naturally blurs this field; SMS-OFF salons
+  // have no checkbox, so an explicit blur prevents the keyed flow from
+  // remounting after a service was already selected.
+  await nameInput.blur();
   const smsConsent = page.getByTestId("sms-consent");
   if (await smsConsent.isVisible()) {
     await smsConsent.check();
