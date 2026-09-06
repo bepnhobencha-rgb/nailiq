@@ -2,6 +2,7 @@ import { test, expect, type Page } from "@playwright/test";
 import { createClient } from "@supabase/supabase-js";
 
 import {
+  acceptSmsConsentIfPresented,
   cleanupTestSalon,
   gotoBookingServiceStep,
   seedTestSalon,
@@ -826,7 +827,7 @@ test.describe("Booking error scenarios — /[slug]", () => {
       phone: "6045551234",
       notes,
     });
-    await page.getByTestId("sms-consent").check();
+    await acceptSmsConsentIfPresented(page);
     await page.getByRole("button", { name: "Confirm booking" }).click();
     await expect(page.getByTestId("booking-success")).toBeVisible({
       timeout: 15_000,
@@ -850,7 +851,7 @@ test.describe("Booking error scenarios — /[slug]", () => {
       name: "Toronto Tester",
       phone: "6045551234",
     });
-    await page.getByTestId("sms-consent").check();
+    await acceptSmsConsentIfPresented(page);
     await page.getByRole("button", { name: "Confirm booking" }).click();
     await expect(page.getByTestId("booking-success")).toBeVisible({
       timeout: 15_000,

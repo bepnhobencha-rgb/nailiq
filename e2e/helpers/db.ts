@@ -1635,6 +1635,17 @@ export async function enterBookingPhone(
 }
 
 /**
+ * Accept transactional SMS consent when the salon exposes that channel.
+ * SMS-OFF salons intentionally render no checkbox and require no consent.
+ */
+export async function acceptSmsConsentIfPresented(page: Page): Promise<void> {
+  const smsConsent = page.getByTestId("sms-consent");
+  if (await smsConsent.isVisible()) {
+    await smsConsent.check();
+  }
+}
+
+/**
  * Clear the phone-first entry gate on an already-loaded public booking page.
  *
  * This is the single source of truth for "how a test gets through the gate",
@@ -1683,10 +1694,7 @@ export async function completeBookingEntryGate(
   // have no checkbox, so an explicit blur prevents the keyed flow from
   // remounting after a service was already selected.
   await nameInput.blur();
-  const smsConsent = page.getByTestId("sms-consent");
-  if (await smsConsent.isVisible()) {
-    await smsConsent.check();
-  }
+  await acceptSmsConsentIfPresented(page);
 }
 
 /**

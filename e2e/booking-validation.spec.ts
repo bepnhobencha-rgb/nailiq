@@ -1,6 +1,7 @@
 import { expect, test, type Page } from "@playwright/test";
 
 import {
+  acceptSmsConsentIfPresented,
   cleanupClientProfile,
   cleanupTestSalon,
   gotoBookingServiceStep,
@@ -95,7 +96,6 @@ test.describe("Booking validation — info step", () => {
     await expect(page.getByTestId("booking-phone-gate")).toBeVisible();
 
     const phoneInput = page.getByTestId("booking-entry-phone");
-    const smsConsent = page.getByTestId("sms-consent");
     const nameInput = page.getByTestId("booking-entry-name");
 
     // CountryPhoneField accepts the national number (no country code prefix).
@@ -115,13 +115,13 @@ test.describe("Booking validation — info step", () => {
 
       if (!gateUnlocked) {
         // First valid phone: satisfy the gate so the flow can mount. Wait on the
-        // NAME input, not the consent checkbox — the checkbox renders on load and
-        // resolves instantly, so the old `if (nameInput.isVisible())` ran before
-        // the ~400ms customer lookup revealed the name input, left the name empty,
-        // and the gate stayed closed. Name + consent persist across phone changes.
+        // NAME input, not the optional consent checkbox — the customer lookup
+        // controls whether the new-customer field appears, while SMS-OFF salons
+        // intentionally render no checkbox at all.
         await nameInput.waitFor({ state: "visible", timeout: 8_000 });
         await nameInput.fill("Test Guest");
-        await smsConsent.check();
+        await nameInput.blur();
+        await acceptSmsConsentIfPresented(page);
         gateUnlocked = true;
       }
 

@@ -2,6 +2,7 @@ import { createClient } from "@supabase/supabase-js";
 import { expect, test } from "@playwright/test";
 
 import {
+  acceptSmsConsentIfPresented,
   cleanupTestSalon,
   setReactInputValue,
 } from "../helpers/db";
@@ -63,9 +64,9 @@ test.describe("Phone-first entry gate", () => {
     await expect(recognized).toBeVisible({ timeout: 10_000 });
     await expect(recognized).not.toContainText(NAME);
 
-    // A recognized customer satisfies the name requirement from their profile,
-    // but SMS consent is still required before the flow mounts.
-    await page.getByTestId("sms-consent").check();
+    // A recognized customer satisfies the name requirement from their profile.
+    // Accept SMS consent only when this salon exposes outbound SMS.
+    await acceptSmsConsentIfPresented(page);
 
     // Switch to Individual → the flow should start on service selection
     // (phone step skipped because the gate already captured it).
