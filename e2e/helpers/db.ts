@@ -283,6 +283,10 @@ export async function seedTestSalon(opts?: {
   /** `salons.salon_phone` — public line for reschedule CTA; omit or null for none. */
   salon_phone?: string | null;
   phone_otp_enabled?: boolean;
+  /** Explicit opt-in for fixtures that exercise an already-live salon. */
+  sms_outbound_enabled?: boolean;
+  /** Explicit opt-in for fixtures that exercise an already-live salon. */
+  email_outbound_enabled?: boolean;
   /**
    * `salons.booking_verification_mode` — controls whether OTP / deposit friction is
    * applied. Defaults to 'never' (no friction). Set to 'always_otp' for OTP tests.
@@ -358,6 +362,12 @@ export async function seedTestSalon(opts?: {
             ? null
             : String(opts.salon_phone).trim() || null,
       phone_otp_enabled: opts?.phone_otp_enabled ?? false,
+      ...(opts?.sms_outbound_enabled === undefined
+        ? {}
+        : { sms_outbound_enabled: opts.sms_outbound_enabled }),
+      ...(opts?.email_outbound_enabled === undefined
+        ? {}
+        : { email_outbound_enabled: opts.email_outbound_enabled }),
       booking_verification_mode: opts?.booking_verification_mode ?? "never",
     })
     .select("id")
