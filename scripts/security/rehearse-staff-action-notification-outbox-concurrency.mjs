@@ -45,8 +45,14 @@ try {
   await sql(`
     insert into public.service_categories(slug,name_en,name_vi)
     values('staff-action-concurrency-qa','Staff action concurrency','Staff action concurrency');
-    insert into public.salons(id,slug,name,phone,timezone)
-    values('${salon}','e2e-staff-action-concurrency','E2E Staff action concurrency','+16045550620','UTC');
+    -- This fixture exercises active delivery materialization, so opt into both
+    -- channels explicitly instead of relying on safe defaults for new salons.
+    insert into public.salons(
+      id,slug,name,phone,timezone,sms_outbound_enabled,email_outbound_enabled
+    ) values(
+      '${salon}','e2e-staff-action-concurrency','E2E Staff action concurrency',
+      '+16045550620','UTC',true,true
+    );
     insert into public.services(id,salon_id,name,price_cents,duration_minutes,category)
     values('${service}','${salon}','Concurrency service',3000,30,'staff-action-concurrency-qa');
     insert into public.staff(id,salon_id,name,status) values
