@@ -113,6 +113,10 @@ test.describe("Visual regression", () => {
       slug: VISUAL_SLUG,
       name: "E2E Visual Salon",
       salon_phone: SALON_PHONE,
+      // The dashboard baseline represents an already-live salon. Keep its
+      // delivery settings explicit now that brand-new salons default to OFF.
+      sms_outbound_enabled: true,
+      email_outbound_enabled: true,
     });
   });
 

@@ -3,11 +3,16 @@ BEGIN;
 
 INSERT INTO public.service_categories(slug,name_en,name_vi)
 VALUES('staff-outbox-qa','Staff outbox QA','Staff outbox QA') ON CONFLICT DO NOTHING;
-INSERT INTO public.salons(id,slug,name,phone,salon_phone,timezone,opening_hours,currency_code)
+-- This fixture exercises active delivery materialization, so opt into both
+-- channels explicitly instead of relying on the safe defaults for new salons.
+INSERT INTO public.salons(
+  id,slug,name,phone,salon_phone,timezone,opening_hours,currency_code,
+  sms_outbound_enabled,email_outbound_enabled
+)
 VALUES('d6100000-0000-4000-8000-000000000001','e2e-staff-outbox','E2E Staff Outbox',
   '+16045550100','+16045550100','America/Vancouver',
   '{"sun":{"open":"00:00","close":"23:59","closed":false},"mon":{"open":"00:00","close":"23:59","closed":false},"tue":{"open":"00:00","close":"23:59","closed":false},"wed":{"open":"00:00","close":"23:59","closed":false},"thu":{"open":"00:00","close":"23:59","closed":false},"fri":{"open":"00:00","close":"23:59","closed":false},"sat":{"open":"00:00","close":"23:59","closed":false}}'::jsonb,
-  'CAD');
+  'CAD',true,true);
 INSERT INTO public.services(id,salon_id,name,price_cents,duration_minutes,category)
 VALUES('d6100000-0000-4000-8000-000000000002','d6100000-0000-4000-8000-000000000001',
   'Outbox service',3500,30,'staff-outbox-qa');

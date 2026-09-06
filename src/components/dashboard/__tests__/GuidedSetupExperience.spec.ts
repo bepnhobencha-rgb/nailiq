@@ -83,6 +83,8 @@ describe("Guided Setup rendered experience", () => {
     );
 
     expect(html).toContain("Tiến độ được tính lại từ dữ liệu salon đã lưu");
+    expect(html).toContain("Chưa Go-Live — salon vẫn ở chế độ thiết lập");
+    expect(html).toContain("Booking công khai, thông báo và thanh toán");
     expect(html).toContain("Giờ mở cửa và ngày nghỉ");
     expect(html).toContain('href="/dashboard/qa%20salon/setup/hours"');
     expect(html.match(/data-testid="guided-setup-next"/g)).toHaveLength(1);

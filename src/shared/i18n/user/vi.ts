@@ -66,11 +66,18 @@ export const userVi: UserMessages = {
       "Mẹo: đây là tên TIỆM (không phải tên bạn). Khách sẽ thấy trên trang đặt lịch.",
     salonNameInvalid: "Nhập tên tiệm (tối đa 120 ký tự).",
     slugLabel: "Đường dẫn đặt lịch",
-    slugHint: "Chỉ chữ và số. Sửa nếu muốn URL ngắn hơn.",
+    slugHint:
+      "Dùng chữ thường, số và dấu gạch ngang. Bạn có thể giữ link được đề xuất.",
     slugAriaLabel: "Đường dẫn slug",
     timezoneLabel: "Múi giờ",
     timezoneHint: "Dùng để hiển thị giờ đặt lịch chính xác cho bạn và khách.",
-    submitCreate: "Tạo trang đặt lịch",
+    workspaceSafetyEyebrow: "BẮT ĐẦU AN TOÀN",
+    workspaceSafetyTitle: "Giữ riêng tư đến khi Owner duyệt Go-Live",
+    workspaceSafetyBody:
+      "Tạo không gian này sẽ không mở booking, không nhắn khách và không thu tiền. Coco sẽ kiểm tra từng mục với bạn trước.",
+    advancedSettingsSummary: "Kiểm tra link booking và múi giờ",
+    bookingUrlPreview: "Link booking sau khi Go-Live",
+    submitCreate: "Tạo không gian salon",
     submitCreating: "Đang tạo…",
     submitErrorGeneric: "Không tạo được tiệm. Thử lại.",
     sendSmsFailed: "Không gửi được mã. Vui lòng thử lại.",
@@ -111,6 +118,12 @@ export const userVi: UserMessages = {
         "Đường dẫn bạn chọn đã có người dùng, nên chúng tôi giữ {slug} cho bạn.",
       callout:
         "Coco sẽ hỏi từng bước dễ hiểu, kiểm tra đủ 15 chức năng và chỉ đưa việc cần làm tiếp theo.",
+      launchStatusTitle: "Salon của bạn chưa Live",
+      launchStatusBody:
+        "Đây là không gian riêng tư. Coco sẽ chuẩn bị mọi thứ, sau đó Owner duyệt một màn hình Go-Live cuối cùng.",
+      launchSafetyBooking: "Trang booking công khai vẫn đóng",
+      launchSafetyMessages: "Không gửi SMS hoặc email cho khách",
+      launchSafetyPayments: "Chưa kết nối hoặc thu tiền qua provider",
       salonOwnerLabel: "Chủ tiệm",
       goToDashboard: "Bắt đầu Coco Setup →",
       dashboardHint: "Bạn có thể rời đi; Coco sẽ tự tiếp tục đúng bước khi quay lại.",

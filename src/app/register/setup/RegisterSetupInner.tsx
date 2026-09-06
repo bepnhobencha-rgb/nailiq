@@ -8,7 +8,9 @@ import {
   useState,
   useTransition,
 } from "react";
+import { ChevronDown, ShieldCheck } from "lucide-react";
 import { Button } from "@/components/ui/Button";
+import { Card } from "@/components/ui/Card";
 import { Input } from "@/components/ui/Input";
 import { RegisterStepShell } from "@/components/register/RegisterStepShell";
 import { getUserMessages } from "@/shared/i18n/user";
@@ -208,6 +210,32 @@ export default function RegisterSetupInner({
         method="post"
         className="flex flex-col gap-6"
       >
+        {!isDemoMode ? (
+          <Card
+            variant="bordered"
+            padding="md"
+            className="border-nq-success/35 bg-nq-success/[0.06]"
+            data-testid="registration-safe-start"
+          >
+            <div className="flex items-start gap-3">
+              <span className="inline-flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-nq-success/15 text-nq-success">
+                <ShieldCheck className="h-5 w-5" aria-hidden />
+              </span>
+              <div className="min-w-0">
+                <p className="text-xs font-semibold uppercase tracking-wide text-nq-success">
+                  {t.workspaceSafetyEyebrow}
+                </p>
+                <h2 className="mt-1 text-base font-semibold text-nq-foreground">
+                  {t.workspaceSafetyTitle}
+                </h2>
+                <p className="mt-1 text-sm leading-5 text-nq-muted">
+                  {t.workspaceSafetyBody}
+                </p>
+              </div>
+            </div>
+          </Card>
+        ) : null}
+
         <div>
           <label
             htmlFor="register-setup-salon-name"
@@ -250,84 +278,85 @@ export default function RegisterSetupInner({
           )}
         </div>
 
-        <div className="sr-only" aria-hidden="true">
-          <label
-            htmlFor="register-setup-slug"
-            className="mb-2 block text-base font-semibold text-nq-foreground"
-          >
-            {t.slugLabel}
-          </label>
-          <div className="flex items-center gap-2 rounded-xl border border-nq-border/50 bg-nq-bg/85 px-3 py-2 focus-within:border-nq-primary/80 focus-within:shadow-nq-input-focus">
-            <span className="shrink-0 select-none font-mono text-sm text-nq-muted">
-              /
-            </span>
-            <input
-              id="register-setup-slug"
-              name="salonSlug"
-              type="text"
-              inputMode="url"
-              spellCheck={false}
-              autoCorrect="off"
-              autoCapitalize="off"
-              aria-label={t.slugAriaLabel}
-              tabIndex={-1}
-              className="min-w-0 flex-1 bg-transparent font-mono text-sm text-nq-foreground outline-none placeholder:text-nq-muted/80 disabled:opacity-70"
-              value={slug}
-              readOnly={isDemoMode}
-              onChange={(e) => {
-                if (isDemoMode) return;
-                if (!slugTouched) setSlugTouched(true);
-                // Sanitize on the way in — only allow slug-friendly chars
-                // so the previewed URL never displays something the
-                // server would silently strip.
-                const next = e.target.value
-                  .toLowerCase()
-                  .replace(/\s+/g, "-")
-                  .replace(/[^a-z0-9-]/g, "")
-                  .replace(/-+/g, "-");
-                setSlug(next);
-                if (formError) setFormError(null);
-              }}
-            />
-          </div>
-          {!isDemoMode ? (
-            <p className="mt-2 text-pretty text-xs leading-relaxed text-nq-muted">
-              {t.slugHint}
-            </p>
-          ) : null}
-        </div>
+        {!isDemoMode ? (
+          <details className="group rounded-2xl border border-nq-border/50 bg-nq-surface/35 px-4 py-3">
+            <summary className="flex min-h-11 cursor-pointer list-none items-center justify-between gap-3 text-sm font-semibold text-nq-foreground marker:content-none">
+              <span>{t.advancedSettingsSummary}</span>
+              <ChevronDown
+                className="h-5 w-5 shrink-0 text-nq-muted transition-transform group-open:rotate-180"
+                aria-hidden
+              />
+            </summary>
+            <div className="mt-4 flex flex-col gap-5 border-t border-nq-border/35 pt-4">
+              <div>
+                <label
+                  htmlFor="register-setup-slug"
+                  className="mb-2 block text-sm font-semibold text-nq-foreground"
+                >
+                  {t.slugLabel}
+                </label>
+                <p className="mb-2 text-xs text-nq-muted">
+                  {t.bookingUrlPreview}
+                </p>
+                <div className="flex min-h-11 items-center gap-2 rounded-xl border border-nq-border/50 bg-nq-bg/85 px-3 py-2 focus-within:border-nq-primary/80 focus-within:shadow-nq-input-focus">
+                  <span className="shrink-0 select-none font-mono text-sm text-nq-muted">
+                    nailiq.ca/
+                  </span>
+                  <input
+                    id="register-setup-slug"
+                    name="salonSlug"
+                    type="text"
+                    inputMode="url"
+                    spellCheck={false}
+                    autoCorrect="off"
+                    autoCapitalize="off"
+                    aria-label={t.slugAriaLabel}
+                    className="min-w-0 flex-1 bg-transparent font-mono text-sm text-nq-foreground outline-none placeholder:text-nq-muted/80"
+                    value={slug}
+                    onChange={(e) => {
+                      if (!slugTouched) setSlugTouched(true);
+                      const next = e.target.value
+                        .toLowerCase()
+                        .replace(/\s+/g, "-")
+                        .replace(/[^a-z0-9-]/g, "")
+                        .replace(/-+/g, "-");
+                      setSlug(next);
+                      if (formError) setFormError(null);
+                    }}
+                  />
+                </div>
+                <p className="mt-2 text-pretty text-xs leading-relaxed text-nq-muted">
+                  {t.slugHint}
+                </p>
+              </div>
 
-        <div className="sr-only" aria-hidden="true">
-          <label
-            htmlFor="register-setup-timezone"
-            className="mb-2 block text-base font-semibold text-nq-foreground"
-          >
-            {t.timezoneLabel}
-          </label>
-          <select
-            id="register-setup-timezone"
-            name="salonTimezone"
-            value={timezone}
-            disabled={isDemoMode}
-            tabIndex={-1}
-            onChange={(e) => {
-              if (isDemoMode) return;
-              setTimezone(e.target.value);
-            }}
-            className="block w-full rounded-xl border border-nq-border/50 bg-nq-bg/85 px-3 py-2.5 text-base text-nq-foreground outline-none focus-visible:border-nq-primary/80 focus-visible:shadow-nq-input-focus disabled:opacity-70"
-          >
-            {TIMEZONE_OPTIONS.map((opt) => (
-              <option key={opt.value} value={opt.value}>
-                {opt.label}
-              </option>
-            ))}
-          </select>
-          {!isDemoMode ? (
-            <p className="mt-2 text-pretty text-xs leading-relaxed text-nq-muted">
-              {t.timezoneHint}
-            </p>
-          ) : null}
-        </div>
+              <div>
+                <label
+                  htmlFor="register-setup-timezone"
+                  className="mb-2 block text-sm font-semibold text-nq-foreground"
+                >
+                  {t.timezoneLabel}
+                </label>
+                <select
+                  id="register-setup-timezone"
+                  name="salonTimezone"
+                  value={timezone}
+                  onChange={(e) => setTimezone(e.target.value)}
+                  className="block min-h-11 w-full rounded-xl border border-nq-border/50 bg-nq-bg/85 px-3 py-2.5 text-base text-nq-foreground outline-none focus-visible:border-nq-primary/80 focus-visible:shadow-nq-input-focus"
+                >
+                  {TIMEZONE_OPTIONS.map((opt) => (
+                    <option key={opt.value} value={opt.value}>
+                      {opt.label}
+                    </option>
+                  ))}
+                </select>
+                <p className="mt-2 text-pretty text-xs leading-relaxed text-nq-muted">
+                  {t.timezoneHint}
+                </p>
+              </div>
+            </div>
+          </details>
+        ) : null}
 
         {formError ? (
           <p className="text-sm text-nq-error" role="status">

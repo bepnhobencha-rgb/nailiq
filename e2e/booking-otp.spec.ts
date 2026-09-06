@@ -53,6 +53,10 @@ test.describe("Booking Flow — Phone OTP", () => {
       // SMS doesn't arrive (A2P mitigation). Separate from salons.phone (owner).
       salon_phone: "16045550001",
       phone_otp_enabled: true,
+      // This suite explicitly exercises the OTP email fallback. New salon
+      // workspaces now default email links OFF until the owner reviews setup,
+      // so this already-live OTP fixture must opt in deliberately.
+      email_links_enabled: true,
       // always_otp ensures the verify-decision RPC routes every booking through
       // the OTP step regardless of risk score (needed for predictable E2E tests).
       booking_verification_mode: "always_otp",

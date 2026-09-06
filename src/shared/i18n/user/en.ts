@@ -90,6 +90,11 @@ export type UserMessages = {
     slugAriaLabel: string;
     timezoneLabel: string;
     timezoneHint: string;
+    workspaceSafetyEyebrow: string;
+    workspaceSafetyTitle: string;
+    workspaceSafetyBody: string;
+    advancedSettingsSummary: string;
+    bookingUrlPreview: string;
     submitCreate: string;
     submitCreating: string;
     /** Generic fallback when completeSalonRegistration server action
@@ -139,6 +144,11 @@ export type UserMessages = {
        *  reserved a different one. `{slug}` is substituted client-side. */
       slugAdjusted: string;
       callout: string;
+      launchStatusTitle: string;
+      launchStatusBody: string;
+      launchSafetyBooking: string;
+      launchSafetyMessages: string;
+      launchSafetyPayments: string;
       salonOwnerLabel: string;
       goToDashboard: string;
       dashboardHint: string;
@@ -2583,12 +2593,19 @@ export const userEn: UserMessages = {
       "Tip: this is the salon's business name (not your personal name). Guests will see this on the booking page.",
     salonNameInvalid: "Enter a salon name (max 120 characters).",
     slugLabel: "Booking URL",
-    slugHint: "Letters and numbers only. Edit if you want a shorter URL.",
+    slugHint:
+      "Use lowercase letters, numbers, and hyphens. You can keep the suggested URL.",
     slugAriaLabel: "Booking URL slug",
     timezoneLabel: "Time zone",
     timezoneHint:
       "We use this to show booking times correctly to you and your guests.",
-    submitCreate: "Create your booking page",
+    workspaceSafetyEyebrow: "SAFE START",
+    workspaceSafetyTitle: "Private until you approve Go-Live",
+    workspaceSafetyBody:
+      "Creating this workspace will not open bookings, message customers, or charge anyone. Coco checks each item with you first.",
+    advancedSettingsSummary: "Review booking URL and time zone",
+    bookingUrlPreview: "Your future booking URL",
+    submitCreate: "Create salon workspace",
     submitCreating: "Creating…",
     submitErrorGeneric: "Could not create your salon. Try again.",
     sendSmsFailed: "Could not send SMS. Try again.",
@@ -2629,6 +2646,12 @@ export const userEn: UserMessages = {
         "Your first-choice URL was taken, so we reserved {slug} for you.",
       callout:
         "Coco asks one clear question at a time, checks all 15 capabilities, and shows only the next action.",
+      launchStatusTitle: "Your salon is not live yet",
+      launchStatusBody:
+        "This is a private workspace. Coco will prepare everything, then the Owner reviews one final Go-Live screen.",
+      launchSafetyBooking: "Public booking stays closed",
+      launchSafetyMessages: "No customer SMS or email is sent",
+      launchSafetyPayments: "No payment provider is connected or charged",
       salonOwnerLabel: "Salon owner",
       goToDashboard: "Start Coco Setup →",
       dashboardHint: "You can leave anytime; Coco resumes at the right step when you return.",

@@ -14,7 +14,10 @@ import { slugifySalonName } from "@/shared/lib/slugifySalonName";
 import { getOrCreateDemoSalonOwnerUserId } from "@/shared/register/demoSalonOwner";
 import { shouldUseAnonymousDemoRegistration } from "@/shared/register/registrationRuntimeMode";
 import { phoneDigitsFromAuthUser } from "@/shared/register/authUserPhone";
-import { buildRegistrationDefaultServices } from "@/shared/register/registrationDefaults";
+import {
+  buildRegistrationDefaultServices,
+  REGISTRATION_SAFE_SALON_DEFAULTS,
+} from "@/shared/register/registrationDefaults";
 import { createTrialWindow } from "@/shared/lib/trial";
 import {
   isRegisterPhoneDigitsValid,
@@ -580,13 +583,11 @@ export async function completeSalonRegistration(
       name,
       phone: phoneForSalon,
       timezone: wizardTimezone,
+      ...REGISTRATION_SAFE_SALON_DEFAULTS,
+      // This timestamp completes the three-screen account-registration shell;
+      // it is not Go-Live approval. `profile_complete` and the readiness
+      // attestations remain the customer-booking activation boundary.
       setup_wizard_completed_at: new Date().toISOString(),
-      // Fail safe: Coco asks the Owner to verify contact details, consent,
-      // channel/provider readiness and message policy before reminders run.
-      reminders_enabled: false,
-      reminder_24h_enabled: false,
-      reminder_3h_enabled: false,
-      sms_reminders_enabled: false,
       subscription_plan: "free",
       subscription_status: "trialing",
       trial_started_at: trial.trialStartedAt,

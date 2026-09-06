@@ -283,6 +283,12 @@ export async function seedTestSalon(opts?: {
   /** `salons.salon_phone` — public line for reschedule CTA; omit or null for none. */
   salon_phone?: string | null;
   phone_otp_enabled?: boolean;
+  /** Explicit opt-in for fixtures that exercise an already-live salon. */
+  sms_outbound_enabled?: boolean;
+  /** Explicit opt-in for fixtures that exercise an already-live salon. */
+  email_outbound_enabled?: boolean;
+  /** Explicit opt-in for fixtures that exercise customer email links. */
+  email_links_enabled?: boolean;
   /**
    * `salons.booking_verification_mode` — controls whether OTP / deposit friction is
    * applied. Defaults to 'never' (no friction). Set to 'always_otp' for OTP tests.
@@ -358,6 +364,15 @@ export async function seedTestSalon(opts?: {
             ? null
             : String(opts.salon_phone).trim() || null,
       phone_otp_enabled: opts?.phone_otp_enabled ?? false,
+      ...(opts?.sms_outbound_enabled === undefined
+        ? {}
+        : { sms_outbound_enabled: opts.sms_outbound_enabled }),
+      ...(opts?.email_outbound_enabled === undefined
+        ? {}
+        : { email_outbound_enabled: opts.email_outbound_enabled }),
+      ...(opts?.email_links_enabled === undefined
+        ? {}
+        : { email_links_enabled: opts.email_links_enabled }),
       booking_verification_mode: opts?.booking_verification_mode ?? "never",
     })
     .select("id")
@@ -1390,7 +1405,7 @@ export async function getRegisteredSalonForUser(userId: string) {
     supabase
       .from("salons")
       .select(
-        "id, slug, name, timezone, setup_wizard_completed_at, subscription_plan, subscription_status, trial_started_at, trial_ends_at, stripe_customer_id, stripe_subscription_id, payment_provider",
+        "id, slug, name, timezone, profile_complete, setup_wizard_completed_at, subscription_plan, subscription_status, trial_started_at, trial_ends_at, stripe_customer_id, stripe_subscription_id, payment_provider, sms_outbound_enabled, email_outbound_enabled, email_links_enabled, reminders_enabled, reminder_24h_enabled, reminder_3h_enabled, sms_reminders_enabled, voice_ai_enabled, noshow_protection_enabled, winback_enabled",
       )
       .eq("id", salonId)
       .single(),
@@ -1419,6 +1434,7 @@ export async function getRegisteredSalonForUser(userId: string) {
       slug: string;
       name: string;
       timezone: string;
+      profile_complete: boolean;
       setup_wizard_completed_at: string | null;
       subscription_plan: string;
       subscription_status: string;
@@ -1427,6 +1443,16 @@ export async function getRegisteredSalonForUser(userId: string) {
       stripe_customer_id: string | null;
       stripe_subscription_id: string | null;
       payment_provider: string | null;
+      sms_outbound_enabled: boolean;
+      email_outbound_enabled: boolean;
+      email_links_enabled: boolean;
+      reminders_enabled: boolean;
+      reminder_24h_enabled: boolean;
+      reminder_3h_enabled: boolean;
+      sms_reminders_enabled: boolean;
+      voice_ai_enabled: boolean;
+      noshow_protection_enabled: boolean;
+      winback_enabled: boolean;
     },
     serviceCount: serviceCount ?? 0,
     staffCount: staffCount ?? 0,
