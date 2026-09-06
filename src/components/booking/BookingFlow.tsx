@@ -70,6 +70,8 @@ type BookingFlowProps = {
   /** OTP session verified at the phone gate (Option B gate-first OTP).
    *  When set, the flow skips its own OTP step — phone already verified. */
   initialOtpSessionId?: string | null;
+  /** Whether this salon currently accepts transactional SMS opt-in. */
+  smsConsentRequired?: boolean;
   /** A browser Voice intent is only a prefill. BookingFlow still owns every
    * verification/consent gate and the sole explicit create CTA. */
   webVoiceHandoff?: WebVoiceBookingHandoff | null;
@@ -95,6 +97,7 @@ export function BookingFlow({
   initialSmsConsent = false,
   initialMarketingConsent = false,
   initialOtpSessionId = null,
+  smsConsentRequired = true,
   webVoiceHandoff = null,
   onWebVoiceHandoffConsumed,
 }: BookingFlowProps) {
@@ -217,6 +220,7 @@ export function BookingFlow({
         bookingId={flow.bookingResult.bookingId}
         cardManagementToken={flow.bookingResult.cardManagementToken}
         cardManagementPending={flow.bookingResult.cardManagementPending}
+        confirmationDelivery={flow.bookingResult.confirmationDelivery}
         salonPhone={salon.salonPhone}
         salonTimezone={salon.timezone}
         pricing={flow.bookingResult.pricing}
@@ -285,6 +289,7 @@ export function BookingFlow({
             onSelectStaffId={(id) => flow.setStaffId(id)}
             onNext={flow.goStaffNext}
             techRoleLabel={techRoleLabel}
+            language={language}
           />
         ) : null}
         {flow.step === "date" ? (
@@ -304,6 +309,7 @@ export function BookingFlow({
             reducedMotion={Boolean(reducedMotion)}
             stepTransition={stepTransition}
             onSelectDate={(d) => flow.setSelectedDate(d)}
+            language={language}
             onBack={flow.backToStaff}
             onNext={flow.goDateNext}
           />
@@ -474,6 +480,7 @@ export function BookingFlow({
             savedCard={flow.savedCard}
             smsConsent={flow.smsConsent}
             setSmsConsent={flow.setSmsConsent}
+            smsConsentRequired={smsConsentRequired}
             onApplyVoucher={flow.handleApplyVoucher}
             onRemoveVoucher={flow.handleRemoveVoucher}
           />

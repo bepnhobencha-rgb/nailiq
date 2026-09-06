@@ -271,6 +271,8 @@ type BookingGroupFlowProps = {
   initialOtpSessionId?: string | null;
   /** Booking-surface language → carried into the shared Party Link URL. */
   language?: "en" | "vi";
+  /** Whether this salon currently accepts transactional SMS opt-in. */
+  smsConsentRequired?: boolean;
 };
 
 export function BookingGroupFlow({
@@ -289,6 +291,7 @@ export function BookingGroupFlow({
   initialMarketingConsent: _initialMarketingConsent = false,
   initialOtpSessionId = null,
   language = "vi",
+  smsConsentRequired = true,
 }: BookingGroupFlowProps) {
   const router = useRouter();
   const pathname = usePathname();
@@ -1821,6 +1824,7 @@ export function BookingGroupFlow({
       {step === 3 ? (
         <DateArrivalStep
           t={t}
+          language={language}
           groupCopy={groupCopy}
           date={date}
           syncMode={syncMode}
@@ -2141,6 +2145,7 @@ export function BookingGroupFlow({
           onBack={() => goToStep(4)}
           onSubmit={() => void onSubmit()}
           initialSmsConsent={initialSmsConsent}
+          smsConsentRequired={smsConsentRequired}
           onSmsConsentChange={setSmsConsentGiven}
           salonName={salon.name}
           cardRequirement={cardRequirement}
@@ -2777,6 +2782,7 @@ function MemberCard({
 
 function DateArrivalStep({
   t,
+  language,
   groupCopy,
   date,
   syncMode,
@@ -2801,6 +2807,7 @@ function DateArrivalStep({
   onNext,
 }: {
   t: BookingMessages;
+  language: "en" | "vi";
   groupCopy: NonNullable<BookingMessages["groupBooking"]>;
   date: string;
   /** Phase 1 sync mode — "sync_start" (arrive together) or
@@ -2886,6 +2893,7 @@ function DateArrivalStep({
           // bumps to 90d for a small wedding-party buffer.
           windowDays={90}
           onSelectDate={(d) => onDateChange(bookingDateYmdFromLocalDate(d))}
+          language={language}
         />
         {isSelectedDayClosed ? (
           <p
@@ -3732,8 +3740,13 @@ function AlternativesPanel({
     <AlternativeCard
       testid="group-alt-earlier"
       icon="🕙"
-      title={(groupCopy.groupEarlierToday ?? "Same day at {time} — {n} people together")
+      title={(earlier.arrangement.isWaveBooking
+        ? (groupCopy.groupEarlierTodayWaves ??
+          "Same day — {n} people in {waves} waves from {time}")
+        : (groupCopy.groupEarlierToday ??
+          "Same day at {time} — {n} people together"))
         .replace("{n}", String(earlier.arrangement.assignments.length))
+        .replace("{waves}", String(earlier.arrangement.waveCount))
         .replace("{time}", earlier.time)}
       subtitle={null}
       ctaLabel={groupCopy.groupChooseOption ?? "Choose this option →"}
@@ -3929,6 +3942,7 @@ function ConfirmStep({
   onBack,
   onSubmit,
   initialSmsConsent,
+  smsConsentRequired,
   onSmsConsentChange,
   salonName,
   cardRequirement,
@@ -3984,6 +3998,7 @@ function ConfirmStep({
   onSubmit: () => void;
   /** SMS consent already given at the phone gate → pre-satisfies confirm. */
   initialSmsConsent: boolean;
+  smsConsentRequired: boolean;
   /** Lifts the ticked state so the submit payload reports real consent. */
   onSmsConsentChange: (v: boolean) => void;
   /** Interpolated into the consent disclosure — Twilio requires the brand name. */
@@ -4459,7 +4474,7 @@ function ConfirmStep({
       {/* SMS consent is captured at the phone gate; only show it here as a
           fallback when it wasn't already given (mirrors the individual confirm
           panel) — never ask the customer to tick the same consent twice. */}
-      {!smsConsent ? (
+      {smsConsentRequired && !smsConsent ? (
         <label className="mb-3 flex cursor-pointer items-start gap-2.5 text-xs leading-relaxed text-[var(--booking-text-muted)]">
           <input
             type="checkbox"
@@ -4510,7 +4525,7 @@ function ConfirmStep({
             !pricingQuote ||
             Boolean(pricingError) ||
             !contactReady ||
-            !smsConsent ||
+            (smsConsentRequired && !smsConsent) ||
             (cardRequirement?.required === true && !noShowConsent)
           }
           data-testid="group-confirm"

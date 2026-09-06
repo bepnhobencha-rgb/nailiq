@@ -14,6 +14,9 @@ const migration = read(
 const atomicMigration = read(
   "supabase/migrations/20260905204123_enforce_atomic_individual_waitlist_capacity.sql",
 );
+const nonIndividualHotfix = read(
+  "supabase/migrations/20260906151600_fix_capacity_rescue_non_individual_record.sql",
+);
 const publicRpcGrantCheck = read(
   "scripts/security/check-public-rpc-role-grants.sql",
 );
@@ -80,6 +83,22 @@ describe("False Waitlist and private customer detail boundary", () => {
     );
     expect(route).toContain("request_id_conflict");
     expect(route).toContain("createdNew: false");
+  });
+
+  it("initializes the capacity trace before sequence or group requests use the v2 wrapper", () => {
+    expect(nonIndividualHotfix).toContain(
+      "NULL::integer AS eligible_staff_count",
+    );
+    expect(nonIndividualHotfix.indexOf("INTO v_capacity;")).toBeLessThan(
+      nonIndividualHotfix.indexOf("IF EXISTS ("),
+    );
+    expect(nonIndividualHotfix).toContain(
+      "CASE WHEN v_kind = 'individual' THEN v_capacity.eligible_staff_count ELSE NULL END",
+    );
+    expect(nonIndividualHotfix).toContain(
+      "FROM PUBLIC, anon, authenticated",
+    );
+    expect(nonIndividualHotfix).toContain("TO service_role");
   });
 
   it("removes direct anonymous execution and preserves source provenance", () => {

@@ -1595,6 +1595,8 @@ function ReceptionistCenterInner({
 
   const timezone = data.salon.timezone;
   const isViewingToday = data.selectedDate === salonToday(timezone, nowIso || undefined);
+  const walkinIntakeOpenForSelectedDay =
+    data.salon.openMinutes !== null && data.salon.closeMinutes !== null;
 
   // "Needs attention" strip (today only): bookings that are past their start but
   // still un-started (overdue → 1-tap no-show / arrived) + today's no-shows
@@ -3243,6 +3245,7 @@ function ReceptionistCenterInner({
     // Walk-in queue feature gate (page forces queue_panel off when the
     // walkin_queue feature is disabled) — suppresses walk-in/queue nudges.
     queueEnabled: modules.queue_panel,
+    walkinIntakeOpen: walkinIntakeOpenForSelectedDay,
   };
   const cockpitLabels: CockpitLabels = {
     longWaitGuest: rcMessages.basicMode.longWaitGuest,
@@ -4157,6 +4160,7 @@ function ReceptionistCenterInner({
                   language={language === "vi" ? "vi" : "en"}
                   canAddWalkin={
                     isViewingToday &&
+                    walkinIntakeOpenForSelectedDay &&
                     viewMode === "day" &&
                     modules.queue_panel &&
                     modules.quick_add &&
@@ -4186,6 +4190,7 @@ function ReceptionistCenterInner({
                */}
               {!receptionistShellV2Enabled &&
               isViewingToday &&
+              walkinIntakeOpenForSelectedDay &&
               viewMode === "day" &&
               modules.queue_panel &&
               modules.quick_add &&
@@ -4524,6 +4529,23 @@ function ReceptionistCenterInner({
           onReload={() => window.location.reload()}
         />
 
+        {viewMode === "day" && !walkinIntakeOpenForSelectedDay ? (
+          <div
+            role="status"
+            data-testid="salon-closed-day-banner"
+            className="mx-3 mt-3 rounded-lg border border-nq-border/60 bg-nq-surface px-4 py-3 text-base text-nq-foreground"
+          >
+            <p className="font-semibold">
+              {language === "vi" ? "Tiệm đóng cửa ngày này" : "Salon closed this day"}
+            </p>
+            <p className="mt-1 text-sm text-nq-muted">
+              {language === "vi"
+                ? "Lịch hiện có vẫn được giữ. NailIQ chặn khách vãng lai mới để tránh xếp nhầm ngoài giờ."
+                : "Existing appointments remain visible. NailIQ blocks new walk-ins to prevent an accidental after-hours assignment."}
+            </p>
+          </div>
+        ) : null}
+
         {previewInterface && isViewingToday && viewMode === "day" ? (
           <AppleCommandBar
             appointmentCount={gridBookings.length}
@@ -4536,7 +4558,9 @@ function ReceptionistCenterInner({
               data.walkinQueue[0]?.client_name?.trim() || null
             }
             canAct={
-              canCreateDeskBooking(viewerRole) && !isSetupIncomplete
+              canCreateDeskBooking(viewerRole) &&
+              !isSetupIncomplete &&
+              walkinIntakeOpenForSelectedDay
             }
             language={language === "vi" ? "vi" : "en"}
             onAction={() => {
@@ -4964,6 +4988,7 @@ function ReceptionistCenterInner({
                       language={language === "vi" ? "vi" : "en"}
                       canAdd={
                         modules.quick_add &&
+                        walkinIntakeOpenForSelectedDay &&
                         canCreateDeskBooking(viewerRole) &&
                         !isSetupIncomplete
                       }
@@ -5008,6 +5033,7 @@ function ReceptionistCenterInner({
                   }
                   onAddWalkin={
                     isViewingToday &&
+                    walkinIntakeOpenForSelectedDay &&
                     modules.queue_panel &&
                     modules.quick_add &&
                     canCreateDeskBooking(viewerRole) &&
@@ -5284,7 +5310,10 @@ function ReceptionistCenterInner({
                 offlineAddDisabledHint={
                   rcMessages.connection.offlineAddDisabled
                 }
-                showQuickAdd={modules.quick_add || walkinPrefill !== null}
+                showQuickAdd={
+                  (modules.quick_add || walkinPrefill !== null) &&
+                  walkinIntakeOpenForSelectedDay
+                }
                 focusAddNonce={addFocusNonce}
                 initialClientName={walkinPrefill?.clientName}
                 initialClientPhone={walkinPrefill?.clientPhone}

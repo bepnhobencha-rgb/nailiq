@@ -27,6 +27,14 @@ const receptionistPanel = readFileSync(
   resolve(root, "src/components/receptionist/OnlineWaitlistPanel.tsx"),
   "utf8",
 );
+const bookingVi = readFileSync(
+  resolve(root, "src/shared/i18n/booking/vi.ts"),
+  "utf8",
+);
+const bookingEn = readFileSync(
+  resolve(root, "src/shared/i18n/booking/en.ts"),
+  "utf8",
+);
 
 describe("Smart Capacity Rescue acceptance boundary", () => {
   it("keeps public creation tenant-scoped, idempotent, and explicit about grants", () => {
@@ -65,6 +73,14 @@ describe("Smart Capacity Rescue acceptance boundary", () => {
     expect(sequenceFlow).toContain(
       'result.code === "no_shared_parallel_resource"',
     );
+  });
+
+  it("describes wave groups truthfully before the customer chooses an arrangement", () => {
+    expect(groupFlow).toContain("earlier.arrangement.isWaveBooking");
+    expect(groupFlow).toContain("groupEarlierTodayWaves");
+    expect(bookingVi).toContain("nhóm lớn có thể được chia thành nhiều đợt");
+    expect(bookingEn).toContain("larger groups may be split into multiple waves");
+    expect(bookingVi).not.toContain("Chúng tôi sẽ chuẩn bị 2 giường cạnh nhau");
   });
 
   it("rejects unknown or sensitive intent keys at the database boundary", () => {

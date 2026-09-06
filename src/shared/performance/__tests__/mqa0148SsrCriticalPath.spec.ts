@@ -21,8 +21,15 @@ describe("MQA-0148 SSR critical-path regression", () => {
     expect(resolver).toContain("publicSnapshotFlights");
     expect(resolver).toContain("loadDefaultPublicSnapshot");
     const proxy = read("src/proxy.ts");
-    expect(proxy).toMatch(
-      /if \(publicBookingPageLoad\) \{[\s\S]*consumeProxyLimit\(request, "booking-page"\)[\s\S]*return NextResponse\.next\(\{ request \}\);/,
+    const publicBookingEarlyReturn = proxy.slice(
+      proxy.indexOf("if (publicBookingPageLoad) {"),
+      proxy.indexOf("let supabaseResponse"),
+    );
+    expect(publicBookingEarlyReturn).toContain(
+      'consumeProxyLimit(request, "booking-page")',
+    );
+    expect(publicBookingEarlyReturn).toContain(
+      "request: { headers: bookingDocumentRequestHeaders(request) }",
     );
     expect(resolver).toContain("snapshot.salon,");
     expect(resolver).toContain("snapshot,");

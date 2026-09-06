@@ -119,6 +119,9 @@ export type CockpitInputs = {
    *  must not suggest walk-ins or surface queue actions. Defaults to enabled
    *  when omitted (backward compatible). */
   queueEnabled?: boolean;
+  /** Whether a new walk-in may be accepted right now. Existing queue alerts
+   * remain visible when false; only the cheerful intake suggestion is hidden. */
+  walkinIntakeOpen?: boolean;
 };
 
 /** Localized copy — caller passes the i18n bundle so this stays pure. */
@@ -252,6 +255,7 @@ export function computeNextAction(
         }
       : null,
     i.queueEnabled !== false &&
+    i.walkinIntakeOpen !== false &&
     i.availableStaffName &&
     i.waitingCount === 0 &&
     (i.notStartedCount ?? 0) === 0

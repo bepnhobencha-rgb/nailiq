@@ -39,6 +39,7 @@ export function BookingFlowDatePanel({
   reducedMotion,
   stepTransition,
   onSelectDate,
+  language,
   onBack,
   onNext,
 }: {
@@ -56,6 +57,7 @@ export function BookingFlowDatePanel({
   reducedMotion: boolean;
   stepTransition: { duration: number; ease: [number, number, number, number] };
   onSelectDate: (d: Date) => void;
+  language: "en" | "vi";
   onBack: () => void;
   onNext: () => void;
 }) {
@@ -130,6 +132,7 @@ export function BookingFlowDatePanel({
           selectedDate={selectedDate}
           windowDays={BOOKING_WINDOW_DAYS}
           onSelectDate={onSelectDate}
+          language={language}
         />
       </div>
 
