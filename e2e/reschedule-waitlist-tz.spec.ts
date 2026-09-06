@@ -10,8 +10,13 @@
  * by the reschedule.
  */
 import { test, expect } from "@playwright/test";
-import { cleanupTestSalon, seedTestSalon } from "./helpers/db";
+import {
+  cleanupTestSalon,
+  mintBookingActionCapability,
+  seedTestSalon,
+} from "./helpers/db";
 import { createServiceRoleClient } from "../src/shared/lib/supabase/serviceRole";
+import { salonWallTimeToUtcIso } from "../src/shared/lib/salonTime";
 
 const SALON_TZ = "America/Los_Angeles";
 const salonLocalYmd = (utcIso: string) =>
@@ -73,15 +78,11 @@ test.describe("Reschedule — freed-slot waitlist (salon tz)", () => {
       .select("id").single();
     const bookingId = (booking as { id: string }).id;
 
-    const { data: token } = await supabase
-      .from("booking_reminder_tokens" as never)
-      .insert({
-        booking_id: bookingId,
-        salon_id: salonId,
-        expires_at: new Date(Date.now() + 48 * 60 * 60 * 1000).toISOString(),
-      })
-      .select("id").single();
-    tokenId = (token as unknown as { id: string }).id;
+    tokenId = await mintBookingActionCapability({
+      salonId,
+      bookingId,
+      action: "reschedule",
+    });
 
     // Waiting entry for the freed slot, keyed by the SALON-LOCAL date.
     const { data: wl } = await supabase
@@ -111,8 +112,22 @@ test.describe("Reschedule — freed-slot waitlist (salon tz)", () => {
     const newDate = new Date(Date.now() + 6 * 24 * 60 * 60 * 1000)
       .toISOString()
       .split("T")[0];
+    const newStartUtc = salonWallTimeToUtcIso(newDate, 14 * 60, SALON_TZ);
+    const newEndUtc = new Date(
+      Date.parse(newStartUtc) + 60 * 60 * 1000,
+    ).toISOString();
     const res = await page.request.post("/api/booking/reschedule-action", {
-      data: { token: tokenId, date: newDate, slotLabel: "2:00 PM" },
+      headers: {
+        origin: process.env.BASE_URL ?? "http://127.0.0.1:3000",
+      },
+      data: {
+        token: tokenId,
+        requestId: crypto.randomUUID(),
+        date: newDate,
+        slotLabel: "2:00 PM",
+        newStartUtc,
+        newEndUtc,
+      },
     });
     const json = (await res.json()) as { ok?: boolean; code?: string };
     expect(json.ok, `reschedule failed: ${JSON.stringify(json)}`).toBe(true);
