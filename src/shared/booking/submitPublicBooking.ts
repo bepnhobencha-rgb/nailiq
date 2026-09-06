@@ -41,6 +41,7 @@ import { settleCommittedBookingCardManagement } from "@/shared/booking/settleCom
 import { v1AllowsNoShowCardOnFile } from "@/shared/release/v1IntegrationScope";
 import {
   resolvePublicBookingSmsTruth,
+  shouldDispatchPublicBookingSmsConfirmation,
   type BookingConfirmationDeliveryTruth,
 } from "@/shared/booking/bookingConfirmationDeliveryTruth";
 
@@ -1236,36 +1237,36 @@ async function executePublicBooking(
   // unverified and never weaken the already-committed booking result.
   let smsDelivery: BookingConfirmationDeliveryTruth["sms"] =
     params.smsConsent === true ? "unverified" : "not_requested";
-  try {
-    const appUrl = typeof window !== "undefined" ? "" : ((process.env.NEXT_PUBLIC_APP_URL ?? "").trim() || "https://nailiq.ca");
-    const smsResponse = await fetch(`${appUrl}/api/booking/sms-confirm`, {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        bookingId,
-        salonId: String(salon.id),
-        clientPhone: phoneOk.digits,
-        clientName: nameTrimmed,
-        serviceName: service.name as string,
-        staffName: resolvedStaffName,
-        startTimeUtc: startLocal.toISOString(),
-        language: params.language ?? null,
-        // Only what the customer actually ticked. Never hardcode true: this same
-        // module is reachable from server-side callers with no checkbox.
-        smsConsent: params.smsConsent === true,
-      }),
-    });
-    const smsBody = await smsResponse.json().catch(() => null) as {
-      ok?: unknown;
-      outcome?: unknown;
-    } | null;
-    smsDelivery = resolvePublicBookingSmsTruth({
-      requested: params.smsConsent === true,
-      responseOk: smsResponse.ok,
-      body: smsBody,
-    });
-  } catch (e) {
-    console.error("[submitPublicBooking] sms-confirm dispatch failed", e);
+  if (shouldDispatchPublicBookingSmsConfirmation(params.smsConsent)) {
+    try {
+      const appUrl = typeof window !== "undefined" ? "" : ((process.env.NEXT_PUBLIC_APP_URL ?? "").trim() || "https://nailiq.ca");
+      const smsResponse = await fetch(`${appUrl}/api/booking/sms-confirm`, {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify({
+          bookingId,
+          salonId: String(salon.id),
+          clientPhone: phoneOk.digits,
+          clientName: nameTrimmed,
+          serviceName: service.name as string,
+          staffName: resolvedStaffName,
+          startTimeUtc: startLocal.toISOString(),
+          language: params.language ?? null,
+          smsConsent: true,
+        }),
+      });
+      const smsBody = await smsResponse.json().catch(() => null) as {
+        ok?: unknown;
+        outcome?: unknown;
+      } | null;
+      smsDelivery = resolvePublicBookingSmsTruth({
+        requested: true,
+        responseOk: smsResponse.ok,
+        body: smsBody,
+      });
+    } catch (e) {
+      console.error("[submitPublicBooking] sms-confirm dispatch failed", e);
+    }
   }
 
   // Wix write-back: create booking on Wix calendar (best-effort, fire-and-forget)

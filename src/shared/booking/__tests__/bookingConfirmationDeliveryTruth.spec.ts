@@ -1,7 +1,21 @@
 import { describe, expect, it } from "vitest";
-import { resolvePublicBookingSmsTruth } from "../bookingConfirmationDeliveryTruth";
+import {
+  resolvePublicBookingSmsTruth,
+  shouldDispatchPublicBookingSmsConfirmation,
+} from "../bookingConfirmationDeliveryTruth";
 
 describe("public booking confirmation delivery truth", () => {
+  it.each([false, null, undefined])(
+    "does not cross the SMS dispatch boundary without explicit consent (%s)",
+    (smsConsent) => {
+      expect(shouldDispatchPublicBookingSmsConfirmation(smsConsent)).toBe(false);
+    },
+  );
+
+  it("dispatches SMS only for explicit consent", () => {
+    expect(shouldDispatchPublicBookingSmsConfirmation(true)).toBe(true);
+  });
+
   it("claims provider acceptance only for an accepted successful response", () => {
     expect(resolvePublicBookingSmsTruth({
       requested: true,

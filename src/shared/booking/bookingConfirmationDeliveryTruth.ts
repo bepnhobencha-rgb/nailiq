@@ -9,6 +9,17 @@ type SmsConfirmationResponse = {
 };
 
 /**
+ * The confirmation route is an outbound-delivery boundary. Do not call it
+ * unless the customer explicitly requested SMS; `false`, `null`, and missing
+ * consent all mean the channel is not requested.
+ */
+export function shouldDispatchPublicBookingSmsConfirmation(
+  smsConsent: boolean | null | undefined,
+): boolean {
+  return smsConsent === true;
+}
+
+/**
  * Convert the SMS confirmation route response into the deliberately small
  * public truth contract used by the success screen. "accepted" means the
  * provider accepted the message for delivery; it never claims handset
