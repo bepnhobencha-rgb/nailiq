@@ -287,6 +287,8 @@ export async function seedTestSalon(opts?: {
   sms_outbound_enabled?: boolean;
   /** Explicit opt-in for fixtures that exercise an already-live salon. */
   email_outbound_enabled?: boolean;
+  /** Explicit opt-in for fixtures that exercise customer email links. */
+  email_links_enabled?: boolean;
   /**
    * `salons.booking_verification_mode` — controls whether OTP / deposit friction is
    * applied. Defaults to 'never' (no friction). Set to 'always_otp' for OTP tests.
@@ -368,6 +370,9 @@ export async function seedTestSalon(opts?: {
       ...(opts?.email_outbound_enabled === undefined
         ? {}
         : { email_outbound_enabled: opts.email_outbound_enabled }),
+      ...(opts?.email_links_enabled === undefined
+        ? {}
+        : { email_links_enabled: opts.email_links_enabled }),
       booking_verification_mode: opts?.booking_verification_mode ?? "never",
     })
     .select("id")
