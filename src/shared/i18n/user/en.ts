@@ -514,10 +514,25 @@ export type UserMessages = {
     signUpFailed: string;
     /** Shown when signUp is called but the email is already registered. */
     accountExists: string;
+    /** Supabase rejects an address that cannot receive an auth confirmation. */
+    emailAddressUnusable: string;
+    /** The address is valid, but the auth provider could not dispatch confirmation. */
+    confirmationEmailUnavailable: string;
+    /** The auth provider or NailIQ limiter rejected repeated attempts. */
+    authRateLimited: string;
     /** Sign-up + email confirmation enabled: ask the user to check inbox. */
     signUpConfirmEmailTitle: string;
+    /** Preview-only title for a synthetic account with no deliverable inbox. */
+    signUpSyntheticEmailTitle: string;
     /** {email} placeholder is substituted client-side. */
     signUpConfirmEmailBody: string;
+    /** Preview-only truth for a synthetic address that has no real inbox. */
+    signUpSyntheticEmailBody: string;
+    /** Delivery timing and spam-folder guidance after a real request. */
+    signUpDeliveryHelp: string;
+    signUpResendButton: string;
+    signUpResendCountdown: string;
+    signUpResendRequested: string;
     /** Magic-link confirmation screen (shared title/body). */
     magicLinkSentTitle: string;
     magicLinkSentBody: string;
@@ -3268,13 +3283,27 @@ export const userEn: UserMessages = {
     signInFailed: "Email or password is incorrect. Please try again.",
     signUpFailed: "Could not create your account. Please try again.",
     accountExists: "This email is already registered. Try signing in instead.",
-    signUpConfirmEmailTitle: "Confirm your email",
+    emailAddressUnusable:
+      "This email cannot receive a confirmation link. Use an inbox you can open.",
+    confirmationEmailUnavailable:
+      "We could not send the confirmation email. Try Google sign-in or use another email. If this continues, contact NailIQ support.",
+    authRateLimited:
+      "Too many attempts. Wait a few minutes, then try again.",
+    signUpConfirmEmailTitle: "Check your email to finish",
+    signUpSyntheticEmailTitle: "QA test account created",
     signUpConfirmEmailBody:
-      "We sent a confirmation link to {email}. Click it to activate your account.",
+      "Your account was created and the request to send a confirmation link to {email} was accepted. Click the link to activate your account.",
+    signUpSyntheticEmailBody:
+      "QA test account created for {email}. This synthetic address has no real inbox, so no confirmation email is expected.",
+    signUpDeliveryHelp:
+      "Delivery can take 1–2 minutes. Check Spam or Junk if it is not in your inbox.",
+    signUpResendButton: "Request another confirmation link",
+    signUpResendCountdown: "Request another link in {seconds}s",
+    signUpResendRequested: "Another confirmation email was requested.",
     magicLinkSentTitle: "Check your inbox",
     magicLinkSentBody:
       "We sent a sign-in link to {email}. Click it to continue — the link expires in 60 minutes.",
-    useDifferentEmail: "Use a different email",
+    useDifferentEmail: "Change email",
     backHome: "← Home",
     registerMicrotrust: "14-day free trial · No credit card required",
     forgotPasswordPageTitle: "Reset your password",

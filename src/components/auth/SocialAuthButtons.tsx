@@ -1,6 +1,7 @@
 "use client";
 
 import {
+  useEffect,
   useId,
   useMemo,
   useState,
@@ -12,7 +13,10 @@ import { Input } from "@/components/ui/Input";
 import { getUserMessages } from "@/shared/i18n/user";
 import { useUserLanguage } from "@/shared/lib/useUserLanguage";
 import { createClient } from "@/shared/lib/supabase/client";
-import { authenticateWithEmailPassword } from "@/shared/auth/emailPasswordAuth";
+import {
+  authenticateWithEmailPassword,
+  resendSignupConfirmationEmail,
+} from "@/shared/auth/emailPasswordAuth";
 import { sendEmailMagicLink } from "@/shared/register/actions";
 
 // Google OAuth is blocked by Error 403 disallowed_useragent when the auth flow
@@ -90,10 +94,14 @@ export function SocialAuthButtons({
   const [password, setPassword] = useState("");
   const [emailSentTo, setEmailSentTo] = useState<string | null>(null);
   const [signUpConfirmTo, setSignUpConfirmTo] = useState<string | null>(null);
+  const [signUpConfirmationDelivery, setSignUpConfirmationDelivery] = useState<
+    "requested" | "synthetic_no_delivery"
+  >("requested");
+  const [resendSecondsLeft, setResendSecondsLeft] = useState(0);
   const [error, setError] = useState<string | null>(null);
   const [info, setInfo] = useState<string | null>(null);
   const [pendingAction, setPendingAction] = useState<
-    "google" | "magic" | "signin" | "signup" | null
+    "google" | "magic" | "signin" | "signup" | "resend" | null
   >(null);
   const [pending, startTransition] = useTransition();
   const emailSectionId = useId();
@@ -115,6 +123,15 @@ export function SocialAuthButtons({
   );
 
   const passwordSupported = layout === "open" && enablePassword;
+
+  useEffect(() => {
+    if (!signUpConfirmTo || resendSecondsLeft <= 0) return;
+    const timer = window.setTimeout(
+      () => setResendSecondsLeft((seconds) => Math.max(0, seconds - 1)),
+      1_000,
+    );
+    return () => window.clearTimeout(timer);
+  }, [resendSecondsLeft, signUpConfirmTo]);
 
   const validEmail = (raw: string): string | null => {
     const trimmed = raw.trim().toLowerCase();
@@ -209,6 +226,12 @@ export function SocialAuthButtons({
           setError(t.signInFailed);
         } else if (result.error === "account_exists") {
           setError(t.accountExists);
+        } else if (result.error === "email_address_unusable") {
+          setError(t.emailAddressUnusable);
+        } else if (result.error === "confirmation_email_unavailable") {
+          setError(t.confirmationEmailUnavailable);
+        } else if (result.error === "rate_limited") {
+          setError(t.authRateLimited);
         } else {
           setError(t.signUpFailed);
         }
@@ -223,8 +246,36 @@ export function SocialAuthButtons({
         window.location.assign("/register/setup");
         return;
       }
+      setSignUpConfirmationDelivery(result.delivery);
       setSignUpConfirmTo(normalized);
+      setResendSecondsLeft(result.delivery === "requested" ? 60 : 0);
       setPendingAction(null);
+    });
+  };
+
+  const onResendSignupConfirmation = () => {
+    if (!signUpConfirmTo || resendSecondsLeft > 0) return;
+    setError(null);
+    setInfo(null);
+    setPendingAction("resend");
+    startTransition(async () => {
+      const result = await resendSignupConfirmationEmail(signUpConfirmTo);
+      setPendingAction(null);
+      if (!result.ok) {
+        setError(
+          result.error === "rate_limited"
+            ? t.authRateLimited
+            : result.error === "email_address_unusable"
+              ? t.emailAddressUnusable
+              : t.confirmationEmailUnavailable,
+        );
+        return;
+      }
+      setSignUpConfirmationDelivery(result.status);
+      if (result.status === "requested") {
+        setInfo(t.signUpResendRequested);
+        setResendSecondsLeft(60);
+      }
     });
   };
 
@@ -273,19 +324,61 @@ export function SocialAuthButtons({
   }
 
   if (signUpConfirmTo) {
+    const syntheticNoDelivery =
+      signUpConfirmationDelivery === "synthetic_no_delivery";
     return (
       <div className="mt-6 flex flex-col gap-4 text-center">
         <h2 className="text-lg font-semibold text-nq-foreground">
-          {t.signUpConfirmEmailTitle}
+          {syntheticNoDelivery
+            ? t.signUpSyntheticEmailTitle
+            : t.signUpConfirmEmailTitle}
         </h2>
         <p className="text-sm text-nq-muted">
-          {t.signUpConfirmEmailBody.replace("{email}", signUpConfirmTo)}
+          {(syntheticNoDelivery
+            ? t.signUpSyntheticEmailBody
+            : t.signUpConfirmEmailBody
+          ).replace("{email}", signUpConfirmTo)}
         </p>
+        {!syntheticNoDelivery ? (
+          <>
+            <p className="text-xs leading-relaxed text-nq-muted">
+              {t.signUpDeliveryHelp}
+            </p>
+            <Button
+              type="button"
+              variant="secondary"
+              size="md"
+              className="w-full min-h-[48px]"
+              loading={pending && pendingAction === "resend"}
+              disabled={!isHydrated || pending || resendSecondsLeft > 0}
+              onClick={onResendSignupConfirmation}
+            >
+              {resendSecondsLeft > 0
+                ? t.signUpResendCountdown.replace(
+                    "{seconds}",
+                    String(resendSecondsLeft),
+                  )
+                : t.signUpResendButton}
+            </Button>
+          </>
+        ) : null}
+        {error ? (
+          <p className="rounded-xl bg-red-50 px-4 py-3 text-sm font-medium text-nq-error dark:bg-red-950/30" role="alert">
+            {error}
+          </p>
+        ) : null}
+        {info ? (
+          <p className="text-sm text-nq-primary-soft" role="status">
+            {info}
+          </p>
+        ) : null}
         <button
           type="button"
           className="mt-2 min-h-11 text-sm text-nq-primary-soft underline-offset-4 hover:underline"
           onClick={() => {
             setSignUpConfirmTo(null);
+            setSignUpConfirmationDelivery("requested");
+            setResendSecondsLeft(0);
             setEmail("");
             setPassword("");
             setError(null);
