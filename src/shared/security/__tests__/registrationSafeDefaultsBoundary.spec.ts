@@ -6,7 +6,7 @@ const read = (file: string) =>
   readFileSync(resolve(process.cwd(), file), "utf8");
 
 const migration = read(
-  "supabase/migrations/20260906093910_safe_new_salon_activation_defaults.sql",
+  "supabase/migrations/20260906151425_safe_new_salon_activation_defaults.sql",
 );
 const registrationAction = read(
   "src/shared/register/completeSalonRegistrationAction.ts",
