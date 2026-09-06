@@ -99,7 +99,7 @@ export function RegisterStepShell({
   );
 
   return (
-    <div className="relative flex min-h-dvh flex-col overflow-x-clip lg:flex-row">
+    <main className="relative flex min-h-dvh flex-col overflow-x-clip lg:flex-row">
       {/* Ambient glow */}
       <div className="pointer-events-none fixed inset-0 -z-10 overflow-x-clip">
         <div
@@ -149,6 +149,6 @@ export function RegisterStepShell({
       >
         {formContent}
       </div>
-    </div>
+    </main>
   );
 }
