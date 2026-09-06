@@ -363,7 +363,7 @@ export function SocialAuthButtons({
           </>
         ) : null}
         {error ? (
-          <p className="rounded-xl bg-red-50 px-4 py-3 text-sm font-medium text-nq-error dark:bg-red-950/30" role="alert">
+          <p className="rounded-xl bg-red-50 px-4 py-3 text-sm font-medium text-red-700 dark:bg-red-950/30 dark:text-red-300" role="alert">
             {error}
           </p>
         ) : null}
@@ -644,7 +644,7 @@ export function SocialAuthButtons({
       ) : null}
 
       {error ? (
-        <p className="rounded-xl bg-red-50 px-4 py-3 text-sm font-medium text-nq-error dark:bg-red-950/30" role="alert">
+        <p className="rounded-xl bg-red-50 px-4 py-3 text-sm font-medium text-red-700 dark:bg-red-950/30 dark:text-red-300" role="alert">
           {error}
         </p>
       ) : null}

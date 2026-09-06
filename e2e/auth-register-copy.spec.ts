@@ -1,3 +1,4 @@
+import AxeBuilder from "@axe-core/playwright";
 import { expect, test } from "@playwright/test";
 
 test.describe("Registration action hierarchy", () => {
@@ -54,4 +55,38 @@ test.describe("Registration action hierarchy", () => {
       ]);
     });
   }
+
+  test("keeps registration content inside one main landmark", async ({ page }) => {
+    await page.goto("/register");
+    await page.waitForLoadState("networkidle");
+
+    await expect(page.locator("main")).toHaveCount(1);
+    await expect(page.locator("main h1")).toBeVisible();
+  });
+
+  test("keeps the validation alert readable at WCAG AA contrast", async ({
+    page,
+  }) => {
+    await page.addInitScript(() => {
+      window.localStorage.setItem("nailiq-user-lang", "en");
+    });
+    await page.goto("/register");
+    await page.waitForLoadState("networkidle");
+
+    await page
+      .getByRole("button", {
+        name: "Already have an account? Sign in",
+        exact: true,
+      })
+      .click();
+
+    const alert = page.locator('p[role="alert"]');
+    await expect(alert).toBeVisible();
+    const results = await new AxeBuilder({ page })
+      .include('p[role="alert"]')
+      .withRules(["color-contrast"])
+      .analyze();
+
+    expect(results.violations).toEqual([]);
+  });
 });
