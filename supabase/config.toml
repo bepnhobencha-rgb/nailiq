@@ -126,3 +126,9 @@ verify_jwt = false
 
 [functions.reschedule-sms]
 verify_jwt = false
+
+# Supabase Auth authenticates this public HTTP endpoint with a Standard
+# Webhooks signature. JWT verification must stay disabled so the request can
+# reach the handler; the handler fails closed before parsing unverified data.
+[functions.nailiq-auth-email]
+verify_jwt = false

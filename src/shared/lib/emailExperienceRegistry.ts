@@ -63,6 +63,12 @@ export const EMAIL_EXPERIENCE_REGISTRY = {
     deliveryTruth: "registered_webhook",
     sourceModules: ["src/shared/dashboard/sendEmailVerification.ts"],
   },
+  auth_account_security: {
+    audience: "security",
+    consent: "transactional",
+    deliveryTruth: "registered_webhook",
+    sourceModules: ["supabase/functions/nailiq-auth-email/index.ts"],
+  },
   owner_booking_alert: {
     audience: "owner",
     consent: "system",
