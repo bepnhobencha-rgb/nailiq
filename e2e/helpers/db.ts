@@ -1390,7 +1390,7 @@ export async function getRegisteredSalonForUser(userId: string) {
     supabase
       .from("salons")
       .select(
-        "id, slug, name, timezone, setup_wizard_completed_at, subscription_plan, subscription_status, trial_started_at, trial_ends_at, stripe_customer_id, stripe_subscription_id, payment_provider",
+        "id, slug, name, timezone, profile_complete, setup_wizard_completed_at, subscription_plan, subscription_status, trial_started_at, trial_ends_at, stripe_customer_id, stripe_subscription_id, payment_provider, sms_outbound_enabled, email_outbound_enabled, email_links_enabled, reminders_enabled, reminder_24h_enabled, reminder_3h_enabled, sms_reminders_enabled, voice_ai_enabled, noshow_protection_enabled, winback_enabled",
       )
       .eq("id", salonId)
       .single(),
@@ -1419,6 +1419,7 @@ export async function getRegisteredSalonForUser(userId: string) {
       slug: string;
       name: string;
       timezone: string;
+      profile_complete: boolean;
       setup_wizard_completed_at: string | null;
       subscription_plan: string;
       subscription_status: string;
@@ -1427,6 +1428,16 @@ export async function getRegisteredSalonForUser(userId: string) {
       stripe_customer_id: string | null;
       stripe_subscription_id: string | null;
       payment_provider: string | null;
+      sms_outbound_enabled: boolean;
+      email_outbound_enabled: boolean;
+      email_links_enabled: boolean;
+      reminders_enabled: boolean;
+      reminder_24h_enabled: boolean;
+      reminder_3h_enabled: boolean;
+      sms_reminders_enabled: boolean;
+      voice_ai_enabled: boolean;
+      noshow_protection_enabled: boolean;
+      winback_enabled: boolean;
     },
     serviceCount: serviceCount ?? 0,
     staffCount: staffCount ?? 0,

@@ -1,7 +1,7 @@
 "use client";
 
 import Link from "next/link";
-import { Check, ChevronRight } from "lucide-react";
+import { Check, ChevronRight, ShieldCheck } from "lucide-react";
 import { Card } from "@/components/ui/Card";
 import type { GoLiveReadiness } from "@/shared/dashboard/goLiveReadiness";
 import { deriveGuidedSetupProgress } from "@/shared/dashboard/guidedSetup";
@@ -88,6 +88,33 @@ export function GuidedSetupHub({
         </p>
       </header>
 
+      {!progress.complete ? (
+        <Card
+          variant="bordered"
+          padding="md"
+          className="border-nq-success/35 bg-nq-success/[0.06]"
+          data-testid="guided-setup-not-live-status"
+        >
+          <div className="flex items-start gap-3">
+            <span className="inline-flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-nq-success/15 text-nq-success">
+              <ShieldCheck className="h-5 w-5" aria-hidden />
+            </span>
+            <div className="min-w-0">
+              <p className="text-sm font-semibold text-nq-foreground">
+                {vi
+                  ? "Chưa Go-Live — salon vẫn ở chế độ thiết lập"
+                  : "Not live yet — this salon is still in setup"}
+              </p>
+              <p className="mt-1 text-sm leading-5 text-nq-muted">
+                {vi
+                  ? "Coco chỉ chuẩn bị cấu hình. Booking công khai, thông báo và thanh toán phải vượt qua kiểm tra riêng trước khi Owner bật."
+                  : "Coco only prepares configuration. Public booking, notifications, and payments must pass their own checks before the Owner enables them."}
+              </p>
+            </div>
+          </div>
+        </Card>
+      ) : null}
+
       <Card variant="elevated" padding="lg">
         <div className="flex items-center justify-between gap-4">
           <p className="text-sm font-semibold text-nq-foreground">
@@ -115,36 +142,37 @@ export function GuidedSetupHub({
             ? `${progress.completedCount}/${progress.requiredCount} bước bắt buộc đã đạt theo dữ liệu đã lưu`
             : `${progress.completedCount}/${progress.requiredCount} required steps pass from saved data`}
         </p>
-      </Card>
-
-      <Card variant="bordered" padding="lg">
-        <div className="flex items-center justify-between gap-4">
-          <div>
-            <p className="text-sm font-semibold text-nq-foreground">
-              {vi ? "Coco kiểm tra đủ 15 chức năng" : "Coco checks all 15 capabilities"}
-            </p>
-            <p className="mt-1 text-sm leading-5 text-nq-muted">
-              {vi
-                ? `${setupCoverage.resolvedCount}/${setupCoverage.totalCount} mục đã có cấu hình hoặc lựa chọn rõ ràng.`
-                : `${setupCoverage.resolvedCount}/${setupCoverage.totalCount} have verified setup or an explicit decision.`}
+        <div className="mt-5 border-t border-nq-border/35 pt-4">
+          <div className="flex items-center justify-between gap-4">
+            <div>
+              <p className="text-sm font-semibold text-nq-foreground">
+                {vi
+                  ? "Coco kiểm tra đủ 15 chức năng"
+                  : "Coco checks all 15 capabilities"}
+              </p>
+              <p className="mt-1 text-sm leading-5 text-nq-muted">
+                {vi
+                  ? `${setupCoverage.resolvedCount}/${setupCoverage.totalCount} mục đã có cấu hình hoặc lựa chọn rõ ràng.`
+                  : `${setupCoverage.resolvedCount}/${setupCoverage.totalCount} have verified setup or an explicit decision.`}
+              </p>
+            </div>
+            <p className="shrink-0 text-sm tabular-nums text-nq-muted">
+              {setupCoverage.percent}%
             </p>
           </div>
-          <p className="shrink-0 text-sm tabular-nums text-nq-muted">
-            {setupCoverage.percent}%
-          </p>
-        </div>
-        <div
-          className="mt-3 h-2 overflow-hidden rounded-full bg-nq-bg"
-          role="progressbar"
-          aria-label={vi ? "Độ phủ Coco Setup" : "Coco Setup coverage"}
-          aria-valuemin={0}
-          aria-valuemax={100}
-          aria-valuenow={setupCoverage.percent}
-        >
           <div
-            className="h-full rounded-full bg-nq-primary"
-            style={{ width: `${setupCoverage.percent}%` }}
-          />
+            className="mt-3 h-2 overflow-hidden rounded-full bg-nq-bg"
+            role="progressbar"
+            aria-label={vi ? "Độ phủ Coco Setup" : "Coco Setup coverage"}
+            aria-valuemin={0}
+            aria-valuemax={100}
+            aria-valuenow={setupCoverage.percent}
+          >
+            <div
+              className="h-full rounded-full bg-nq-primary"
+              style={{ width: `${setupCoverage.percent}%` }}
+            />
+          </div>
         </div>
       </Card>
 

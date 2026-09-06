@@ -2,8 +2,8 @@ import type { Metadata } from "next";
 import type { ReactNode } from "react";
 
 export const metadata: Metadata = {
-  title: "Your booking page is ready",
-  description: "Copy your NailIQ booking link and share it with clients.",
+  title: "Workspace created · Đã tạo salon",
+  description: "Continue Coco Setup before opening public booking.",
 };
 
 export default function RegisterSuccessLayout({ children }: { children: ReactNode }) {

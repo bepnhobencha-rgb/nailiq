@@ -56,8 +56,19 @@ test.describe("Registration flow", () => {
 
       const salonNameInput = page.locator("#register-setup-salon-name");
       await expect(salonNameInput).toBeEditable();
+      await expect(page.getByTestId("registration-safe-start")).toContainText(
+        /Private until you approve Go-Live|Giữ riêng tư đến khi Owner duyệt Go-Live/i,
+      );
+      const advancedSettings = page.locator("details").filter({
+        hasText: /booking URL and time zone|link booking và múi giờ/i,
+      });
+      await advancedSettings.locator("summary").click();
+      await expect(page.locator("#register-setup-slug")).toBeEditable();
+      await expect(page.locator("#register-setup-timezone")).toHaveValue(
+        "America/Vancouver",
+      );
       const createButton = page.getByRole("button", {
-        name: /create your booking page|tạo trang đặt lịch/i,
+        name: /create salon workspace|tạo không gian salon/i,
       });
       // The streamed input can be editable before React has attached its
       // controlled onChange handler. Retry the native InputEvent until the
@@ -75,6 +86,9 @@ test.describe("Registration flow", () => {
       await expect(page).toHaveURL(/\/register\/success\?/, {
         timeout: 30_000,
       });
+      await expect(page.getByTestId("registration-launch-status")).toContainText(
+        /not live yet|chưa Live/i,
+      );
 
       const registration = await getRegisteredSalonForUser(userId);
       const { salon } = registration;
@@ -84,6 +98,7 @@ test.describe("Registration flow", () => {
       expect(registration.memberRole).toBe("owner");
       expect(salon.name).toBe(salonName);
       expect(salon.timezone).toBe("America/Vancouver");
+      expect(salon.profile_complete).toBe(false);
       expect(salon.setup_wizard_completed_at).toBeTruthy();
       expect(salon.subscription_plan).toBe("free");
       expect(salon.subscription_status).toBe("trialing");
@@ -92,6 +107,16 @@ test.describe("Registration flow", () => {
       expect(salon.stripe_customer_id).toBeNull();
       expect(salon.stripe_subscription_id).toBeNull();
       expect(salon.payment_provider).toBeNull();
+      expect(salon.sms_outbound_enabled).toBe(false);
+      expect(salon.email_outbound_enabled).toBe(false);
+      expect(salon.email_links_enabled).toBe(false);
+      expect(salon.reminders_enabled).toBe(false);
+      expect(salon.reminder_24h_enabled).toBe(false);
+      expect(salon.reminder_3h_enabled).toBe(false);
+      expect(salon.sms_reminders_enabled).toBe(false);
+      expect(salon.voice_ai_enabled).toBe(false);
+      expect(salon.noshow_protection_enabled).toBe(false);
+      expect(salon.winback_enabled).toBe(false);
       expect(registration.serviceCount).toBeGreaterThan(0);
       expect(registration.staffCount).toBe(1);
 

@@ -2,7 +2,9 @@
 
 import { useRouter, useSearchParams } from "next/navigation";
 import { Suspense, useEffect, useMemo } from "react";
+import { Check, ShieldCheck } from "lucide-react";
 import { Button } from "@/components/ui/Button";
+import { Card } from "@/components/ui/Card";
 import { RegisterStepShell } from "@/components/register/RegisterStepShell";
 import { getUserMessages } from "@/shared/i18n/user";
 import { useUserLanguage } from "@/shared/lib/useUserLanguage";
@@ -45,7 +47,39 @@ function RegisterSuccessInner() {
           </p>
         ) : null}
 
-        {/* Next steps hint */}
+        <Card
+          variant="bordered"
+          padding="md"
+          className="border-nq-success/35 bg-nq-success/[0.06]"
+          data-testid="registration-launch-status"
+        >
+          <div className="flex items-start gap-3">
+            <span className="inline-flex h-10 w-10 shrink-0 items-center justify-center rounded-full bg-nq-success/15 text-nq-success">
+              <ShieldCheck className="h-5 w-5" aria-hidden />
+            </span>
+            <div className="min-w-0">
+              <h2 className="text-base font-semibold text-nq-foreground">
+                {t.launchStatusTitle}
+              </h2>
+              <p className="mt-1 text-sm leading-5 text-nq-muted">
+                {t.launchStatusBody}
+              </p>
+            </div>
+          </div>
+          <ul className="mt-4 flex flex-col gap-2 border-t border-nq-border/35 pt-4">
+            {[
+              t.launchSafetyBooking,
+              t.launchSafetyMessages,
+              t.launchSafetyPayments,
+            ].map((item) => (
+              <li key={item} className="flex items-start gap-2 text-sm text-nq-muted">
+                <Check className="mt-0.5 h-4 w-4 shrink-0 text-nq-success" aria-hidden />
+                <span>{item}</span>
+              </li>
+            ))}
+          </ul>
+        </Card>
+
         <div className="rounded-2xl border border-nq-primary/20 bg-nq-primary/[0.06] px-4 py-4">
           <p className="text-sm font-medium leading-snug text-nq-foreground">
             {t.callout}

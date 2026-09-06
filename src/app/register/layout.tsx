@@ -2,9 +2,9 @@ import type { Metadata } from "next";
 import type { ReactNode } from "react";
 
 export const metadata: Metadata = {
-  title: "Get started",
+  title: "Get started · Bắt đầu",
   description:
-    "Onboard in minutes: verify, name your salon, and get your public booking link.",
+    "Create a private NailIQ salon workspace, then review setup before Go-Live.",
 };
 
 export default function RegisterSectionLayout({ children }: { children: ReactNode }) {

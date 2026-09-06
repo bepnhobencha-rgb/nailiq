@@ -300,7 +300,7 @@ test.describe("Guided Admin Setup", () => {
       await salonNameInput.fill(salonName);
       await expect(salonNameInput).toHaveValue(salonName);
       const createBookingPage = page.getByRole("button", {
-        name: /create your booking page|tạo trang đặt lịch/i,
+        name: /create salon workspace|tạo không gian salon/i,
       });
       await expect(createBookingPage).toBeEnabled();
       await createBookingPage.click();
@@ -316,6 +316,9 @@ test.describe("Guided Admin Setup", () => {
       expect(registration.salon.stripe_customer_id).toBeNull();
       expect(registration.salon.stripe_subscription_id).toBeNull();
       expect(registration.salon.payment_provider).toBeNull();
+      expect(registration.salon.profile_complete).toBe(false);
+      expect(registration.salon.sms_outbound_enabled).toBe(false);
+      expect(registration.salon.email_outbound_enabled).toBe(false);
 
       // Emulate the audited SuperAdmin pilot toggle only after this throwaway
       // salon exists. The feature remains default-OFF for every real salon.
@@ -334,6 +337,9 @@ test.describe("Guided Admin Setup", () => {
       await expect(
         page.locator('[data-guided-setup-mode="true"]'),
       ).toBeVisible();
+      await expect(page.getByTestId("guided-setup-not-live-status")).toContainText(
+        /not live yet|chưa Go-Live/i,
+      );
       await expect(page.getByTestId("guided-setup-next-title")).toContainText(
         /Salon information|Thông tin salon/i,
       );
