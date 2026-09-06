@@ -84,13 +84,17 @@ test.describe("No-Show — Waitlist Auto-Fill", () => {
       action: "cancel",
     });
 
-    // Seed a waitlist entry for the same service + date
+    // Seed a legitimate waitlist entry for the exact occupied staff/slot. The
+    // production guard rejects broad day-level waitlist fixtures when another
+    // technician or time remains available.
     const { data: waitlistEntry, error: waitlistError } = await supabase
       .from("booking_waitlist_entries" as never)
       .insert({
         salon_id: salonId,
         service_id: serviceId,
+        staff_id: (stf as unknown as { id: string }).id,
         booking_date: tomorrow.toISOString().split("T")[0],
+        preferred_slot_label: "10:00 AM",
         client_name: "Waitlist Person",
         client_phone: "6045559003",
         client_email: "waitlist@example.com",
