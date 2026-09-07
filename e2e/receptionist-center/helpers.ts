@@ -1,8 +1,6 @@
 import type { Locator, Page } from "@playwright/test";
 import { createClient } from "@supabase/supabase-js";
 
-import { DEFAULT_OPENING_HOURS_JSON } from "@/shared/dashboard/openingHoursDefaults";
-
 import { waitForReceptionistHydration } from "../helpers/receptionistHydration";
 
 const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
@@ -90,6 +88,40 @@ export type ReceptionistCenterFixture = {
 
 function utcDayBoundsYmd(): string {
   return new Date().toISOString().slice(0, 10);
+}
+
+/**
+ * Keep the synthetic "today" stable when a long CI run crosses UTC midnight.
+ * From 19:00 UTC onward, a fixed UTC-5 salon remains on the same local date
+ * for the full run and still has enough same-day room for the 240-minute
+ * overflow fixture. At other hours UTC is simpler and equally deterministic.
+ */
+function receptionistE2eTimezone(): { timezone: string; utcOffsetHours: number } {
+  if (new Date().getUTCHours() >= 19) {
+    return { timezone: "Etc/GMT+5", utcOffsetHours: -5 };
+  }
+  return { timezone: "UTC", utcOffsetHours: 0 };
+}
+
+/**
+ * Receptionist suites exercise intake at the runner's real current time.
+ * An always-open synthetic week makes those tests independent of weekday and
+ * deliberately avoids borrowing the product's Sunday-closed default.
+ */
+function receptionistE2eOpeningHours(): Record<
+  "mon" | "tue" | "wed" | "thu" | "fri" | "sat" | "sun",
+  { open: string; close: string; closed: boolean }
+> {
+  const openDay = { open: "00:00", close: "23:59", closed: false };
+  return {
+    mon: { ...openDay },
+    tue: { ...openDay },
+    wed: { ...openDay },
+    thu: { ...openDay },
+    fri: { ...openDay },
+    sat: { ...openDay },
+    sun: { ...openDay },
+  };
 }
 
 export function isoAtUtcYmdHourMinute(
@@ -189,9 +221,8 @@ export async function seedReceptionistCenterFixture(slugOverride?: string): Prom
   }
 
   const ymdUtc = utcDayBoundsYmd();
-  const tz = "UTC";
-
-  const openingParsed: unknown = JSON.parse(DEFAULT_OPENING_HOURS_JSON);
+  const { timezone: tz, utcOffsetHours } = receptionistE2eTimezone();
+  const openingParsed = receptionistE2eOpeningHours();
 
   // walkin_auto_assign: false — force queue mode from the start.
   // Default is true: with staff free, canAssignImmediately=true causes the form to
@@ -390,13 +421,13 @@ export async function seedReceptionistCenterFixture(slugOverride?: string): Prom
     serviceIds,
     ymdUtc,
     conflictStaffId,
-    conflictSlotIndex: 4,
+    conflictSlotIndex: (10 + utcOffsetHours) * 2,
     conflictSlotUtc: isoAtUtcYmdHourMinute(ymdUtc, 10, 0),
     displayApptBookingId,
     displayApptClientName,
     freeStaffId,
-    noonSlotIndex: 8,
-    overflowSlotIndex: 17,
+    noonSlotIndex: (12 + utcOffsetHours) * 2,
+    overflowSlotIndex: (17 + utcOffsetHours) * 2,
     longServiceId: serviceIds[5]!,
   };
 }
