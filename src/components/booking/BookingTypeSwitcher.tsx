@@ -706,7 +706,7 @@ export function BookingTypeSwitcher({
         // Post-OTP: profile name is known → personalized greeting.
         <p
           data-testid="booking-entry-recognized"
-          className="mt-2 text-sm font-medium text-[var(--salon-primary)]"
+          className="mt-2 text-sm font-semibold text-[var(--booking-text)]"
         >
           {entryCustomer.name
             ? (groupCopy.entryNewGreeting ?? "Hi {name}! 👋").replace(
@@ -755,7 +755,7 @@ export function BookingTypeSwitcher({
           {entryName.trim() ? (
             <p
               data-testid="booking-entry-newgreeting"
-              className="mt-2 text-sm font-medium text-[var(--salon-primary)]"
+              className="mt-2 text-sm font-semibold text-[var(--booking-text)]"
             >
               {(groupCopy.entryNewGreeting ?? "Hi {name}! 👋").replace(
                 "{name}",

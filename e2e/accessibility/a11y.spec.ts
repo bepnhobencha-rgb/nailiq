@@ -169,6 +169,11 @@ test.describe("Accessibility", () => {
       // Supabase WebSocket alive so "networkidle" never fires — gotoBooking-
       // ServiceStep waits on the service tiles instead.
       await gotoBookingServiceStep(page, A11Y_SLUG);
+      await expect(
+        page.getByRole("navigation", {
+          name: /booking language|ngôn ngữ đặt lịch/i,
+        }),
+      ).toContainText(/English|Tiếng Việt/);
       await runAxe(page, "public booking");
       await assertImagesHaveAlt(page, "public booking");
       await assertInputsHaveLabels(page, "public booking");
