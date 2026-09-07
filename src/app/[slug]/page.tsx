@@ -254,11 +254,14 @@ async function PublicBookingRouteBody({
 
         {/* P0.1 — language toggle anchored top-right; floats above
             the main column so it doesn't push the layout. */}
-        <div className="pointer-events-none absolute top-4 right-4 z-20 sm:top-6 sm:right-6 lg:top-8 lg:right-8">
+        <nav
+          aria-label={lang === "vi" ? "Ngôn ngữ đặt lịch" : "Booking language"}
+          className="pointer-events-none absolute top-4 right-4 z-20 sm:top-6 sm:right-6 lg:top-8 lg:right-8"
+        >
           <div className="pointer-events-auto">
             <BookingLanguageToggle currentLang={lang} />
           </div>
-        </div>
+        </nav>
 
         {load.salon.closureNotice &&
         hasUpcomingClosure(load.salon.booking_closed_dates, load.salon.timezone) ? (
