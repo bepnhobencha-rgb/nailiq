@@ -15,7 +15,7 @@ const atomicMigration = read(
   "supabase/migrations/20260905204123_enforce_atomic_individual_waitlist_capacity.sql",
 );
 const nonIndividualHotfix = read(
-  "supabase/migrations/20260906151600_fix_capacity_rescue_non_individual_record.sql",
+  "supabase/migrations/20260907010745_fix_capacity_rescue_non_individual_record.sql",
 );
 const publicRpcGrantCheck = read(
   "scripts/security/check-public-rpc-role-grants.sql",
