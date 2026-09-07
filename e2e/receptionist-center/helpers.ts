@@ -74,6 +74,9 @@ export type ReceptionistCenterFixture = {
    *  rather than by index: the grid's index↔time mapping shifts with the
    *  dynamic hour window (computeHourRange widens to include "now"). */
   conflictSlotUtc: string;
+  /** Salon-local label for the conflict anchor, suitable for the public
+   *  waitlist capacity guard (for example "10:00 AM" or "5:00 AM"). */
+  conflictSlotLabel: string;
   /** Confirmed appointment for “existing booking renders” */
   displayApptBookingId: string;
   displayApptClientName: string;
@@ -342,6 +345,13 @@ export async function seedReceptionistCenterFixture(slugOverride?: string): Prom
   const conflictStaffId = staffIds[0]!;
   const freeStaffId = staffIds[1]!;
   const displayStaffId = staffIds[3]!;
+  const conflictSlotUtc = isoAtUtcYmdHourMinute(ymdUtc, 10, 0);
+  const conflictSlotLabel = new Intl.DateTimeFormat("en-US", {
+    timeZone: tz,
+    hour: "numeric",
+    minute: "2-digit",
+    hour12: true,
+  }).format(new Date(conflictSlotUtc));
 
   const s0 = serviceIds[0]!;
 
@@ -422,7 +432,8 @@ export async function seedReceptionistCenterFixture(slugOverride?: string): Prom
     ymdUtc,
     conflictStaffId,
     conflictSlotIndex: (10 + utcOffsetHours) * 2,
-    conflictSlotUtc: isoAtUtcYmdHourMinute(ymdUtc, 10, 0),
+    conflictSlotUtc,
+    conflictSlotLabel,
     displayApptBookingId,
     displayApptClientName,
     freeStaffId,
