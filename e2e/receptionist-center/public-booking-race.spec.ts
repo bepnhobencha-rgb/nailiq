@@ -28,7 +28,9 @@ import {
 
 let fx: ReceptionistCenterFixture;
 
-const GRID_HOUR_START = 8;
+// The shared receptionist fixture is intentionally open all day so intake
+// tests do not depend on the CI runner's weekday or wall clock.
+const GRID_HOUR_START = 0;
 const SLOT_MINUTES = 30;
 /** E2E Gel Manicure: 45 + 10 buffer (matches seed). */
 const PRIMARY_SERVICE_TOTAL_MIN = 55;
@@ -60,7 +62,7 @@ function utcYmdDayKey(ymd: string): DayKey {
 
 /**
  * Next calendar day (from `baseYmd`) where the default fixture opening_hours are open
- * and grid slot `slotIndex` (noon = 8) starts at or after `minStartMs`.
+ * and the fixture's absolute grid slot starts at or after `minStartMs`.
  */
 function pickBookableDateYmd(args: {
   baseYmd: string;

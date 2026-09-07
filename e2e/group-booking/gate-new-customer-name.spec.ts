@@ -1,7 +1,11 @@
 import { createClient } from "@supabase/supabase-js";
 import { expect, test } from "@playwright/test";
 
-import { cleanupTestSalon, enterBookingPhone } from "../helpers/db";
+import {
+  acceptSmsConsentIfPresented,
+  cleanupTestSalon,
+  enterBookingPhone,
+} from "../helpers/db";
 import { seedGroupTestSalon } from "./helpers";
 
 /**
@@ -70,9 +74,9 @@ test.describe("Phone-first gate — new customer name", () => {
     // Let the debounced commit land so the flow picks the name up.
     await page.waitForTimeout(600);
 
-    // SMS consent is the third gate requirement (phone + name + consent) before
-    // the flow mounts — without it booking-type-group never renders.
-    await page.getByTestId("sms-consent").check();
+    // SMS consent is required only when this salon exposes outbound SMS.
+    // SMS-OFF salons intentionally proceed without rendering the checkbox.
+    await acceptSmsConsentIfPresented(page);
 
     // Into the group flow → Guest 1 is pre-filled with the typed name.
     await page.getByTestId("booking-type-group").click();

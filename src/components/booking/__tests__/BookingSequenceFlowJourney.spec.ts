@@ -247,6 +247,28 @@ describe("BookingSequenceFlow authoritative journey", () => {
     });
   });
 
+  it("labels the start date and time controls for customers and assistive technology", () => {
+    const tree = renderFlow();
+    const nodes = elements(tree);
+    const dateInput = nodes.find(
+      (node) => node.type === "input" && node.props.type === "date",
+    );
+    const timeInput = nodes.find(
+      (node) => node.type === "input" && node.props.type === "time",
+    );
+    const dateLabel = nodes.find(
+      (node) => node.type === "label" && text(node.props.children).includes("Start date"),
+    );
+    const timeLabel = nodes.find(
+      (node) => node.type === "label" && text(node.props.children).includes("Start time"),
+    );
+
+    expect(dateInput?.props.id).toBe("booking-sequence-date");
+    expect(timeInput?.props.id).toBe("booking-sequence-time");
+    expect(dateLabel?.props.htmlFor).toBe("booking-sequence-date");
+    expect(timeLabel?.props.htmlFor).toBe("booking-sequence-time");
+  });
+
   it("keeps one intent through pricing_changed and requires an explicit reconfirm", async () => {
     const quoted = quote("Initial quote", "a".repeat(64), 5_000);
     const changed = quote("Updated quote", "b".repeat(64), 5_500);

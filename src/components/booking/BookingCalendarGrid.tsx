@@ -33,7 +33,28 @@ import { salonTodayCalendarDate } from "@/shared/booking/salonCalendarDate";
  * motion wrappers. Owning panels decide layout + buttons.
  */
 
-const WEEK_HDR = ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"] as const;
+const WEEK_HEADERS = {
+  en: ["Mon", "Tue", "Wed", "Thu", "Fri", "Sat", "Sun"],
+  vi: ["T2", "T3", "T4", "T5", "T6", "T7", "CN"],
+} as const;
+const DAY_ABBREVIATIONS = {
+  en: ["Sun", "Mon", "Tue", "Wed", "Thu", "Fri", "Sat"],
+  vi: ["CN", "T2", "T3", "T4", "T5", "T6", "T7"],
+} as const;
+const MONTH_NAMES_EN = [
+  "January",
+  "February",
+  "March",
+  "April",
+  "May",
+  "June",
+  "July",
+  "August",
+  "September",
+  "October",
+  "November",
+  "December",
+] as const;
 
 function startOfLocalDay(d: Date): Date {
   const x = new Date(d);
@@ -47,8 +68,8 @@ function sameLocalCalendarDay(a: Date, b: Date): boolean {
     a.getDate() === b.getDate()
   );
 }
-function calendarDayAbbrev(d: Date): string {
-  return d.toLocaleDateString("en-US", { weekday: "short" });
+function calendarDayAbbrev(d: Date, language: "en" | "vi"): string {
+  return DAY_ABBREVIATIONS[language][d.getDay()];
 }
 function startOfMonth(d: Date): Date {
   const x = new Date(d.getFullYear(), d.getMonth(), 1);
@@ -60,8 +81,10 @@ function addMonthsClamped(d: Date, delta: number): Date {
   x.setHours(12, 0, 0, 0);
   return x;
 }
-function monthHeaderLabel(d: Date): string {
-  return d.toLocaleDateString("en-US", { month: "long", year: "numeric" });
+function monthHeaderLabel(d: Date, language: "en" | "vi"): string {
+  return language === "vi"
+    ? `Tháng ${d.getMonth() + 1}, ${d.getFullYear()}`
+    : `${MONTH_NAMES_EN[d.getMonth()]} ${d.getFullYear()}`;
 }
 
 export function BookingCalendarGrid({
@@ -76,6 +99,7 @@ export function BookingCalendarGrid({
   selectedDate,
   windowDays,
   onSelectDate,
+  language,
 }: {
   t: BookingMessages;
   salonId: string;
@@ -96,6 +120,7 @@ export function BookingCalendarGrid({
    *  book months out. */
   windowDays: number;
   onSelectDate: (d: Date) => void;
+  language: "en" | "vi";
 }) {
   const todayStart = useMemo(
     () => startOfLocalDay(salonTodayCalendarDate(salonTimezone)),
@@ -352,7 +377,7 @@ export function BookingCalendarGrid({
               ? exceptionClosed
                 ? t.dateHolidayShort
                 : t.dateClosedShort
-              : calendarDayAbbrev(date);
+              : calendarDayAbbrev(date, language);
 
           return (
             <button
@@ -362,7 +387,7 @@ export function BookingCalendarGrid({
               data-ymd={ymd}
               disabled={disabled}
               aria-pressed={selected}
-              aria-label={`${String(date.getDate())} ${calendarDayAbbrev(date)}${
+              aria-label={`${String(date.getDate())} ${calendarDayAbbrev(date, language)}${
                 closed
                   ? exceptionClosed
                     ? ` ${t.dateHolidayLabel}`
@@ -466,7 +491,7 @@ export function BookingCalendarGrid({
           aria-live="polite"
           data-testid="calendar-month-label"
         >
-          {monthHeaderLabel(viewMonth)}
+          {monthHeaderLabel(viewMonth, language)}
         </div>
         <button
           type="button"
@@ -502,7 +527,7 @@ export function BookingCalendarGrid({
         className="grid grid-cols-7 gap-1.5 text-center sm:gap-2"
         data-testid="calendar-grid"
       >
-        {WEEK_HDR.map((h) => (
+        {WEEK_HEADERS[language].map((h) => (
           <div
             key={h}
             className="pb-2 text-[11px] font-semibold uppercase tracking-wide text-[var(--booking-text-muted)] sm:text-xs"
@@ -526,7 +551,7 @@ export function BookingCalendarGrid({
             selectedDate !== null && sameLocalCalendarDay(date, selectedDate);
           const disabled = past || beyondWindow || closed;
           const labelDay = String(date.getDate());
-          const abbrev = calendarDayAbbrev(date);
+          const abbrev = calendarDayAbbrev(date, language);
           const ymd = bookingDateYmdFromLocalDate(date);
           const hasSlotsHint =
             !past && !beyondWindow && !closed && slotHintByYmd[ymd] === true;

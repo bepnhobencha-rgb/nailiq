@@ -76,4 +76,18 @@ describe("walk-in committed-success and retry contract", () => {
       2,
     );
   });
+
+  it("revalidates salon-local opening hours before inserting a walk-in", () => {
+    expect(actions).toContain("checkWalkinWithinOpeningHours({");
+    expect(actions).toContain("openingHoursRaw: ctx.salon.opening_hours");
+    expect(actions).toContain(
+      "bookingClosedDatesRaw: ctx.salon.booking_closed_dates",
+    );
+    expect(actions).toContain(
+      'hoursCheck.reason === "closed_day" ? "salon_closed" : "outside_hours"',
+    );
+    expect(actions.indexOf("checkWalkinWithinOpeningHours({")).toBeLessThan(
+      actions.indexOf(".insert(insertPatch)"),
+    );
+  });
 });

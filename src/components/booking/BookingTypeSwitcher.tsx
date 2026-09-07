@@ -402,6 +402,7 @@ export function BookingTypeSwitcher({
   voiceAiEnabled = false,
   groupBookingEnabled = true,
   multiServiceSequenceEnabled = false,
+  smsConsentRequired = true,
 }: {
   t: BookingMessages;
   shopSlug: string;
@@ -421,6 +422,8 @@ export function BookingTypeSwitcher({
   groupBookingEnabled?: boolean;
   /** Effective platform + tenant + QA readiness gate; default OFF. */
   multiServiceSequenceEnabled?: boolean;
+  /** Salon operational truth. OFF means do not request or require SMS consent. */
+  smsConsentRequired?: boolean;
 }) {
   const bookingEntryHydrated = useSyncExternalStore(
     noopSubscribe,
@@ -537,8 +540,10 @@ export function BookingTypeSwitcher({
   // from the verified profile after OTP. New customers must type ≥2 chars.
   // ≥2 matches the nameTooShort guard in submitPublicBooking.
   const nameOk = Boolean(entryCustomer) || entryName.trim().length >= 2;
-  // Ready to enter the flow: valid phone + name + SMS consent.
-  const gateReady = Boolean(entryPhone) && nameOk && entrySmsConsent;
+  // Ready to enter the flow: SMS consent gates only salons that can actually
+  // send SMS. An OFF salon must never block a customer on an unused channel.
+  const gateReady =
+    Boolean(entryPhone) && nameOk && (!smsConsentRequired || entrySmsConsent);
   // Debounced commit of the typed name so the flow (keyed on identity)
   // doesn't remount on every keystroke — it picks the name up ~400ms
   // after typing stops, or immediately on blur (see the name input).
@@ -761,47 +766,48 @@ export function BookingTypeSwitcher({
         </div>
       ) : null}
 
-      {/* SMS consent (Twilio A2P 10DLC / TCPA / CASL) — sits under the phone
-          field and is required to proceed (the OTP SMS is sent next).
-          Rendered unconditionally: a Toll-Free reviewer opens this page and
-          screenshots it without typing a number, so hiding the disclosure
-          behind `entryPhone` reads as "no opt-in disclosure" (error 30513). */}
-      <label className="mt-3 flex cursor-pointer items-start gap-2.5 text-sm leading-relaxed text-[var(--booking-text,var(--color-nq-foreground))] opacity-80">
-        <input
-          type="checkbox"
-          data-testid="sms-consent"
-          checked={entrySmsConsent}
-          onChange={(e) => setEntrySmsConsent(e.target.checked)}
-          className="mt-0.5 h-4 w-4 shrink-0 accent-[var(--salon-primary)]"
-        />
-        <span>{t.smsConsent.replace("{salon}", salon.name)}</span>
-      </label>
-
+      {/* SMS consent (Twilio A2P 10DLC / TCPA / CASL) is required only when
+          this salon has enabled outbound SMS. It remains visible before a
+          number is typed for carrier-review evidence. */}
+      {smsConsentRequired ? (
+        <label className="mt-3 flex cursor-pointer items-start gap-2.5 text-sm leading-relaxed text-[var(--booking-text,var(--color-nq-foreground))] opacity-80">
+          <input
+            type="checkbox"
+            data-testid="sms-consent"
+            checked={entrySmsConsent}
+            onChange={(e) => setEntrySmsConsent(e.target.checked)}
+            className="mt-0.5 h-4 w-4 shrink-0 accent-[var(--salon-primary)]"
+          />
+          <span>{t.smsConsent.replace("{salon}", salon.name)}</span>
+        </label>
+      ) : null}
       {/* Twilio wants the policies reachable from the opt-in itself. Prefer the
           salon's own pages; fall back to NailIQ's when they have none. */}
-      <p className="mt-1.5 pl-[1.625rem] text-xs text-[var(--booking-text-muted,var(--color-nq-foreground))] opacity-70">
-        <a
-          href={salon.privacyUrl ?? "/privacy"}
-          target="_blank"
-          rel="noopener noreferrer"
-          data-testid="sms-consent-privacy"
-          className="underline underline-offset-2 hover:no-underline"
-        >
-          {t.smsConsentPrivacyLink}
-        </a>
-        <span className="px-1.5" aria-hidden="true">
-          ·
-        </span>
-        <a
-          href={salon.termsUrl ?? "/terms"}
-          target="_blank"
-          rel="noopener noreferrer"
-          data-testid="sms-consent-terms"
-          className="underline underline-offset-2 hover:no-underline"
-        >
-          {t.smsConsentTermsLink}
-        </a>
-      </p>
+      {smsConsentRequired ? (
+        <p className="mt-1.5 pl-[1.625rem] text-xs text-[var(--booking-text-muted,var(--color-nq-foreground))] opacity-70">
+          <a
+            href={salon.privacyUrl ?? "/privacy"}
+            target="_blank"
+            rel="noopener noreferrer"
+            data-testid="sms-consent-privacy"
+            className="underline underline-offset-2 hover:no-underline"
+          >
+            {t.smsConsentPrivacyLink}
+          </a>
+          <span className="px-1.5" aria-hidden="true">
+            ·
+          </span>
+          <a
+            href={salon.termsUrl ?? "/terms"}
+            target="_blank"
+            rel="noopener noreferrer"
+            data-testid="sms-consent-terms"
+            className="underline underline-offset-2 hover:no-underline"
+          >
+            {t.smsConsentTermsLink}
+          </a>
+        </p>
+      ) : null}
 
       {/* Optional marketing consent — must be separate from transactional SMS consent. */}
       <label className="mt-2 flex cursor-pointer items-start gap-2.5 text-sm leading-relaxed text-[var(--booking-text,var(--color-nq-foreground))] opacity-70">
@@ -864,6 +870,7 @@ export function BookingTypeSwitcher({
     initialSmsConsent: entrySmsConsent,
     initialMarketingConsent: entryMarketingConsent,
     initialOtpSessionId: gateOtpSessionId,
+    smsConsentRequired,
     webVoiceHandoff,
     onWebVoiceHandoffConsumed: handleWebVoiceHandoffConsumed,
   } as const;
@@ -990,6 +997,7 @@ export function BookingTypeSwitcher({
           initialSmsConsent={entrySmsConsent}
           initialMarketingConsent={entryMarketingConsent}
           initialOtpSessionId={gateOtpSessionId}
+          smsConsentRequired={smsConsentRequired}
           language={language}
         />
       )}

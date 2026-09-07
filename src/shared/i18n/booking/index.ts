@@ -7,12 +7,13 @@
 import { cookies, headers } from "next/headers";
 import { bookingEn, type BookingMessages } from "./en";
 import { bookingVi } from "./vi";
+import { BOOKING_LANG_COOKIE } from "./documentLanguage";
 
 export type BookingLanguage = "en" | "vi";
 
 /** Cookie name used by the language toggle. Set by the client-side
  * toggle UI; read by `resolveBookingLanguage`. */
-export const BOOKING_LANG_COOKIE = "nq-booking-lang";
+export { BOOKING_LANG_COOKIE } from "./documentLanguage";
 
 export function parseBookingLanguage(raw: unknown): BookingLanguage {
   return raw === "en" ? "en" : "vi";

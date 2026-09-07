@@ -118,6 +118,18 @@ function firstIncompleteDetail(
   return language === "vi" ? check.detailVi : check.detailEn;
 }
 
+function firstIncompleteHref(
+  readiness: GoLiveReadiness,
+  ids: string[],
+  fallback: string,
+): string {
+  return (
+    ids
+      .map((id) => findCheck(readiness, id))
+      .find((candidate) => candidate?.state !== "pass")?.href ?? fallback
+  );
+}
+
 export function deriveGuidedSetupProgress(
   slug: string,
   readiness: GoLiveReadiness,
@@ -316,6 +328,13 @@ export function deriveGuidedSetupProgress(
       );
       return {
         ...definition,
+        // A readiness check may know a more precise repair destination than
+        // the broad step default (for example: service coverage is edited in
+        // the staff drawer, while price/duration is edited in Services).
+        href:
+          definition.id === "service-menu"
+            ? firstIncompleteHref(readiness, checkIds, definition.href)
+            : definition.href,
         done,
         selected,
         skipped,

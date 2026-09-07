@@ -3,6 +3,7 @@ import { notFound, redirect } from "next/navigation";
 import type React from "react";
 
 import { BookingTypeSwitcher } from "@/components/booking/BookingTypeSwitcher";
+import { loadPublicBookingConsentRequirements } from "@/shared/booking/loadPublicBookingConsentRequirements";
 import { BookingFlowErrorBoundary } from "@/components/booking/BookingFlowErrorBoundary";
 import { loadServiceCategories } from "@/shared/booking/loadServiceCategories";
 import { resolvePublicBookingPage } from "@/shared/booking/resolvePublicBookingPage";
@@ -67,6 +68,7 @@ export default async function EmbedBookingPage({
       ? sp.lang
       : await resolveBookingLanguage(load.salon.defaultLanguage);
   const t = getBookingMessages(lang);
+  const consentRequirements = await loadPublicBookingConsentRequirements(load.salon.id);
 
   const themeVars = buildBookingThemeVars(
     load.salon.brandColor,
@@ -105,6 +107,7 @@ export default async function EmbedBookingPage({
             language={lang}
             voiceAiEnabled={load.salon.voiceAiEnabled}
             groupBookingEnabled={load.salon.groupBookingEnabled}
+            smsConsentRequired={consentRequirements.smsConsentRequired}
           />
         </BookingFlowErrorBoundary>
       </div>

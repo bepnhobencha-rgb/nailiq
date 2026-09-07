@@ -141,10 +141,19 @@ async function insertWaitingEntry(label: string): Promise<string> {
     .insert({
       salon_id: fixture.salonId,
       service_id: fixture.serviceIds[0]!,
+      staff_id: fixture.conflictStaffId,
       booking_date: fixture.ymdUtc,
+      preferred_slot_label: fixture.conflictSlotLabel,
       client_name: label,
       client_phone: "16045552420",
+      // Sound/refresh behavior is independent of capacity, but the synthetic
+      // entry must still cross the same false-waitlist boundary as Production.
+      // This technician is already occupied at the requested local time.
       source: "slot_unavailable",
+      intent_json: {
+        source: "slot_unavailable",
+        staffPreference: fixture.conflictStaffId,
+      },
       status: "waiting",
     })
     .select("id")

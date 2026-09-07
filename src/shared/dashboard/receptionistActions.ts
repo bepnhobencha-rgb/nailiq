@@ -81,6 +81,7 @@ import {
   sameWalkinActualInstant,
   validateWalkinActualTime,
 } from "@/shared/dashboard/walkinActualTime";
+import { checkWalkinWithinOpeningHours } from "@/shared/dashboard/walkinOpeningHours";
 import {
   createDeskAfterHoursApproval,
   replayDeskAfterHoursApproval,
@@ -691,7 +692,7 @@ export async function addWalkinToQueue(
 
   const { data: svc, error: svcErr } = await supabase
     .from("services")
-    .select("id, price_cents")
+    .select("id, price_cents, duration_minutes")
     .eq("id", serviceId)
     .eq("salon_id", ctx.salon.id)
     .is("deleted_at" as never, null)
@@ -703,7 +704,28 @@ export async function addWalkinToQueue(
   }
   if (!svc?.id) return fail("service_not_found");
 
+  const serviceDurationMinutes = Math.round(
+    Number(
+      (svc as { duration_minutes?: number | null }).duration_minutes ?? 0,
+    ),
+  );
+  if (!Number.isFinite(serviceDurationMinutes) || serviceDurationMinutes < 1) {
+    return fail("invalid_duration");
+  }
+
   const joinedAt = requestedActualArrivalAt ?? new Date().toISOString();
+  const hoursCheck = checkWalkinWithinOpeningHours({
+    openingHoursRaw: ctx.salon.opening_hours,
+    bookingClosedDatesRaw: ctx.salon.booking_closed_dates,
+    timezone: ctx.salon.timezone,
+    actualArrivalAtIso: joinedAt,
+    serviceDurationMinutes,
+  });
+  if (!hoursCheck.ok) {
+    return fail(
+      hoursCheck.reason === "closed_day" ? "salon_closed" : "outside_hours",
+    );
+  }
   const price =
     svc.price_cents != null ? Math.round(Number(svc.price_cents)) : null;
 

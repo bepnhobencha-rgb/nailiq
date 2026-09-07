@@ -159,7 +159,13 @@ test.describe("@smoke — the flows that must never break", () => {
 
     await navigateToConfirmStep(page, SLUG, { name: GUEST_NAME });
 
-    await page.getByTestId("sms-consent").check();
+    // The confirmation fallback exists only for salons with outbound SMS ON
+    // whose consent was not already collected at the entry gate. SMS-OFF is a
+    // valid production state and must not make the required booking smoke hang.
+    const confirmationSmsConsent = page.getByTestId("sms-consent");
+    if (await confirmationSmsConsent.isVisible()) {
+      await confirmationSmsConsent.check();
+    }
     await page.getByRole("button", { name: "Confirm booking" }).click();
 
     // Race the two possible outcomes rather than asserting the absence of the

@@ -71,6 +71,7 @@ export function BookingFlowConfirmPanel({
   savedCard,
   smsConsent,
   setSmsConsent,
+  smsConsentRequired = true,
 }: {
   t: BookingMessages;
   shopLabel: string;
@@ -123,6 +124,7 @@ export function BookingFlowConfirmPanel({
    *  when already given; still gates the button on it as a safety net. */
   smsConsent: boolean;
   setSmsConsent: (v: boolean) => void;
+  smsConsentRequired?: boolean;
 }) {
   const [voucherInput, setVoucherInput] = useState("");
   const [voucherError, setVoucherError] = useState<string | null>(null);
@@ -474,7 +476,7 @@ export function BookingFlowConfirmPanel({
 
         {/* SMS consent is collected at the phone gate; show this only as a
             fallback if it wasn't given there. */}
-        {!smsConsent ? (
+        {smsConsentRequired && !smsConsent ? (
           <label className="mt-5 flex cursor-pointer items-start gap-2.5 border-t border-[var(--booking-border)]/25 pt-5 text-xs leading-relaxed text-[var(--booking-text-muted)]">
             <input
               type="checkbox"
@@ -592,7 +594,7 @@ export function BookingFlowConfirmPanel({
           <LuxuryBookingCta
             className="lg:min-w-[14rem]"
             data-testid="confirm-booking-btn"
-            disabled={submitting || pricingQuoteLoading || !pricingQuote || Boolean(pricingQuoteError) || cardRequirementLoading || !smsConsent || (cardRequired && !noShowConsent) || (healthAckOn && !healthAck)}
+            disabled={submitting || pricingQuoteLoading || !pricingQuote || Boolean(pricingQuoteError) || cardRequirementLoading || (smsConsentRequired && !smsConsent) || (cardRequired && !noShowConsent) || (healthAckOn && !healthAck)}
             onClick={handleConfirm}
           >
             <span>{submitting ? t.submitting : pricingReconfirmRequired ? t.confirmUpdatedPrice : t.confirmBooking}</span>

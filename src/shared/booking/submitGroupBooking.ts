@@ -27,6 +27,7 @@ import {
   parseGroupBookingPricingQuote,
   type GroupBookingPricingQuote,
 } from "@/shared/booking/groupBookingPricing";
+import { shouldDispatchPublicBookingSmsConfirmation } from "@/shared/booking/bookingConfirmationDeliveryTruth";
 
 /**
  * Group booking submission — 2–4 friends/family booking together.
@@ -1298,39 +1299,41 @@ async function executeGroupBooking(
   // Group confirmation SMS to the primary contact (all members share the
   // organizer's phone). One summary message for the whole party — the group
   // path previously sent NO confirmation at all, unlike individual bookings.
-  try {
-    const organizer = params.members[0];
-    const organizerPhoneOk = validateGuestPhone(organizer?.phone ?? "");
-    const earliest = resolved.reduce(
-      (min, r) => (r.startMs < min.startMs ? r : min),
-      resolved[0],
-    );
-    if (organizerPhoneOk.ok && earliest && bookingIdList[0]) {
-      const appUrl =
-        typeof window !== "undefined"
-          ? ""
-          : (process.env.NEXT_PUBLIC_APP_URL ?? "").trim() ||
-            "https://nailiq.ca";
-      await fetch(`${appUrl}/api/booking/sms-confirm`, {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
-          bookingId: bookingIdList[0],
-          salonId: String(salonRow.id),
-          clientPhone: organizerPhoneOk.digits,
-          clientName: organizer?.name ?? null,
-          partySize: params.members.length,
-          startTimeUtc: earliest.startUtcIso,
-          language: params.language ?? null,
-          // Only what the organizer actually ticked; stamped on the organizer's
-          // booking alone, not fanned out across the party.
-          smsConsent: params.smsConsent === true,
-          groupId,
-        }),
-      });
+  if (shouldDispatchPublicBookingSmsConfirmation(params.smsConsent)) {
+    try {
+      const organizer = params.members[0];
+      const organizerPhoneOk = validateGuestPhone(organizer?.phone ?? "");
+      const earliest = resolved.reduce(
+        (min, r) => (r.startMs < min.startMs ? r : min),
+        resolved[0],
+      );
+      if (organizerPhoneOk.ok && earliest && bookingIdList[0]) {
+        const appUrl =
+          typeof window !== "undefined"
+            ? ""
+            : (process.env.NEXT_PUBLIC_APP_URL ?? "").trim() ||
+              "https://nailiq.ca";
+        await fetch(`${appUrl}/api/booking/sms-confirm`, {
+          method: "POST",
+          headers: { "Content-Type": "application/json" },
+          body: JSON.stringify({
+            bookingId: bookingIdList[0],
+            salonId: String(salonRow.id),
+            clientPhone: organizerPhoneOk.digits,
+            clientName: organizer?.name ?? null,
+            partySize: params.members.length,
+            startTimeUtc: earliest.startUtcIso,
+            language: params.language ?? null,
+            // The outer consent guard proves the organizer opted in. Consent is
+            // stamped on the organizer's booking alone, not fanned out.
+            smsConsent: true,
+            groupId,
+          }),
+        });
+      }
+    } catch (e) {
+      console.error("[submitGroupBooking] group sms-confirm dispatch failed", e);
     }
-  } catch (e) {
-    console.error("[submitGroupBooking] group sms-confirm dispatch failed", e);
   }
 
   return {
