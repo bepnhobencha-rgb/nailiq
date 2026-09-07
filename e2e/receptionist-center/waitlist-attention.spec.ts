@@ -144,7 +144,10 @@ async function insertWaitingEntry(label: string): Promise<string> {
       booking_date: fixture.ymdUtc,
       client_name: label,
       client_phone: "16045552420",
-      source: "slot_unavailable",
+      // Sound/refresh behavior is independent of capacity. A customer may
+      // truthfully prefer to wait, whereas slot_unavailable now requires a
+      // proven full slot and is rejected when this synthetic salon is open.
+      source: "customer_preference",
       status: "waiting",
     })
     .select("id")

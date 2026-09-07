@@ -4,6 +4,7 @@ import { test, expect, type Page } from "@playwright/test";
 
 import { navigateToConfirmStep } from "../helpers/bookingFlow";
 import {
+  acceptSmsConsentIfPresented,
   cleanupClientProfile,
   cleanupTestSalon,
   cleanupTestUser,
@@ -181,8 +182,7 @@ test.describe("Cross-tab queue visibility", () => {
       // so the mutation cannot race the subscription handshake.
       await realtimeReady;
 
-      const consent = guestPage.getByTestId("sms-consent");
-      if (!(await consent.isChecked())) await consent.check();
+      await acceptSmsConsentIfPresented(guestPage);
       await guestPage.getByRole("button", { name: "Confirm booking" }).click();
 
       const success = guestPage.getByTestId("booking-success");

@@ -110,7 +110,10 @@ test("operator completes the five essential Front Desk tasks in one shift", asyn
       booking_date: fx.ymdUtc,
       client_name: waitlistName,
       client_phone: "16045552420",
-      source: "slot_unavailable",
+      // This scenario tests desk attention, not capacity exhaustion. Use the
+      // truthful preference source so the false-waitlist DB guard correctly
+      // permits the synthetic row even though appointment capacity exists.
+      source: "customer_preference",
       status: "waiting",
     })
     .select("id")
