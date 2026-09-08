@@ -22,6 +22,8 @@ Các lượt WebKit mở rộng vẫn ghi nhận `TypeError: Load failed` và th
 
 PR #1358, commit ứng dụng `401af08c`: CI build/typecheck/lint/security PASS; 4.524 unit PASS và 1 skip. Preview READY, `/api/version` khớp SHA. Lượt visual CI đầu có 14 PASS và 2 FAIL do ảnh chuẩn mobile vẫn dùng bố cục Coco/Create cũ: ảnh mới cao 1.541 px thay vì 1.425 px, đúng 60 px cho Coco và 56 px cho Create. Đã xem expected/actual của Chromium và WebKit, xác nhận ảnh giữa hai lượt chạy giống nhau hoàn toàn; cập nhật đúng hai PNG Linux từ artifact CI. Không nới ngưỡng ảnh, thêm skip hoặc đổi code ứng dụng. Cần lượt CI kế tiếp xác nhận ảnh chuẩn mới.
 
+Lượt E2E CI bắt đầu sau 19:00 UTC còn phát hiện các test drawer/edit dùng giờ UTC cố định, trong khi `receptionistE2eTimezone()` chọn `Etc/GMT+5`. Ba ca buffer hiển thị đúng giờ salon (lệch 5 tiếng so với kỳ vọng UTC cũ); ca edit lưu 16:00Z cho 11:00 salon là đúng; ca conflict tạo booking 15:00Z (= 10:00 salon) nhưng lại kiểm tra chặn ô 15:00 salon. Các file test và helper này giống main trước PR. Đổi seed và kỳ vọng lưu giờ sang `salonWallTimeToUtcIso(..., fx.timezone)`, giữ nguyên kiểm tra nhãn buffer, giờ kết thúc, ô trùng bị ẩn, ô trống hiện và booking không đổi khi chưa lưu. Không đổi logic giờ của ứng dụng. Lint/typecheck local PASS; chờ CI xác nhận cả hai trình duyệt.
+
 Chưa merge hoặc triển khai Production. 16 ca skip còn lại trên main không thuộc phạm vi sửa. Số lượt test không tương đương số chức năng trong danh sách 784.
 
 Bằng chứng local: `/Users/huytran/nailiq-audit-results-20260907/coco-mobile-status/` (JSON, trace, ảnh, log build/kiểm tra và biên bản dọn database).
