@@ -390,6 +390,12 @@ Every page and server action under `/superadmin/*` MUST resolve the caller's sup
 
 The proxy's existing `/superadmin → /login` redirect for unauthenticated users stays. The role check happens **inside** server components and server actions, not in the proxy — keeping membership logic in one canonical place per `CLAUDE.md`.
 
+#### 8.3.1 Enforcement audit (2026-09-07)
+
+The existing `SUPERADMIN_NAV` section allowlists are enforced inside each page, before fetching privileged data, through `requireSuperadminPage`. The current implementation also has shared Dashboard access and selected salon/user read surfaces used by support and billing; the table above describes role intent, not permission to broaden these allowlists. Active-session validation remains mandatory on server actions independently of page access.
+
+Salon flags, tenant controls, restores, platform flags/categories and provider configuration require Founder or Ops. Salon reads allow Founder, Ops, Support and Billing; user reads allow Founder, Ops and Support. AI actions require Founder or AI Admin. Error-monitor mutations require Founder or Ops; final remediation approval remains Founder-only. Settings currently contains platform provider credentials, so its route is restricted to Founder/Ops; it is not a personal-preferences page. Readonly Analyst never receives write permission.
+
 ### 8.4 Impersonation (login-as-salon)
 
 A `founder` may impersonate any salon `owner` for support purposes. This is the highest-risk operation on the platform and is governed strictly.

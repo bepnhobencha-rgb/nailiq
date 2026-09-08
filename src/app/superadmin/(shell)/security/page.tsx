@@ -1,8 +1,10 @@
+import { requireSuperadminPage } from "@/shared/superadmin/requireSuperadminPage";
 import { MfaManager } from "@/components/superadmin/MfaManager";
 
 export const dynamic = "force-dynamic";
 
-export default function SecurityPage() {
+export default async function SecurityPage() {
+  await requireSuperadminPage("security");
   return (
     <main className="mx-auto w-full max-w-2xl px-4 py-6 md:px-6">
       <h1 className="text-2xl font-semibold tracking-tight text-nq-foreground">

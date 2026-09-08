@@ -17,7 +17,7 @@ import type { DeletedRecord } from "@/shared/superadmin/superadminTypes";
  * (`/superadmin/salons/[salonId]`) can reuse it without pulling in
  * the legacy panel shell.
  */
-export function DeletedRecordsSection({ salonId }: { salonId: string }) {
+export function DeletedRecordsSection({ salonId, canManage = false }: { salonId: string; canManage?: boolean }) {
   const [open, setOpen] = useState(false);
   const [loading, setLoading] = useState(false);
   const [records, setRecords] = useState<DeletedRecord[]>([]);
@@ -111,7 +111,7 @@ export function DeletedRecordsSection({ salonId }: { salonId: string }) {
                       type="button"
                       variant="secondary"
                       size="sm"
-                      disabled={busy}
+                      disabled={busy || !canManage}
                       onClick={() => onRestore(rec)}
                     >
                       {busy ? "Restoring…" : "Restore"}

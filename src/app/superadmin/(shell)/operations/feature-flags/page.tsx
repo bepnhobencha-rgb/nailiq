@@ -1,3 +1,4 @@
+import { requireSuperadminPage } from "@/shared/superadmin/requireSuperadminPage";
 import { PlatformFlagsAdmin } from "@/components/superadmin/PlatformFlagsAdmin";
 import { PlatformFeatureVisibilityAdmin } from "@/components/superadmin/PlatformFeatureVisibilityAdmin";
 import { loadPlatformFlags } from "@/shared/superadmin/superadminActions";
@@ -19,6 +20,7 @@ export const dynamic = "force-dynamic";
  * `isSuperAdmin` as the authoritative backstop.
  */
 export default async function FeatureFlagsPage() {
+  await requireSuperadminPage("operations");
   const [result, featureStates] = await Promise.all([
     loadPlatformFlags(),
     loadPlatformFeatureStates(),
