@@ -240,6 +240,7 @@ jobs:
             testpath: >-
               e2e/notification-settings-preflight.spec.ts
               e2e/notification-settings-recovery.spec.ts
+              e2e/loyalty-widget-recovery.spec.ts
     env:
       # ── NO PRODUCTION SECRETS. NONE. ────────────────────────────────────────
       #
