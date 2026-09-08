@@ -72,7 +72,8 @@ for (const card of cards) {
       const section = page.getByTestId(card.id);
       await expect(section.getByRole("alert")).toContainText("Chưa tải được");
       await expect(section.getByRole("button", {name: /^(Lưu|Lưu cài đặt mẫu)$/})).toHaveCount(0);
-      await section.screenshot({path: info.outputPath("load-failure.png")});
+      // Streaming can retain a hidden server copy with the same test id.
+      await section.filter({visible:true}).screenshot({path: info.outputPath("load-failure.png")});
       await section.getByRole("button", {name: "Thử tải lại"}).click();
       await expect(section.getByRole("button", {name: /^(Lưu|Lưu cài đặt mẫu)$/})).toBeEnabled();
       await expect(section.getByRole("alert")).toHaveCount(0);
@@ -263,7 +264,7 @@ test("[EN] read recovery and uncertain-save copy remain usable without outbound 
     expect(result.error).toBeNull();expect(result.data).toEqual([]);
   }
   expect(await errors(page)).toEqual([]);
-  await page.getByTestId("customer-channel-card").screenshot({path:info.outputPath("english-saved.png")});
+  await page.getByTestId("customer-channel-card").filter({visible:true}).screenshot({path:info.outputPath("english-saved.png")});
 });
 
 test("role downgraded while form is open refuses save, retains draft, and recovers after authorization", async ({page}) => {
