@@ -37,3 +37,7 @@ Server log có một dòng `The destination stream closed early`, digest `118684
 Đây là auth guard; không bổ sung xác minh ownership của slug trên trang success. Test tạo user đã được xác nhận email qua Auth API local, không kiểm tra email confirmation/OAuth provider thật. Các gate CI/Preview cũ của PR ở commit `da1bb65b` không thay thế kết quả trên main mới. Cần commit/push cập nhật PR hiện có để chạy lại CI/Preview trước quyết định merge riêng.
 
 Bằng chứng: `/Users/huytran/nailiq-audit-results-20260907/register-success-guard/` — baseline HTTP, unit JSON, build/typecheck, browser report/ảnh, server log và cleanup.
+
+## Bổ sung gate CI sau đối chiếu artifact
+
+Run đầu của bản refresh `a68a775d` có CI/E2E SUCCESS nhưng artifact chỉ có 458 ca PASS: workflow dùng danh sách spec cố định, thiếu file guard mới. Hai ca guard chưa chạy trong CI dù đã PASS local/Preview; không gọi đây là CI chứng minh guard. Đã thêm file vào shard non-RC và bước WebKit riêng bao gồm hai ca guard cùng hành trình tạo salon bằng Auth thật. Báo cáo WebKit có tên riêng để giữ nguyên artifact của shard chính. Không đổi mã ứng dụng, assertion hoặc retry để xử lý thiếu sót này. Kết quả cuối phải đọc trên SHA mới.
