@@ -107,10 +107,18 @@ test("operator completes the five essential Front Desk tasks in one shift", asyn
     .insert({
       salon_id: fx.salonId,
       service_id: fx.serviceIds[0]!,
+      staff_id: fx.conflictStaffId,
       booking_date: fx.ymdUtc,
+      preferred_slot_label: fx.conflictSlotLabel,
       client_name: waitlistName,
       client_phone: "16045552420",
+      // The requested technician is already occupied at this exact local
+      // time, so the authoritative capacity guard proves the request is full.
       source: "slot_unavailable",
+      intent_json: {
+        source: "slot_unavailable",
+        staffPreference: fx.conflictStaffId,
+      },
       status: "waiting",
     })
     .select("id")

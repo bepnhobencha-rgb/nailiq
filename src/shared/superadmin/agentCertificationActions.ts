@@ -212,7 +212,8 @@ export function buildAgentCertificationMatrix(input: {
 }
 
 async function isSuperadmin(): Promise<boolean> {
-  return (await requireActiveSuperAdminSession()).ok;
+  const access = await requireActiveSuperAdminSession();
+  return access.ok && ["founder", "ai_admin"].includes(access.role);
 }
 
 export async function loadAgentCertificationMatrix(): Promise<

@@ -1635,6 +1635,17 @@ export async function enterBookingPhone(
 }
 
 /**
+ * Accept transactional SMS consent when the salon exposes that channel.
+ * SMS-OFF salons intentionally render no checkbox and require no consent.
+ */
+export async function acceptSmsConsentIfPresented(page: Page): Promise<void> {
+  const smsConsent = page.getByTestId("sms-consent");
+  if (await smsConsent.isVisible()) {
+    await smsConsent.check();
+  }
+}
+
+/**
  * Clear the phone-first entry gate on an already-loaded public booking page.
  *
  * This is the single source of truth for "how a test gets through the gate",
@@ -1653,8 +1664,9 @@ export async function enterBookingPhone(
  *     and `nameOk` is auto-true). The name input only appears after the ~400ms
  *     customer lookup, so we wait on IT, never on the consent checkbox (which
  *     renders on load and would resolve instantly, filling the name too early).
- *  3. SMS consent — required by Twilio A2P 10DLC / TCPA / CASL. Ticked here, at
- *     the gate, which is where the product now collects it. Never skipped.
+ *  3. SMS consent — required by Twilio A2P 10DLC / TCPA / CASL only when the
+ *     salon has outbound SMS enabled. Ticked here when rendered; an SMS-OFF
+ *     salon deliberately has no transactional SMS consent to collect.
  *
  * @param opts.phone  E.164 digits of the gate phone (default GATE_PHONE_DIGITS).
  * @param opts.name   New-customer name to type (default "Test Guest").
@@ -1677,7 +1689,12 @@ export async function completeBookingEntryGate(
   const nameInput = page.getByTestId("booking-entry-name");
   await nameInput.waitFor({ state: "visible", timeout: 8_000 });
   await nameInput.fill(opts?.name ?? GATE_NAME);
-  await page.getByTestId("sms-consent").check();
+  // Commit the debounced identity before entering the service flow. When SMS
+  // is enabled, checking consent naturally blurs this field; SMS-OFF salons
+  // have no checkbox, so an explicit blur prevents the keyed flow from
+  // remounting after a service was already selected.
+  await nameInput.blur();
+  await acceptSmsConsentIfPresented(page);
 }
 
 /**

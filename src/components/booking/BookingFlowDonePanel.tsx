@@ -22,6 +22,7 @@ import {
   formatInSalonTz,
   salonTimezoneAbbreviation,
 } from "@/shared/lib/salonTime";
+import type { BookingConfirmationDeliveryTruth } from "@/shared/booking/bookingConfirmationDeliveryTruth";
 
 export function BookingFlowDonePanel({
   t,
@@ -34,6 +35,7 @@ export function BookingFlowDonePanel({
   bookingId,
   cardManagementToken,
   cardManagementPending,
+  confirmationDelivery,
   salonPhone,
   salonTimezone,
   pricing,
@@ -55,6 +57,8 @@ export function BookingFlowDonePanel({
   cardManagementToken: string | null;
   /** Booking is confirmed; only the separate no-show card step remains. */
   cardManagementPending: boolean;
+  /** Separate post-commit email/SMS state. This must never control booking success. */
+  confirmationDelivery: BookingConfirmationDeliveryTruth;
   /** Public salon line: `salons.salon_phone` only (not owner `phone`, never guest). */
   salonPhone: string | null;
   /** IANA TZ — confirmation displays the booking time in the salon's local zone (B-16). */
@@ -214,8 +218,7 @@ export function BookingFlowDonePanel({
           {t.successSeeYouSoonBefore}
           <span className="font-medium text-[var(--booking-text)]">{shopLabel}</span>
         </p>
-        {/* Twilio expects the opt-in to be confirmed back to the customer once
-            the booking completes. Only shown when they actually consented. */}
+        {/* Confirm the preference without claiming that a message was delivered. */}
         {smsConsent ? (
           <p
             data-testid="sms-subscribed-notice"
@@ -224,6 +227,38 @@ export function BookingFlowDonePanel({
             {t.successSmsSubscribed.replace("{salon}", shopLabel)}
           </p>
         ) : null}
+      </div>
+
+      <div
+        className="nq-booking-glass rounded-[1.35rem] px-5 py-4"
+        data-testid="booking-delivery-truth"
+        role="status"
+        aria-live="polite"
+      >
+        <p className="font-semibold text-[var(--booking-text)]">
+          {t.confirmationDeliveryHeading}
+        </p>
+        <div className="mt-3 space-y-2 text-sm leading-relaxed text-[var(--booking-text-muted)]">
+          <p data-testid="booking-email-delivery-status">
+            <span className="font-semibold text-[var(--booking-text)]">{t.confirmationEmailLabel}: </span>
+            {confirmationDelivery.email === "processing"
+              ? t.confirmationEmailProcessing
+              : t.confirmationEmailNotRequested}
+          </p>
+          <p data-testid="booking-sms-delivery-status">
+            <span className="font-semibold text-[var(--booking-text)]">{t.confirmationSmsLabel}: </span>
+            {confirmationDelivery.sms === "accepted"
+              ? t.confirmationSmsAccepted
+              : confirmationDelivery.sms === "suppressed"
+                ? t.confirmationSmsSuppressed
+                : confirmationDelivery.sms === "unverified"
+                  ? t.confirmationSmsUnverified
+                  : t.confirmationSmsNotRequested}
+          </p>
+        </div>
+        <p className="mt-3 text-xs leading-relaxed text-[var(--booking-text-muted)] opacity-80">
+          {t.confirmationDeliveryBookingSafe}
+        </p>
       </div>
 
       <div

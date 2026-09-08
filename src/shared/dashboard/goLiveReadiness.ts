@@ -235,7 +235,13 @@ export function evaluateGoLiveReadiness(
           : guidedRequired
             ? `${input.activeServices.length} dịch vụ đang hoạt động có giá, thời lượng và nhân viên thực hiện hợp lệ.`
             : `${input.activeServices.length} dịch vụ đang hoạt động có giá và thời lượng hợp lệ.`,
-      href: `${setupBase}/services`,
+      // Price/duration problems belong in Services. Once those values are
+      // valid, missing service coverage is fixed from the staff capability
+      // drawer, so take the owner directly to the control that can resolve it.
+      href:
+        servicesValid && guidedRequired && input.serviceCoverageValid !== true
+          ? `${setupBase}/staff`
+          : `${setupBase}/services`,
     },
     {
       id: "staff",

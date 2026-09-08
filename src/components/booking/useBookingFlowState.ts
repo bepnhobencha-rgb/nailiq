@@ -87,6 +87,7 @@ import {
 } from "@/shared/booking/publicBookingRequestId";
 import { createPublicClient } from "@/shared/lib/supabase/publicClient";
 import { v1AllowsNoShowCardOnFile } from "@/shared/release/v1IntegrationScope";
+import type { BookingConfirmationDeliveryTruth } from "@/shared/booking/bookingConfirmationDeliveryTruth";
 
 const CUSTOMER_PAYMENT_GATEWAY_ENABLED = v1AllowsNoShowCardOnFile();
 
@@ -431,6 +432,7 @@ export function useBookingFlowState(
     pricing: PublicBookingPricingQuote;
     cardManagementToken: string | null;
     cardManagementPending: boolean;
+    confirmationDelivery: BookingConfirmationDeliveryTruth;
   } | null>(null);
 
   // Minutes an add-on ADDS to the appointment: concurrent add-ons run alongside
@@ -1882,6 +1884,7 @@ export function useBookingFlowState(
         pricing: result.pricing,
         cardManagementToken: result.cardManagementToken,
         cardManagementPending: result.cardManagementPending,
+        confirmationDelivery: result.confirmationDelivery,
       });
       setStepDir(1);
       setStep("done");

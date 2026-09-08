@@ -364,14 +364,14 @@ export type TenantControlResult =
   | { ok: true }
   | {
       ok: false;
-      error: "unauthorized" | "invalid_payload" | "not_found" | "server_error";
+      error: "unauthorized" | "forbidden" | "invalid_payload" | "not_found" | "server_error";
     };
 
 export type LoadAllSalonsResult =
   | { ok: true; salons: SuperAdminSalonRow[] }
   | {
       ok: false;
-      error: "unauthorized" | "server_error";
+      error: "unauthorized" | "forbidden" | "server_error";
     };
 
 export type SuperAdminUserMembership = {
@@ -391,7 +391,7 @@ export type SuperAdminUserRow = {
 
 export type LoadAllUsersResult =
   | { ok: true; users: SuperAdminUserRow[] }
-  | { ok: false; error: "unauthorized" | "server_error" };
+  | { ok: false; error: "unauthorized" | "forbidden" | "server_error" };
 
 /**
  * Per-salon detail surface for `/superadmin/salons/[salonId]`.
@@ -424,7 +424,7 @@ export type LoadSalonDetailResult =
   | { ok: true; salon: SuperAdminSalonDetail }
   | {
       ok: false;
-      error: "unauthorized" | "not_found" | "server_error";
+      error: "unauthorized" | "forbidden" | "not_found" | "server_error";
     };
 
 export type UpdateSalonFlagsInput = {
@@ -447,7 +447,7 @@ export type UpdateSalonFlagsResult =
   | { ok: true }
   | {
       ok: false;
-      error: "unauthorized" | "invalid_payload" | "not_found" | "server_error";
+      error: "unauthorized" | "forbidden" | "invalid_payload" | "not_found" | "server_error";
     };
 
 /** Tables exposed to SuperAdmin restore. Bookings + salons are
@@ -470,13 +470,13 @@ export type DeletedRecord = {
 
 export type LoadDeletedRecordsResult =
   | { ok: true; records: DeletedRecord[] }
-  | { ok: false; error: "unauthorized" | "server_error" };
+  | { ok: false; error: "unauthorized" | "forbidden" | "server_error" };
 
 export type RestoreSalonRecordResult =
   | { ok: true }
   | {
       ok: false;
-      error: "unauthorized" | "invalid_payload" | "not_found" | "server_error";
+      error: "unauthorized" | "forbidden" | "invalid_payload" | "not_found" | "server_error";
     };
 
 export function isRestorableTable(value: unknown): value is RestorableTable {
@@ -578,13 +578,13 @@ export type PlatformFlag = {
 
 export type LoadPlatformFlagsResult =
   | { ok: true; flags: PlatformFlag[] }
-  | { ok: false; error: "unauthorized" | "server_error" };
+  | { ok: false; error: "unauthorized" | "forbidden" | "server_error" };
 
 export type UpdatePlatformFlagResult =
   | { ok: true; key: PlatformFlagKey; enabled: boolean }
   | {
       ok: false;
-      error: "unauthorized" | "invalid_payload" | "server_error";
+      error: "unauthorized" | "forbidden" | "invalid_payload" | "server_error";
     };
 
 export function isPlatformFlagKey(value: unknown): value is PlatformFlagKey {

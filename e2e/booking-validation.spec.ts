@@ -1,8 +1,10 @@
 import { expect, test, type Page } from "@playwright/test";
 
 import {
+  acceptSmsConsentIfPresented,
   cleanupClientProfile,
   cleanupTestSalon,
+  enterBookingPhone,
   gotoBookingServiceStep,
   seedTestSalon,
   setReactInputValue,
@@ -79,7 +81,7 @@ test.describe("Booking validation — info step", () => {
     // individual flow (service step) must never mount.
     await page.goto(`/${testSlug}`);
     await expect(page.getByTestId("booking-phone-gate")).toBeVisible();
-    await setReactInputValue(page.getByTestId("booking-entry-phone"), "123");
+    await enterBookingPhone(page, "123");
     await expect(page.getByTestId("booking-entry-phone")).toHaveAttribute(
       "aria-invalid",
       "true",
@@ -93,9 +95,13 @@ test.describe("Booking validation — info step", () => {
   test("bv-2: valid phone formats at the gate reveal the service step", async ({ page }) => {
     await page.goto(`/${testSlug}`);
     await expect(page.getByTestId("booking-phone-gate")).toBeVisible();
+    // Keep the raw format inputs below, but wait until React handles input events.
+    await page.getByTestId("booking-entry-hydrated").waitFor({
+      state: "attached",
+      timeout: 15_000,
+    });
 
     const phoneInput = page.getByTestId("booking-entry-phone");
-    const smsConsent = page.getByTestId("sms-consent");
     const nameInput = page.getByTestId("booking-entry-name");
 
     // CountryPhoneField accepts the national number (no country code prefix).
@@ -115,13 +121,13 @@ test.describe("Booking validation — info step", () => {
 
       if (!gateUnlocked) {
         // First valid phone: satisfy the gate so the flow can mount. Wait on the
-        // NAME input, not the consent checkbox — the checkbox renders on load and
-        // resolves instantly, so the old `if (nameInput.isVisible())` ran before
-        // the ~400ms customer lookup revealed the name input, left the name empty,
-        // and the gate stayed closed. Name + consent persist across phone changes.
+        // NAME input, not the optional consent checkbox — the customer lookup
+        // controls whether the new-customer field appears, while SMS-OFF salons
+        // intentionally render no checkbox at all.
         await nameInput.waitFor({ state: "visible", timeout: 8_000 });
         await nameInput.fill("Test Guest");
-        await smsConsent.check();
+        await nameInput.blur();
+        await acceptSmsConsentIfPresented(page);
         gateUnlocked = true;
       }
 

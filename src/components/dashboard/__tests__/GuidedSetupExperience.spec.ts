@@ -92,6 +92,33 @@ describe("Guided Setup rendered experience", () => {
     expect(html).toContain("Chưa quyết định — có thể bỏ qua");
   });
 
+  it("routes missing service capability coverage to staff instead of services", () => {
+    const value = readiness({
+      identity: "pass",
+      schedule: "pass",
+      staff: "pass",
+    });
+    const catalog = value.checks.find((check) => check.id === "catalog");
+    if (!catalog) throw new Error("catalog fixture missing");
+    catalog.href = "/dashboard/qa%20salon/setup/staff";
+    catalog.detailVi =
+      "Gán mỗi dịch vụ đang hoạt động cho ít nhất một nhân viên đang hoạt động.";
+
+    const html = renderToStaticMarkup(
+      createElement(GuidedSetupHub, {
+        slug: "qa salon",
+        salonName: "QA Salon",
+        readiness: value,
+        setupCoverage,
+      }),
+    );
+
+    expect(html).toContain('href="/dashboard/qa%20salon/setup/staff"');
+    expect(html).not.toContain(
+      'data-testid="guided-setup-next" href="/dashboard/qa%20salon/setup/services"',
+    );
+  });
+
   it("offers explicit Review and Skip actions only at the optional step", () => {
     const html = renderToStaticMarkup(
       createElement(GuidedSetupHub, {

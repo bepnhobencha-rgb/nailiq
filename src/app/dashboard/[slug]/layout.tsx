@@ -332,6 +332,7 @@ export default async function DashboardSlugLayout({ children, params }: Props) {
           <PlatformAnnouncementBanner
             announcements={platformAnnouncements}
             language={userLanguage}
+            storageScope={`${ctx.salon.id}:${user?.id ?? "salon"}`}
           />
           {isTrial ? (
             <div

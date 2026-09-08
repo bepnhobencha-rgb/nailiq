@@ -429,6 +429,10 @@ export function StaffSetupPanel({
           );
           setDrawerOpen(false);
           setToast({ variant: "success", message: tLabels.staffSaved });
+          // Capability assignments are server-owned readiness evidence. A
+          // refresh keeps the staff drawer inputs and Coco summary in sync
+          // immediately after save instead of requiring a manual reload.
+          refresh();
         }}
         onAdded={() => {
           refresh();

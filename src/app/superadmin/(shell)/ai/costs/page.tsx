@@ -1,3 +1,4 @@
+import { requireSuperadminPage } from "@/shared/superadmin/requireSuperadminPage";
 import { Badge, type BadgeVariant } from "@/components/ui/Badge";
 import { Card } from "@/components/ui/Card";
 import { KPIWidget } from "@/components/ui/KPIWidget";
@@ -25,6 +26,7 @@ const budgetVariant: Record<BudgetState, BadgeVariant> = {
 const usd = (value: number) => `$${value.toFixed(4)}`;
 
 export default async function AiCostsPage() {
+  await requireSuperadminPage("ai");
   const result = await loadAiCostDashboard();
 
   return (

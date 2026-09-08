@@ -1,3 +1,4 @@
+import { requireSuperadminPage } from "@/shared/superadmin/requireSuperadminPage";
 import { createServiceRoleClient } from "@/shared/lib/supabase/serviceRole";
 
 export const dynamic = "force-dynamic";
@@ -83,6 +84,7 @@ async function loadCounts(): Promise<Counts> {
 }
 
 export default async function SuperadminDashboardPage() {
+  await requireSuperadminPage("dashboard");
   const counts = await loadCounts();
 
   return (

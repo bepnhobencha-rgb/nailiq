@@ -105,7 +105,10 @@ function loadDefaultPublicSnapshot(
   const flight = loadPublicSnapshotWithRetry(client, normalizedSlug);
   publicSnapshotFlights.set(normalizedSlug, flight);
   void flight.then((result) => {
-    if (result.error) {
+    if (result.error || !result.snapshot || result.snapshot.salon.profile_complete !== true) {
+      // A paused/missing salon can become bookable immediately after go-live.
+      // Share only the in-flight read for these states, never retain them for
+      // the burst TTL after the lookup resolves.
       publicSnapshotFlights.delete(normalizedSlug);
       return;
     }
@@ -118,9 +121,8 @@ function loadDefaultPublicSnapshot(
   return flight;
 }
 
-// NOTE:
-// cache() may cause stale NOT_FOUND after new salon creation.
-// Consider removing or bypassing cache for not_found in future.
+// Request-local deduplication. Cross-request burst sharing above retains only
+// bookable snapshots, so go-live and newly created salons are reread promptly.
 export const resolvePublicBookingPage = cache(
   async (
     rawSlug: string,

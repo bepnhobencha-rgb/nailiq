@@ -8,8 +8,9 @@ import { cn } from "@/shared/lib/cn";
  * date, localized. Critical when you drill into an arbitrary day from Month
  * view — the Yesterday/Today/Tomorrow tabs alone can't tell you the date.
  *
- * Fixed `vi-VN` / `en-US` locale on a plain calendar date (no UTC instant)
- * keeps the format identical server + client — hydration-safe.
+ * A plain calendar date avoids salon/UTC date shifts. Assemble the full
+ * label from semantic Intl parts: WebKit adds a Vietnamese "ngày" literal
+ * that Node does not, even with the same explicit locale.
  */
 function ymdToDate(ymd: string): Date {
   const [y, m, d] = ymd.split("-").map(Number);
@@ -31,11 +32,16 @@ export function ViewedDateChip({
   const monthShort = new Intl.DateTimeFormat(locale, { month: "short" })
     .format(date)
     .replace(/\.$/, "");
-  const full = new Intl.DateTimeFormat(locale, {
+  const fullParts = new Intl.DateTimeFormat(locale, {
     day: "numeric",
     month: "long",
     year: "numeric",
-  }).format(date);
+  }).formatToParts(date);
+  const part = (type: Intl.DateTimeFormatPartTypes) =>
+    fullParts.find((value) => value.type === type)?.value ?? "";
+  const full = language === "vi"
+    ? `${part("day")} ${part("month")}, ${part("year")}`
+    : `${part("month")} ${part("day")}, ${part("year")}`;
   return (
     <div className="flex shrink-0 items-center gap-2.5" data-testid="viewed-date-chip">
       {/* Calendar tear-off tile */}

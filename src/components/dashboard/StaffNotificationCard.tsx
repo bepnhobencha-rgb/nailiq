@@ -5,6 +5,7 @@ import { useEffect, useState, useTransition } from "react";
 import { Button } from "@/components/ui/Button";
 import { useUserLanguage } from "@/shared/lib/useUserLanguage";
 import { getUserMessages } from "@/shared/i18n/user";
+import { SETTINGS_SAVE_UNCONFIRMED } from "@/shared/dashboard/settingsSaveFeedback";
 import {
   DEFAULT_STAFF_NOTIFICATION_SETTINGS,
   type StaffNotificationSettings,
@@ -37,22 +38,33 @@ export function StaffNotificationCard({
     DEFAULT_STAFF_NOTIFICATION_SETTINGS,
   );
   const [loaded, setLoaded] = useState(false);
+  const [loadFailed, setLoadFailed] = useState(false);
+  const [loadAttempt, setLoadAttempt] = useState(0);
   const [saving, startSave] = useTransition();
   const [toast, setToast] = useState<{ kind: "ok" | "err"; msg: string } | null>(
     null,
   );
 
   useEffect(() => {
-    let alive = true;
-    void getStaffNotificationSettings(slug).then((r) => {
-      if (!alive) return;
-      if (r.ok) setSettings(r.settings);
-      setLoaded(true);
-    });
-    return () => {
-      alive = false;
-    };
-  }, [slug]);
+    let active = true;
+    async function load() {
+      try {
+        const r = await getStaffNotificationSettings(slug);
+        if (!active) return;
+        if (r.ok) {
+          setSettings(r.settings);
+          setLoadFailed(false);
+          setLoaded(true);
+        } else {
+          setLoadFailed(true);
+        }
+      } catch {
+        if (active) setLoadFailed(true);
+      }
+    }
+    void load();
+    return () => { active = false; };
+  }, [slug, loadAttempt]);
 
   function onSave() {
     setToast(null);
@@ -64,12 +76,16 @@ export function StaffNotificationCard({
       },
     };
     startSave(async () => {
-      const r = await saveStaffNotificationSettings(slug, sanitizedSettings);
-      if (r.ok) {
-        setSettings(r.settings);
-        setToast({ kind: "ok", msg: t.saved });
-      } else {
-        setToast({ kind: "err", msg: t.saveError });
+      try {
+        const r = await saveStaffNotificationSettings(slug, sanitizedSettings);
+        if (r.ok) {
+          setSettings(r.settings);
+          setToast({ kind: "ok", msg: t.saved });
+        } else {
+          setToast({ kind: "err", msg: t.saveError });
+        }
+      } catch {
+        setToast({ kind: "err", msg: SETTINGS_SAVE_UNCONFIRMED[language] });
       }
     });
   }
@@ -82,10 +98,23 @@ export function StaffNotificationCard({
       <h2 className="text-base font-semibold text-nq-foreground">{t.title}</h2>
       <p className="mt-1 text-sm text-nq-muted">{t.subtitle}</p>
 
-      {!loaded ? (
+      {loadFailed ? (
+        <div className="mt-4 space-y-3">
+          <p role="alert" className="text-sm text-nq-error">
+            {language === "vi" ? "Chưa tải được cài đặt. Kiểm tra kết nối rồi thử lại." : "Settings could not be loaded. Check your connection, then try again."}
+          </p>
+          <Button type="button" onClick={() => {
+            setLoadFailed(false);
+            setLoaded(false);
+            setLoadAttempt((attempt) => attempt + 1);
+          }}>
+            {language === "vi" ? "Thử tải lại" : "Try loading again"}
+          </Button>
+        </div>
+      ) : !loaded ? (
         <p className="mt-4 text-sm italic text-nq-muted">{t.loading}</p>
       ) : (
-        <div className="mt-4 flex flex-col gap-4">
+        <fieldset disabled={saving} className="mt-4 flex min-w-0 flex-col gap-4">
           {/* Master toggle */}
           <label className="flex cursor-pointer items-center gap-3">
             <input
@@ -212,7 +241,7 @@ export function StaffNotificationCard({
                   ? "text-sm text-nq-success"
                   : "text-sm text-nq-error"
               }
-              role="status"
+              role={toast.kind === "ok" ? "status" : "alert"}
             >
               {toast.msg}
             </p>
@@ -223,7 +252,7 @@ export function StaffNotificationCard({
               {t.save}
             </Button>
           </div>
-        </div>
+        </fieldset>
       )}
     </section>
   );

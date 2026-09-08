@@ -300,10 +300,25 @@ describe("evaluateGoLiveReadiness", () => {
     expect(result.checks.find((check) => check.id === "catalog")).toMatchObject({
       state: "action",
       blocking: true,
+      href: "/dashboard/tech-nails/setup/staff",
     });
     expect(
       result.checks.find((check) => check.id === "booking-policy"),
     ).toMatchObject({ state: "action", blocking: true });
+  });
+
+  it("keeps catalog price and duration repairs on the services page", () => {
+    const result = evaluateGoLiveReadiness({
+      ...readyInput,
+      guidedSetupEnabled: true,
+      activeServices: [{ priceCents: 4500, durationMinutes: null }],
+      serviceCoverageValid: false,
+    });
+
+    expect(result.checks.find((check) => check.id === "catalog")).toMatchObject({
+      state: "action",
+      href: "/dashboard/tech-nails/setup/services",
+    });
   });
 
   it("requires an explicit numeric group threshold when group booking is enabled", () => {

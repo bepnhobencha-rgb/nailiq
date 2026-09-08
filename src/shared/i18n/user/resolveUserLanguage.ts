@@ -1,5 +1,6 @@
-import { cookies } from "next/headers";
+import { cookies, headers } from "next/headers";
 import { createClient } from "@/shared/lib/supabase/server";
+import { BOOKING_DOCUMENT_LANGUAGE_HEADER } from "@/shared/i18n/booking/documentLanguage";
 import {
   USER_LANGUAGE_COOKIE,
   USER_LANGUAGES,
@@ -24,6 +25,20 @@ import {
  * salon-owner UI and customer-facing UI can diverge per surface.
  */
 export async function resolveUserLanguage(): Promise<UserLanguage> {
+  // Public booking pages carry a Proxy-authored request hint so the root
+  // document language matches `?lang=`/the booking cookie before hydration.
+  // This is intentionally separate from the owner's dashboard preference.
+  const requestHeaders = await headers();
+  const bookingDocumentLanguage = requestHeaders.get(
+    BOOKING_DOCUMENT_LANGUAGE_HEADER,
+  );
+  if (
+    bookingDocumentLanguage &&
+    USER_LANGUAGES.includes(bookingDocumentLanguage as UserLanguage)
+  ) {
+    return bookingDocumentLanguage as UserLanguage;
+  }
+
   // 1. A logged-in user's saved account language wins — it follows them across
   //    devices (set via /api/user/language). Anonymous visitors skip this.
   try {

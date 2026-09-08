@@ -41,6 +41,7 @@ export function BookingFlowStaffPanel({
   onSelectStaffId,
   onNext,
   techRoleLabel,
+  language,
 }: {
   t: BookingMessages;
   staff: readonly BookingStaffItem[];
@@ -52,6 +53,7 @@ export function BookingFlowStaffPanel({
   onNext: () => void;
   /** Vertical-specific label for the `nail_tech` role (e.g. "Therapist"). */
   techRoleLabel?: string;
+  language: "en" | "vi";
 }) {
   return (
     <motion.section
@@ -153,7 +155,7 @@ export function BookingFlowStaffPanel({
                   {displayName}
                 </span>
                 <span className="mt-0.5 block text-sm text-[color-mix(in_srgb,var(--booking-text)_75%,var(--booking-bg))]">
-                  {formatStaffJobRole(s.job_role, techRoleLabel)}
+                  {formatStaffJobRole(s.job_role, techRoleLabel, language)}
                 </span>
               </span>
             </motion.button>

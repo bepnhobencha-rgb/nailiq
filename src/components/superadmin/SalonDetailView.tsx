@@ -32,7 +32,9 @@ import type { SquareConnectionStatus } from "@/shared/superadmin/squareConnectio
 export function SalonDetailView({
   salon,
   squareConnection,
+  canManage = false,
 }: {
+  canManage?: boolean;
   salon: SuperAdminSalonDetail;
   squareConnection: SquareConnectionStatus | null;
 }) {
@@ -55,7 +57,7 @@ export function SalonDetailView({
       </div>
 
       <div className="mt-6 flex flex-col gap-5">
-        <TenantStatusCard salon={salon} />
+        {canManage ? <TenantStatusCard salon={salon} /> : null}
         <ImpersonateButton
           salonId={salon.id}
           salonName={salon.name || salon.slug}
@@ -67,9 +69,9 @@ export function SalonDetailView({
             status={squareConnection}
           />
         ) : null}
-        <SalonOverrideCard salon={salon} />
-        <SalonReleaseFeaturesCard salon={salon} />
-        <DeletedRecordsSection salonId={salon.id} />
+        {canManage ? <SalonOverrideCard salon={salon} /> : null}
+        {canManage ? <SalonReleaseFeaturesCard salon={salon} /> : null}
+        <DeletedRecordsSection salonId={salon.id} canManage={canManage} />
       </div>
     </main>
   );

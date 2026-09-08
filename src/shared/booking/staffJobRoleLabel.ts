@@ -8,10 +8,16 @@
  * `resolveVertical(salon.vertical).staffRoleLabel[lang]`; when omitted it
  * defaults to the historical "Nail Tech".
  */
-export function formatStaffJobRole(jobRole: string, techLabel?: string): string {
+export function formatStaffJobRole(
+  jobRole: string,
+  techLabel?: string,
+  language: "en" | "vi" = "en",
+): string {
   const r = jobRole.trim().toLowerCase();
-  if (r === "owner") return "Owner";
-  if (r === "senior") return "Senior";
-  if (r === "nail_tech") return techLabel?.trim() || "Nail Tech";
+  if (r === "owner") return language === "vi" ? "Chủ tiệm" : "Owner";
+  if (r === "senior") return language === "vi" ? "Thợ chính" : "Senior";
+  if (r === "nail_tech") {
+    return techLabel?.trim() || (language === "vi" ? "Thợ nail" : "Nail Tech");
+  }
   return jobRole;
 }

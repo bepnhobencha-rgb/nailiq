@@ -1,0 +1,29 @@
+# QA — cảnh báo mất kết nối trên mobile và ngày tiếng Việt
+
+Phạm vi: local từ main `2909db45`, nhánh `fix/coco-mobile-status-overlap-20260908`. Owner QA đăng nhập thật trên database loopback dùng riêng; chặn SMS/email/calls, không có credential provider. Không thao tác salon live. Kết quả này cập nhật QA-CB-02 trong báo cáo connection-banner cùng ngày.
+
+## Lỗi đã tái hiện và sửa local
+
+1. **Coco che Updated — mức trung bình.** Đặt nhãn Updated ở vùng dưới viewport iPhone; `elementFromPoint` trúng nút Coco. Test hồi quy FAIL trên build gốc. Coco được đặt trong luồng bố cục phía đầu nội dung lễ tân ở viewport dưới `xl`; desktop giữ vị trí nổi. Điều kiện feature/role và trạng thái chat giữ nguyên. Nút dùng màu token cũ, cao 44 px; mở/đóng được mà không gửi câu hỏi.
+2. **Create che Updated trên iPhone SE — mức trung bình.** Sau khi dời Coco, kiểm tra 320×568 vẫn thấy Create che nhãn. Dời đúng một menu Create vào đầu lịch mobile, trước điều hướng ngày; menu mở xuống dưới. Không đổi handler hoặc quyền tạo lịch. Các lựa chọn Create vẫn được kiểm tra qua bộ shell V2.
+3. **Ngày tiếng Việt gây React #418 — mức cao.** Tái hiện cả trên build gốc và dev gốc. Stack chỉ ra `ViewedDateChip.tsx`: server render `8 tháng 9, 2026`, WebKit render `ngày 8 tháng 9, 2026`. Ghép nhãn từ các phần day/month/year của `Intl.formatToParts`, bỏ sự phụ thuộc vào literal khác nhau giữa runtime. Không dùng suppressHydrationWarning.
+
+## Bằng chứng kiểm tra
+
+- Hồi quy cuối: 4 ca Anh/Việt × Chromium/WebKit, lặp 3 lần = **12/12 PASS**, 0 skip/flaky/retry. Mobile kiểm tra cả kích thước mặc định và 320×568; bắt buộc Updated không bị che, Reload đăng ký lại Realtime thật, Coco mở/đóng và không có hydration error.
+- Ma trận ảnh/đo bố cục: iPhone SE EN, iPhone Pro Max VI, iPad VI, desktop EN: **4/4 PASS trong phạm vi bố cục, hydration và không gửi request AI**. Đã xem ảnh cảnh báo và vị trí Coco; màu nút giữ nguyên `rgb(212,175,55)` với chữ `rgb(11,12,16)` từ token hiện có.
+- Bộ shell V2 liên quan: **8/8 PASS** sau sửa cuối, gồm desktop/iPad/mobile và menu chọn lịch.
+- Guided Setup: **4/4 PASS**, kiểm tra luồng bật/tắt điều hướng có liên quan.
+- Unit liên quan: **18/18 PASS**. Build, typecheck, lint, diff check PASS.
+
+## Giới hạn và lỗi chưa đủ bằng chứng
+
+Các lượt WebKit mở rộng vẫn ghi nhận `TypeError: Load failed` và thông báo `due to access control checks` quanh URL chuyển trang. Dấu hiệu cũng có trên bản gốc; chưa xác định nguyên nhân và không kết luận CORS/backend. Toàn bộ thông báo giữ trong JSON/trace. Diagnostic chỉ nghiệm thu bố cục và lỗi hydration đã xác định, không tuyên bố console sạch toàn bộ. Lượt đầu chọn `textarea` quá rộng, và lần chạy cấu hình ma trận đầu sai đường dẫn globalSetup, là lỗi bộ kiểm tra đã được sửa và lưu log.
+
+PR #1358, commit ứng dụng `401af08c`: CI build/typecheck/lint/security PASS; 4.524 unit PASS và 1 skip. Preview READY, `/api/version` khớp SHA. Lượt visual CI đầu có 14 PASS và 2 FAIL do ảnh chuẩn mobile vẫn dùng bố cục Coco/Create cũ: ảnh mới cao 1.541 px thay vì 1.425 px, đúng 60 px cho Coco và 56 px cho Create. Đã xem expected/actual của Chromium và WebKit, xác nhận ảnh giữa hai lượt chạy giống nhau hoàn toàn; cập nhật đúng hai PNG Linux từ artifact CI. Không nới ngưỡng ảnh, thêm skip hoặc đổi code ứng dụng. Cần lượt CI kế tiếp xác nhận ảnh chuẩn mới.
+
+Lượt E2E CI bắt đầu sau 19:00 UTC còn phát hiện các test drawer/edit dùng giờ UTC cố định, trong khi `receptionistE2eTimezone()` chọn `Etc/GMT+5`. Ba ca buffer hiển thị đúng giờ salon (lệch 5 tiếng so với kỳ vọng UTC cũ); ca edit lưu 16:00Z cho 11:00 salon là đúng; ca conflict tạo booking 15:00Z (= 10:00 salon) nhưng lại kiểm tra chặn ô 15:00 salon. Các file test và helper này giống main trước PR. Đổi seed và kỳ vọng lưu giờ sang `salonWallTimeToUtcIso(..., fx.timezone)`, giữ nguyên kiểm tra nhãn buffer, giờ kết thúc, ô trùng bị ẩn, ô trống hiện và booking không đổi khi chưa lưu. Không đổi logic giờ của ứng dụng. Lint/typecheck local PASS; chờ CI xác nhận cả hai trình duyệt.
+
+Chưa merge hoặc triển khai Production. 16 ca skip còn lại trên main không thuộc phạm vi sửa. Số lượt test không tương đương số chức năng trong danh sách 784.
+
+Bằng chứng local: `/Users/huytran/nailiq-audit-results-20260907/coco-mobile-status/` (JSON, trace, ảnh, log build/kiểm tra và biên bản dọn database).

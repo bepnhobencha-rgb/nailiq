@@ -1,3 +1,4 @@
+import { requireSuperadminPage } from "@/shared/superadmin/requireSuperadminPage";
 import type { Metadata } from "next";
 import { AuditLogFilterBar } from "@/components/superadmin/AuditLogFilterBar";
 import { AuditLogPager } from "@/components/superadmin/AuditLogPager";
@@ -46,6 +47,7 @@ export default async function SuperadminAuditLogsPage({
 }: {
   searchParams: Promise<Record<string, string | string[] | undefined>>;
 }) {
+  await requireSuperadminPage("support");
   const params = await searchParams;
 
   const cursor = pickString(params.cursor) ?? null;

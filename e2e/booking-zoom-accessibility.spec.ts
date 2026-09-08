@@ -167,6 +167,11 @@ test.describe("MQA-0035 — public booking remains readable at 200% zoom", () =>
     await assertColorContrast(page, "#book", "new guest entry");
 
     await page.getByTestId("booking-entry-name").fill("Zoom QA Guest");
+    await assertColorContrast(
+      page,
+      '[data-testid="booking-entry-newgreeting"]',
+      "new guest greeting",
+    );
     await page.getByTestId("sms-consent").check();
 
     const service = await auditStep(

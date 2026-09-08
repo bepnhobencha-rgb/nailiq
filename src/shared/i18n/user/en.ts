@@ -835,7 +835,9 @@ export type UserMessages = {
       saving: string;
       resendButton: string;
       resendSent: string;
+      resendUnavailable: string;
       saveSuccess: string;
+      savePending: string;
       saveError: string;
       invalidEmail: string;
     };
@@ -1957,6 +1959,8 @@ export type UserMessages = {
       invalid_actual_time: string;
       actual_time_too_old: string;
       actual_time_in_future: string;
+      salon_closed: string;
+      outside_hours: string;
       staff_not_found: string;
       staff_cannot_perform_service: string;
       invalid_duration: string;
@@ -3596,7 +3600,7 @@ export const userEn: UserMessages = {
       noEmailHint: "No email on file.",
       verifiedBadge: "Verified",
       pendingBadge: "Pending",
-      pendingHint: "Verification link sent — check your inbox (and spam).",
+      pendingHint: "Saved but not verified yet. Send a verification link when email delivery is available.",
       verifiedToast: "Email verified.",
       verifyErrorPrefix: "Verification failed: ",
       changeButton: "Change email",
@@ -3605,7 +3609,9 @@ export const userEn: UserMessages = {
       saving: "Saving…",
       resendButton: "Resend link",
       resendSent: "Verification email sent",
+      resendUnavailable: "The email is saved, but the verification link could not be sent. Check email delivery settings and try again.",
       saveSuccess: "Saved — check your inbox to verify",
+      savePending: "Email saved, but the verification link was not sent. Nothing was delivered to this inbox.",
       saveError: "Could not save. Please try again.",
       invalidEmail: "Enter a valid email address.",
     },
@@ -4659,6 +4665,9 @@ export const userEn: UserMessages = {
       invalid_actual_time: "Choose a valid arrival time.",
       actual_time_too_old: "Arrival time can be adjusted back up to 30 minutes.",
       actual_time_in_future: "Arrival time cannot be in the future.",
+      salon_closed: "The salon is closed today. A walk-in was not created.",
+      outside_hours:
+        "This service would finish outside salon hours. A walk-in was not created.",
       staff_not_found: "Staff not found.",
       staff_cannot_perform_service:
         "This staff member is not set up to perform that service.",

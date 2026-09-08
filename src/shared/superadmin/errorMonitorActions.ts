@@ -39,7 +39,7 @@ type LoadResult =
 
 async function requireSuperadmin(): Promise<string | null> {
   const access = await requireActiveSuperAdminSession();
-  return access.ok ? access.user.id : null;
+  return access.ok && ["founder", "ops_admin", "support_admin", "readonly_analyst"].includes(access.role) ? access.user.id : null;
 }
 
 async function requireErrorQaOperator(): Promise<string | null> {
@@ -87,7 +87,7 @@ export async function loadErrorLogs(
 
 /** On-demand AI triage from the admin page (the cron also does this every 10m). */
 export async function triageErrorNow(id: string): Promise<{ ok: boolean }> {
-  const uid = await requireSuperadmin();
+  const uid = await requireErrorQaOperator();
   if (!uid) return { ok: false };
   const { triageError } = await import("@/shared/observability/triageError");
   return triageError(id);
@@ -98,7 +98,7 @@ export async function triageErrorNow(id: string): Promise<{ ok: boolean }> {
 export async function draftFixNow(
   id: string,
 ): Promise<{ ok: boolean; prUrl?: string | null }> {
-  const uid = await requireSuperadmin();
+  const uid = await requireErrorQaOperator();
   if (!uid) return { ok: false };
   const { draftFix } = await import("@/shared/observability/draftFix");
   return draftFix(id);
@@ -108,7 +108,7 @@ export async function setErrorStatus(
   id: string,
   status: "resolved" | "ignored" | "open",
 ): Promise<{ ok: boolean }> {
-  const uid = await requireSuperadmin();
+  const uid = await requireErrorQaOperator();
   if (!uid) return { ok: false };
   try {
     const admin = createServiceRoleClient();

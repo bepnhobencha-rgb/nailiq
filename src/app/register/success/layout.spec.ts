@@ -31,6 +31,17 @@ describe("RegisterSuccessLayout", () => {
     expect(redirect).toHaveBeenCalledWith("/register");
   });
 
+  it("rejects an expired or invalid authentication session", async () => {
+    getUser.mockResolvedValueOnce({
+      data: { user: null },
+      error: { code: "session_not_found", message: "Session expired" },
+    });
+
+    await expect(
+      RegisterSuccessLayout({ children: createElement("h1", null, "Salon created!") }),
+    ).rejects.toThrow("NEXT_REDIRECT:/register");
+  });
+
   it("returns success content for an authenticated registration session", async () => {
     getUser.mockResolvedValueOnce({
       data: { user: { id: "owner-user-id" } },

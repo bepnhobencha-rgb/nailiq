@@ -42,6 +42,11 @@ import {
 } from "@/shared/lib/customDomainResolver";
 import { consumeEdgeDurableRateLimits } from "@/shared/security/edgeDurableRateLimit";
 import { resolveSupabaseServerUrl } from "@/shared/lib/supabase/serverUrl";
+import {
+  BOOKING_LANG_COOKIE,
+  BOOKING_DOCUMENT_LANGUAGE_HEADER,
+  resolveBookingDocumentLanguageHint,
+} from "@/shared/i18n/booking/documentLanguage";
 
 /** Public booking slug path: `/<slug>` only (single segment, kebab case).
  *  Excludes `/dashboard`, `/register`, `/login`, `/api`, `/auth`,
@@ -72,6 +77,19 @@ function isPublicBookingSlugPath(pathname: string): boolean {
   const m = PUBLIC_BOOKING_SLUG_RE.exec(pathname);
   if (!m) return false;
   return !RESERVED_TOP_LEVEL_SEGMENTS.has(m[1]);
+}
+
+function bookingDocumentRequestHeaders(request: NextRequest): Headers {
+  const requestHeaders = new Headers(request.headers);
+  requestHeaders.delete(BOOKING_DOCUMENT_LANGUAGE_HEADER);
+  const language = resolveBookingDocumentLanguageHint(
+    request.nextUrl.searchParams.get("lang"),
+    request.cookies.get(BOOKING_LANG_COOKIE)?.value ?? null,
+  );
+  if (language) {
+    requestHeaders.set(BOOKING_DOCUMENT_LANGUAGE_HEADER, language);
+  }
+  return requestHeaders;
 }
 
 function rateLimitedResponse(message: string): NextResponse {
@@ -336,7 +354,9 @@ export async function proxy(request: NextRequest) {
       url.pathname = `/${slug}`;
       ErrorReporter.getCurrentScope().setTag("salon.slug", slug);
       ErrorReporter.getCurrentScope().setTag("surface", "custom-domain");
-      return NextResponse.rewrite(url);
+      return NextResponse.rewrite(url, {
+        request: { headers: bookingDocumentRequestHeaders(request) },
+      });
     }
   }
 
@@ -408,7 +428,9 @@ export async function proxy(request: NextRequest) {
     // per anonymous page view and keeps the shared DB pool available for the
     // tenant catalog read. Custom-domain roots already take the equivalent
     // early rewrite path above.
-    return NextResponse.next({ request });
+    return NextResponse.next({
+      request: { headers: bookingDocumentRequestHeaders(request) },
+    });
   }
 
   // Auth attempts — POST to `/register` or `/login`. After Task #06

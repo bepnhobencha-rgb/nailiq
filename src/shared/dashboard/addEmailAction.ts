@@ -7,8 +7,23 @@ import { resolveSalonForDashboard } from "@/shared/dashboard/salonOwnerActions";
 import { sendEmailVerification } from "@/shared/dashboard/sendEmailVerification";
 import { isValidEmailFormat } from "@/shared/lib/emailFormat";
 
+async function verificationDelivery(input: {
+  salonId: string;
+  salonName: string;
+  email: string;
+}): Promise<"sent" | "unavailable"> {
+  try {
+    const result = await sendEmailVerification(input);
+    return result.ok ? "sent" : "unavailable";
+  } catch {
+    // Defense in depth: a verification-provider failure must never turn an
+    // already-saved recovery email into a dashboard crash.
+    return "unavailable";
+  }
+}
+
 export type AddSalonEmailResult =
-  | { ok: true }
+  | { ok: true; verificationDelivery: "sent" | "unavailable" }
   | {
       ok: false;
       error:
@@ -53,16 +68,18 @@ export async function addSalonEmail(
       console.error("[addSalonEmail] demo update", error);
       return { ok: false, error: "server_error" };
     }
-    // Best-effort verification send. The email is already saved (with
-    // email_verified: false); a Resend miss/throw must not undo the
-    // save — owners can resave to retry. The send helper logs its own
-    // failures.
-    void sendEmailVerification({
+    // The email save and delivery are separate truths. Await the best-effort
+    // send so the UI never claims that a link reached the inbox when the
+    // provider is unavailable.
+    const delivery = await verificationDelivery({
       salonId: salon.id,
       salonName: String(salon.name ?? slug),
       email: trimmed,
     });
-    return { ok: true };
+    return {
+      ok: true,
+      verificationDelivery: delivery,
+    };
   }
 
   const supabase = await createClient();
@@ -77,14 +94,18 @@ export async function addSalonEmail(
     return { ok: false, error: "server_error" };
   }
 
-  // Best-effort send (see demo path above for rationale).
-  void sendEmailVerification({
+  // Best-effort delivery must still be awaited so its result can be reported
+  // independently from the already-successful email save.
+  const delivery = await verificationDelivery({
     salonId: salon.id,
     salonName: String(salon.name ?? slug),
     email: trimmed,
   });
 
-  return { ok: true };
+  return {
+    ok: true,
+    verificationDelivery: delivery,
+  };
 }
 
 /**
@@ -93,7 +114,10 @@ export async function addSalonEmail(
  */
 export async function resendVerification(
   slug: string,
-): Promise<{ ok: boolean; error?: string }> {
+): Promise<
+  | { ok: true; verificationDelivery: "sent" | "unavailable" }
+  | { ok: false; error: "unauthorized" | "no_email" }
+> {
   const resolved = await resolveSalonForDashboard(slug);
   if (!resolved || !isOwnerOrAdmin(resolved.role)) {
     return { ok: false, error: "unauthorized" };
@@ -101,10 +125,13 @@ export async function resendVerification(
   const { salon } = resolved;
   if (!salon.email) return { ok: false, error: "no_email" };
 
-  await sendEmailVerification({
+  const delivery = await verificationDelivery({
     salonId: salon.id,
     salonName: String(salon.name ?? slug),
     email: salon.email,
   });
-  return { ok: true };
+  return {
+    ok: true,
+    verificationDelivery: delivery,
+  };
 }

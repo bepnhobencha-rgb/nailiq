@@ -303,6 +303,65 @@ export default function VerticalDayView({
       onTouchStart={onTouchStart}
       onTouchEnd={onTouchEnd}
     >
+      {/* Keep the single Create entry in the schedule flow so it cannot cover
+          connection warnings above the schedule on short touch screens. */}
+      {onAddBooking || onAddWalkin || onAddGroup ? (
+        <details
+          ref={createMenuRef}
+          className="group relative z-40 mx-4 mb-2 w-fit"
+        >
+          <summary
+            data-testid="mobile-create-menu-trigger"
+            className="flex cursor-pointer list-none items-center gap-2 rounded-full bg-nq-primary px-4 py-3 text-base font-semibold text-black shadow-lg transition-transform active:scale-95 [&::-webkit-details-marker]:hidden"
+            aria-label={
+              language === "vi"
+                ? "Tạo lịch hoặc khách vãng lai"
+                : "Create booking or walk-in"
+            }
+          >
+            <Plus
+              size={16}
+              strokeWidth={2.5}
+              className="transition-transform group-open:rotate-45"
+              aria-hidden
+            />
+            {addLabel}
+          </summary>
+          <div className="absolute top-full left-0 mt-2 w-56 rounded-2xl border border-white/15 bg-[#181225] p-2 shadow-2xl">
+            {onAddWalkin ? (
+              <button
+                type="button"
+                data-testid="mobile-create-walkin"
+                onClick={() => runCreateAction(onAddWalkin)}
+                className="min-h-11 w-full rounded-xl px-3 text-left text-base font-semibold text-white/90 transition-colors hover:bg-white/10"
+              >
+                {language === "vi" ? "Khách vãng lai" : "Walk-in customer"}
+              </button>
+            ) : null}
+            {onAddBooking ? (
+              <button
+                type="button"
+                data-testid="mobile-create-appointment"
+                onClick={() => runCreateAction(onAddBooking)}
+                className="min-h-11 w-full rounded-xl px-3 text-left text-base font-semibold text-white/90 transition-colors hover:bg-white/10"
+              >
+                {language === "vi" ? "Hẹn mới" : "New appointment"}
+              </button>
+            ) : null}
+            {onAddGroup ? (
+              <button
+                type="button"
+                data-testid="mobile-create-group"
+                onClick={() => runCreateAction(onAddGroup)}
+                className="min-h-11 w-full rounded-xl px-3 text-left text-base font-semibold text-white/90 transition-colors hover:bg-white/10"
+              >
+                {language === "vi" ? "Hẹn nhóm" : "Group booking"}
+              </button>
+            ) : null}
+          </div>
+        </details>
+      ) : null}
+
       {/* Keep date navigation immediately readable; motion on the individual
           controls still provides touch feedback without reducing contrast. */}
       <div className="flex items-center justify-between px-3 pb-2 pt-1">
@@ -513,63 +572,7 @@ export default function VerticalDayView({
         );
       })}
 
-      {/* One mobile create entry point replaces the duplicate header actions. */}
-      {onAddBooking || onAddWalkin || onAddGroup ? (
-        <details
-          ref={createMenuRef}
-          className="group fixed bottom-20 left-4 z-40"
-        >
-          <summary
-            data-testid="mobile-create-menu-trigger"
-            className="flex cursor-pointer list-none items-center gap-2 rounded-full bg-nq-primary px-4 py-3 text-base font-semibold text-black shadow-lg transition-transform active:scale-95 [&::-webkit-details-marker]:hidden"
-            aria-label={
-              language === "vi"
-                ? "Tạo lịch hoặc khách vãng lai"
-                : "Create booking or walk-in"
-            }
-          >
-            <Plus
-              size={16}
-              strokeWidth={2.5}
-              className="transition-transform group-open:rotate-45"
-              aria-hidden
-            />
-            {addLabel}
-          </summary>
-          <div className="absolute bottom-full left-0 mb-2 w-56 rounded-2xl border border-white/15 bg-[#181225] p-2 shadow-2xl">
-            {onAddWalkin ? (
-              <button
-                type="button"
-                data-testid="mobile-create-walkin"
-                onClick={() => runCreateAction(onAddWalkin)}
-                className="min-h-11 w-full rounded-xl px-3 text-left text-base font-semibold text-white/90 transition-colors hover:bg-white/10"
-              >
-                {language === "vi" ? "Khách vãng lai" : "Walk-in customer"}
-              </button>
-            ) : null}
-            {onAddBooking ? (
-              <button
-                type="button"
-                data-testid="mobile-create-appointment"
-                onClick={() => runCreateAction(onAddBooking)}
-                className="min-h-11 w-full rounded-xl px-3 text-left text-base font-semibold text-white/90 transition-colors hover:bg-white/10"
-              >
-                {language === "vi" ? "Hẹn mới" : "New appointment"}
-              </button>
-            ) : null}
-            {onAddGroup ? (
-              <button
-                type="button"
-                data-testid="mobile-create-group"
-                onClick={() => runCreateAction(onAddGroup)}
-                className="min-h-11 w-full rounded-xl px-3 text-left text-base font-semibold text-white/90 transition-colors hover:bg-white/10"
-              >
-                {language === "vi" ? "Hẹn nhóm" : "Group booking"}
-              </button>
-            ) : null}
-          </div>
-        </details>
-      ) : null}
+
     </div>
   );
 }

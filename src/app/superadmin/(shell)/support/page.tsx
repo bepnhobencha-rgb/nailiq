@@ -1,3 +1,4 @@
+import { requireSuperadminPage } from "@/shared/superadmin/requireSuperadminPage";
 import { redirect } from "next/navigation";
 
 /**
@@ -6,6 +7,7 @@ import { redirect } from "next/navigation";
  * tools land, this can either grow into a real index or keep
  * redirecting to the most-trafficked sub-page.
  */
-export default function SupportIndexPage(): never {
+export default async function SupportIndexPage() {
+  await requireSuperadminPage("support");
   redirect("/superadmin/support/audit-logs");
 }

@@ -1,3 +1,4 @@
+import { requireSuperadminPage } from "@/shared/superadmin/requireSuperadminPage";
 import { loadErrorLogs } from "@/shared/superadmin/errorMonitorActions";
 import { ErrorMonitorClient } from "@/components/superadmin/ErrorMonitorClient";
 import {
@@ -32,6 +33,7 @@ function formatTimestamp(value: string | null) {
  * Auth + superadmin gate runs in `(shell)/layout.tsx`.
  */
 export default async function SystemHealthPage() {
+  await requireSuperadminPage("operations");
   const [result, cronHealth] = await Promise.all([
     loadErrorLogs("open"),
     loadCronOperatingState().catch(() => null),

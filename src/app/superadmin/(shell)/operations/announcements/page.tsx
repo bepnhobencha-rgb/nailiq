@@ -1,3 +1,4 @@
+import { requireSuperadminPage } from "@/shared/superadmin/requireSuperadminPage";
 import { AnnouncementsAdmin } from "@/components/superadmin/AnnouncementsAdmin";
 import { loadAnnouncements } from "@/shared/superadmin/announcementsActions";
 import { currentReleaseReviewContext } from "@/shared/superadmin/releaseReviewContext";
@@ -21,6 +22,7 @@ export default async function AnnouncementsPage({
 }: {
   searchParams: Promise<{ release?: string | string[] }>;
 }) {
+  await requireSuperadminPage("operations");
   const result = await loadAnnouncements();
   const params = await searchParams;
   const requestedRelease =

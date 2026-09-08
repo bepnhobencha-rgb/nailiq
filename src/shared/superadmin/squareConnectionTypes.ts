@@ -16,7 +16,7 @@ export type SquareConnectionStatus = {
 
 export type LoadSquareConnectionResult =
   | { ok: true; status: SquareConnectionStatus }
-  | { ok: false; error: "unauthorized" | "not_found" | "server_error" };
+  | { ok: false; error: "unauthorized" | "forbidden" | "not_found" | "server_error" };
 
 export type SquareConnectError =
   | "unauthorized"

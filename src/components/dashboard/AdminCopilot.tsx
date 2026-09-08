@@ -234,8 +234,8 @@ export function AdminCopilot({
   const [loading, setLoading] = useState(false);
   const scrollRef = useRef<HTMLDivElement>(null);
   const inputRef = useRef<HTMLTextAreaElement>(null);
-  const compactOnCenter =
-    compactFab && pathname.startsWith(`/dashboard/${encodeURIComponent(slug)}/center`);
+  const onCenter = pathname.startsWith(`/dashboard/${encodeURIComponent(slug)}/center`);
+  const compactOnCenter = compactFab && onCenter;
   const compactOnSmartCheckout = pathname.startsWith(
     `/dashboard/${encodeURIComponent(slug)}/smart-checkout`,
   );
@@ -388,17 +388,21 @@ export function AdminCopilot({
 
   return (
     <>
-      {/* Floating action button */}
+      {/* On the touch-layout desk, reserve space in normal flow so Coco
+          cannot cover connection warnings or other operational controls. */}
       {!open && (
         <button
           onClick={() => setOpen(true)}
           className={cn(
-            "fixed bottom-20 right-5 z-50 flex min-h-11 items-center justify-center gap-2 rounded-full bg-nq-primary text-nq-bg shadow-nq-card transition-opacity hover:opacity-90 xl:bottom-5",
+            "z-50 flex min-h-11 items-center justify-center gap-2 rounded-full bg-nq-primary text-nq-bg shadow-nq-card transition-opacity hover:opacity-90",
+            onCenter
+              ? "mx-4 my-2 w-fit xl:fixed xl:bottom-5 xl:mx-0 xl:my-0"
+              : "fixed bottom-20 right-5 xl:bottom-5",
             compactOnCenter
               ? "min-w-11 px-3 xl:right-[21rem]"
               : compactOnSmartCheckout
                 ? "min-w-11 px-3 sm:pl-3.5 sm:pr-4"
-                : "pl-3.5 pr-4",
+                : "pl-3.5 pr-4 xl:right-5",
           )}
           aria-label={COPY.fab[lang]}
         >
@@ -407,7 +411,7 @@ export function AdminCopilot({
             className={cn(
               "text-sm font-semibold",
               compactOnCenter
-                ? "sr-only"
+                ? "xl:sr-only"
                 : compactOnSmartCheckout
                   ? "sr-only sm:not-sr-only"
                   : undefined,

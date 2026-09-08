@@ -36,7 +36,16 @@ export async function sendEmailVerification(input: {
   salonName: string;
   email: string;
 }): Promise<SendEmailVerificationResult> {
-  const resend = getResendClient();
+  let resend: ReturnType<typeof getResendClient>;
+  try {
+    resend = getResendClient();
+  } catch {
+    // `getResendClient` intentionally throws when production is missing its
+    // credential. Verification delivery is best-effort, so convert that
+    // configuration fault into explicit delivery truth for the caller rather
+    // than crashing the settings page after the email address was saved.
+    return { ok: false, reason: "no_client" };
+  }
   if (!resend) {
     // Dev-only path; production throws inside getResendClient.
     return { ok: false, reason: "no_client" };

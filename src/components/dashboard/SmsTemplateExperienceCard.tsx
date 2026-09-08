@@ -15,6 +15,7 @@ import {
   type SmsTemplateSettings,
 } from "@/shared/lib/smsTemplateRegistry";
 import { useUserLanguage } from "@/shared/lib/useUserLanguage";
+import { SETTINGS_SAVE_UNCONFIRMED } from "@/shared/dashboard/settingsSaveFeedback";
 
 const DEFAULT_SELECTED: SmsTemplateKey = "booking_confirmation";
 
@@ -28,20 +29,31 @@ export function SmsTemplateExperienceCard({ slug }: { slug: string }) {
   const [selected, setSelected] = useState<SmsTemplateKey>(DEFAULT_SELECTED);
   const [settings, setSettings] = useState<SmsTemplateSettings>({});
   const [loaded, setLoaded] = useState(false);
+  const [loadFailed, setLoadFailed] = useState(false);
+  const [loadAttempt, setLoadAttempt] = useState(0);
   const [saving, startSaving] = useTransition();
-  const [notice, setNotice] = useState<"saved" | "error" | null>(null);
+  const [notice, setNotice] = useState<"saved" | "error" | "unconfirmed" | null>(null);
 
   useEffect(() => {
     let active = true;
-    void getSmsTemplateSettings(slug).then((result) => {
-      if (!active) return;
-      if (result.ok) setSettings(result.settings);
-      setLoaded(true);
-    });
-    return () => {
-      active = false;
-    };
-  }, [slug]);
+    async function load() {
+      try {
+        const r = await getSmsTemplateSettings(slug);
+        if (!active) return;
+        if (r.ok) {
+          setSettings(r.settings);
+          setLoadFailed(false);
+          setLoaded(true);
+        } else {
+          setLoadFailed(true);
+        }
+      } catch {
+        if (active) setLoadFailed(true);
+      }
+    }
+    void load();
+    return () => { active = false; };
+  }, [slug, loadAttempt]);
 
   const definition = SMS_TEMPLATE_DEFINITIONS.find(
     (item) => item.key === selected,
@@ -55,12 +67,16 @@ export function SmsTemplateExperienceCard({ slug }: { slug: string }) {
   function save() {
     setNotice(null);
     startSaving(async () => {
-      const result = await saveSmsTemplateSettings(slug, settings);
-      if (result.ok) {
-        setSettings(result.settings);
-        setNotice("saved");
-      } else {
-        setNotice("error");
+      try {
+        const result = await saveSmsTemplateSettings(slug, settings);
+        if (result.ok) {
+          setSettings(result.settings);
+          setNotice("saved");
+        } else {
+          setNotice("error");
+        }
+      } catch {
+        setNotice("unconfirmed");
       }
     });
   }
@@ -79,12 +95,25 @@ export function SmsTemplateExperienceCard({ slug }: { slug: string }) {
           : "Preview language, length, and status for every message. Required receipts stay locked so customers are never left without confirmation."}
       </p>
 
-      {!loaded ? (
+      {loadFailed ? (
+        <div className="mt-4 space-y-3">
+          <p role="alert" className="text-sm text-nq-error">
+            {vi ? "Chưa tải được cài đặt. Kiểm tra kết nối rồi thử lại." : "Settings could not be loaded. Check your connection, then try again."}
+          </p>
+          <Button type="button" onClick={() => {
+            setLoadFailed(false);
+            setLoaded(false);
+            setLoadAttempt((attempt) => attempt + 1);
+          }}>
+            {vi ? "Thử tải lại" : "Try loading again"}
+          </Button>
+        </div>
+      ) : !loaded ? (
         <p className="mt-4 text-sm text-nq-muted">
           {vi ? "Đang tải…" : "Loading…"}
         </p>
       ) : (
-        <div className="mt-4 grid gap-4 lg:grid-cols-[minmax(0,1fr)_minmax(0,1fr)]">
+        <fieldset disabled={saving} className="mt-4 grid min-w-0 gap-4 lg:grid-cols-[minmax(0,1fr)_minmax(0,1fr)]">
           <div className="flex flex-col gap-2" role="radiogroup" aria-label={vi ? "Loại SMS" : "SMS type"}>
             {SMS_TEMPLATE_DEFINITIONS.map((item) => {
               const enabled = item.required || settings[item.key] !== false;
@@ -160,22 +189,24 @@ export function SmsTemplateExperienceCard({ slug }: { slug: string }) {
               </p>
             ) : null}
           </div>
-        </div>
+        </fieldset>
       )}
 
-      {loaded ? (
+      {loaded && !loadFailed ? (
         <div className="mt-4 flex flex-wrap items-center gap-3">
           <Button onClick={save} loading={saving} disabled={saving}>
             {vi ? "Lưu cài đặt mẫu" : "Save template settings"}
           </Button>
           {notice ? (
             <p
-              role={notice === "error" ? "alert" : "status"}
-              className={notice === "error" ? "text-sm text-nq-error" : "text-sm text-nq-success"}
+              role={notice === "saved" ? "status" : "alert"}
+              className={notice === "saved" ? "text-sm text-nq-success" : "text-sm text-nq-error"}
             >
               {notice === "saved"
                 ? vi ? "Đã lưu." : "Saved."
-                : vi ? "Không lưu được. Vui lòng thử lại." : "Could not save. Please try again."}
+                : notice === "unconfirmed"
+                  ? SETTINGS_SAVE_UNCONFIRMED[vi ? "vi" : "en"]
+                  : vi ? "Không lưu được. Vui lòng thử lại." : "Could not save. Please try again."}
             </p>
           ) : null}
         </div>

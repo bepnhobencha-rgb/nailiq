@@ -108,7 +108,22 @@ export const bookingEn = {
   successHeading: "You're all set!",
   /** Post-opt-in confirmation Twilio expects after the booking completes. */
   successSmsSubscribed:
-    "You are subscribed to receive appointment confirmations and reminder text messages from {salon}. Reply STOP to unsubscribe. Reply HELP for help.",
+    "You chose to receive appointment confirmations and reminder text messages from {salon}. Reply STOP to unsubscribe. Reply HELP for help.",
+  confirmationDeliveryHeading: "Confirmation delivery",
+  confirmationEmailLabel: "Email",
+  confirmationSmsLabel: "SMS",
+  confirmationEmailProcessing:
+    "Processing — keep your booking reference until the email arrives.",
+  confirmationEmailNotRequested: "No email address was provided.",
+  confirmationSmsAccepted:
+    "Accepted for sending. Mobile delivery may take a moment.",
+  confirmationSmsSuppressed:
+    "Unavailable for this booking. Your appointment is still confirmed.",
+  confirmationSmsUnverified:
+    "Delivery could not be verified. Your appointment is still confirmed.",
+  confirmationSmsNotRequested: "Not requested.",
+  confirmationDeliveryBookingSafe:
+    "Message delivery does not change your confirmed appointment.",
   /** Shown under the heading when a staff member is assigned, e.g. "with Jenny". */
   successStaffLine: "with {name}",
   successSeeYouSoonBefore: "See you soon at ",
@@ -333,7 +348,7 @@ export const bookingEn = {
     /** Step-2 couple/group "sit together" toggle + reception badge. */
     seatTogetherLabel: "Seat us next to each other",
     seatTogetherHint:
-      "We'll arrange adjacent beds with a shared curtain when possible.",
+      "We'll keep chairs/beds as close together as possible; guests in separate waves may not be seated at the same time.",
     seatTogetherBadge: "Seat together",
     seatTogetherConfirm: "We'll seat your group next to each other 💕",
     /** Step-5 organizer recognition (returning-customer greeting). */
@@ -397,7 +412,7 @@ export const bookingEn = {
     peopleSuffix: "people",
     /** QA round-2 — staff-aware capacity hint under the size picker.
      * `{n}` = `maxGroupSize` (min of active-staff-count and hard cap). */
-    maxSizeHint: "Up to {n} people (limited by available staff)",
+    maxSizeHint: "Up to {n} people; larger groups may be split into multiple waves.",
     /** Live capacity probe on the shared schedule card. `loading`
      * fires while debounced fetch is in flight; `ok` is the steady
      * state; `insufficient` blocks submit. */

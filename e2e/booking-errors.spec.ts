@@ -2,6 +2,7 @@ import { test, expect, type Page } from "@playwright/test";
 import { createClient } from "@supabase/supabase-js";
 
 import {
+  acceptSmsConsentIfPresented,
   cleanupTestSalon,
   gotoBookingServiceStep,
   seedTestSalon,
@@ -573,6 +574,16 @@ test.describe("Booking error scenarios — /[slug]", () => {
     ).toHaveCount(0);
   });
 
+  test("hours-7b: reopening a paused salon is visible on the next page load", async ({ page }) => {
+    await setSalonRow(PRIMARY_SLUG, { profile_complete: false });
+    await page.goto(`/${PRIMARY_SLUG}`);
+    await expect(page.getByRole("heading", { name: "Booking is paused" })).toBeVisible();
+    await setSalonRow(PRIMARY_SLUG, { profile_complete: true });
+    await page.reload();
+    await expect(page.getByTestId("booking-entry-hydrated")).toBeAttached();
+    await expect(page.getByRole("heading", { name: "Booking is paused" })).toHaveCount(0);
+  });
+
   // ──────────────────────────────────────────────────────────
   // GROUP 3 — SECURITY / IDOR
   // ──────────────────────────────────────────────────────────
@@ -596,6 +607,10 @@ test.describe("Booking error scenarios — /[slug]", () => {
       .eq("salon_id", otherSalonId);
     const otherIds = (otherStaff ?? []).map((s: { id: string }) => String(s.id));
     expect(otherIds.length).toBeGreaterThan(0);
+    const { data: primary, error: primaryError } = await supabase
+      .from("salons").select("profile_complete").eq("slug", PRIMARY_SLUG).single();
+    expect(primaryError).toBeNull();
+    expect(primary?.profile_complete, "the IDOR fixture must be accepting bookings").toBe(true);
 
     await gotoBookingServiceStep(page, PRIMARY_SLUG);
     await page.locator('[data-testid="service-tile-select"]').first().click();
@@ -683,6 +698,11 @@ test.describe("Booking error scenarios — /[slug]", () => {
   }) => {
     await page.goto(`/${PRIMARY_SLUG}`);
     await expect(page.getByTestId("booking-phone-gate")).toBeVisible();
+    // Preserve the malformed input, but wait for React to handle its event.
+    await page.getByTestId("booking-entry-hydrated").waitFor({
+      state: "attached",
+      timeout: 15_000,
+    });
     await setReactInputValue(
       page.getByTestId("booking-entry-phone"),
       "abc123",
@@ -826,7 +846,7 @@ test.describe("Booking error scenarios — /[slug]", () => {
       phone: "6045551234",
       notes,
     });
-    await page.getByTestId("sms-consent").check();
+    await acceptSmsConsentIfPresented(page);
     await page.getByRole("button", { name: "Confirm booking" }).click();
     await expect(page.getByTestId("booking-success")).toBeVisible({
       timeout: 15_000,
@@ -850,7 +870,7 @@ test.describe("Booking error scenarios — /[slug]", () => {
       name: "Toronto Tester",
       phone: "6045551234",
     });
-    await page.getByTestId("sms-consent").check();
+    await acceptSmsConsentIfPresented(page);
     await page.getByRole("button", { name: "Confirm booking" }).click();
     await expect(page.getByTestId("booking-success")).toBeVisible({
       timeout: 15_000,

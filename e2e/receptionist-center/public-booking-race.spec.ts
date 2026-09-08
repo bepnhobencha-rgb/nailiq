@@ -28,7 +28,9 @@ import {
 
 let fx: ReceptionistCenterFixture;
 
-const GRID_HOUR_START = 8;
+// The shared receptionist fixture is intentionally open all day so intake
+// tests do not depend on the CI runner's weekday or wall clock.
+const GRID_HOUR_START = 0;
 const SLOT_MINUTES = 30;
 /** E2E Gel Manicure: 45 + 10 buffer (matches seed). */
 const PRIMARY_SERVICE_TOTAL_MIN = 55;
@@ -60,7 +62,7 @@ function utcYmdDayKey(ymd: string): DayKey {
 
 /**
  * Next calendar day (from `baseYmd`) where the default fixture opening_hours are open
- * and grid slot `slotIndex` (noon = 8) starts at or after `minStartMs`.
+ * and the fixture's absolute grid slot starts at or after `minStartMs`.
  */
 function pickBookableDateYmd(args: {
   baseYmd: string;
@@ -84,21 +86,21 @@ function pickBookableDateYmd(args: {
 }
 
 /**
- * Desk walk-in UI only renders on salon "today". Pick today only if the grid slot is still in the future.
+ * Desk intake is today-only. The fixture is open 00:00–23:59 every day,
+ * including Sunday; find a future half-hour slot that fits the whole service.
+ * Its timezone keeps the runner before 19:00 local, so today has ample room.
  */
-function pickBookableDateYmdTodayOnly(args: {
+function pickBookableSlotToday(args: {
   timezone: string;
-  slotIndex: number;
   minStartMs: number;
-}): string | null {
-  if (!defaultWeek) return null;
+}): { dateYmd: string; slotIndex: number } {
   const ymd = salonToday(args.timezone);
-  const minutesFromMidnight = GRID_HOUR_START * 60 + args.slotIndex * SLOT_MINUTES;
-  const cfg = defaultWeek[utcYmdDayKey(ymd)];
-  if (!cfg || cfg.closed) return null;
-  const startIso = salonWallTimeToUtcIso(ymd, minutesFromMidnight, args.timezone);
-  if (Date.parse(startIso) >= args.minStartMs) return ymd;
-  return null;
+  const lastStartMinutes = 23 * 60 + 59 - PRIMARY_SERVICE_TOTAL_MIN;
+  for (let slotIndex = 0; slotIndex * SLOT_MINUTES <= lastStartMinutes; slotIndex++) {
+    const startIso = salonWallTimeToUtcIso(ymd, slotIndex * SLOT_MINUTES, args.timezone);
+    if (Date.parse(startIso) >= args.minStartMs) return { dateYmd: ymd, slotIndex };
+  }
+  throw new Error("public-booking-race: today has no future slot; check fixture timezone and hours");
 }
 
 function slotBoundsForDate(
@@ -225,22 +227,17 @@ test.describe("race-1: walk-in assigned then public RPC same slot", () => {
 });
 
 test.describe("race-2: appointment blocks walk-in assign same slot", () => {
-  test("desk shows conflict toast; walk-in stays waiting; no grid block", async ({ page }, testInfo) => {
+  test("desk shows conflict toast; walk-in stays waiting; no grid block", async ({ page }) => {
     const minStartMs = Date.now() + 3 * 60_000;
-    const dateYmd = pickBookableDateYmdTodayOnly({
+    const { dateYmd, slotIndex } = pickBookableSlotToday({
       timezone: fx.timezone,
-      slotIndex: fx.noonSlotIndex,
       minStartMs,
     });
-    if (!dateYmd) {
-      testInfo.skip(true, "No future noon slot left on salon today; walk-in sidebar is today-only.");
-      return;
-    }
 
     const apptName = testClientNameMarker();
     const { startIso, endIso } = slotBoundsForDate(
       dateYmd,
-      fx.noonSlotIndex,
+      slotIndex,
       fx.timezone,
       PRIMARY_SERVICE_TOTAL_MIN,
     );

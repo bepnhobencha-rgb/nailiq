@@ -1065,7 +1065,7 @@ export const userVi: UserMessages = {
       noEmailHint: "Chưa có email.",
       verifiedBadge: "Đã xác thực",
       pendingBadge: "Chờ xác thực",
-      pendingHint: "Đã gửi link xác thực — kiểm tra hộp thư (cả thư rác).",
+      pendingHint: "Đã lưu nhưng chưa xác thực. Hãy gửi link khi kênh email sẵn sàng.",
       verifiedToast: "Đã xác thực email.",
       verifyErrorPrefix: "Lỗi xác thực: ",
       changeButton: "Đổi email",
@@ -1074,7 +1074,9 @@ export const userVi: UserMessages = {
       saving: "Đang lưu…",
       resendButton: "Gửi lại link",
       resendSent: "Đã gửi email xác thực",
+      resendUnavailable: "Email đã lưu nhưng chưa gửi được link xác thực. Kiểm tra cài đặt gửi email rồi thử lại.",
       saveSuccess: "Đã lưu — kiểm tra hộp thư để xác thực",
+      savePending: "Đã lưu email nhưng chưa gửi được link xác thực. Hộp thư này chưa nhận gì.",
       saveError: "Không lưu được. Vui lòng thử lại.",
       invalidEmail: "Email không hợp lệ.",
     },
@@ -2110,6 +2112,9 @@ export const userVi: UserMessages = {
       invalid_actual_time: "Chọn giờ khách đến hợp lệ.",
       actual_time_too_old: "Chỉ được chỉnh giờ khách đến lùi tối đa 30 phút.",
       actual_time_in_future: "Không thể chọn giờ khách đến trong tương lai.",
+      salon_closed: "Hôm nay tiệm đóng cửa. NailIQ chưa tạo khách vãng lai.",
+      outside_hours:
+        "Dịch vụ sẽ kết thúc ngoài giờ làm. NailIQ chưa tạo khách vãng lai.",
       staff_not_found: "Không tìm thấy nhân viên.",
       staff_cannot_perform_service:
         "Nhân viên này chưa được gán để làm dịch vụ đó.",

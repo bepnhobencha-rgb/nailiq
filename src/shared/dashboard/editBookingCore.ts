@@ -33,6 +33,7 @@ import {
   type ConflictCheckBooking,
   checkBookingConflict,
 } from "@/shared/lib/conflictCheck";
+import { resolveDeskEditPrice } from "@/shared/dashboard/editBookingPricing";
 
 const UUID_RE =
   /^[0-9a-f]{8}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{4}-[0-9a-f]{12}$/i;
@@ -51,6 +52,9 @@ type BookingEditRow = {
   addon_service_id?: unknown;
   resource_id?: unknown;
   schedule_model?: unknown;
+  price_cents?: unknown;
+  addon_price_cents?: unknown;
+  public_booking_pricing_snapshot?: unknown;
 };
 
 type ServiceTimingRow = {
@@ -273,7 +277,7 @@ export async function performEditBooking(
   const { data: booking, error: bkErr } = await supabase
     .from("bookings")
     .select(
-      "id, salon_id, status, staff_id, service_id, resource_id, start_time_utc, end_time_utc, addon_service_id, schedule_model",
+      "id, salon_id, status, staff_id, service_id, resource_id, start_time_utc, end_time_utc, addon_service_id, schedule_model, price_cents, addon_price_cents, public_booking_pricing_snapshot",
     )
     .eq("id", bookingId)
     .eq("salon_id", salonId)
@@ -595,11 +599,18 @@ export async function performEditBooking(
     if (!hoursCheck.ok) return { ok: false, error: "outside_hours" };
   }
 
-  const price =
-    svcData.price_cents != null
-      ? Math.round(Number(svcData.price_cents))
-      : null;
-  const priceCents = Number.isFinite(price ?? NaN) ? price : null;
+  const serviceChanged = newServiceId !== previousServiceId;
+  const addonChanged = (effectiveAddonId ?? "") !== previousAddonId;
+  const priceCents = resolveDeskEditPrice({
+    identityChanged: serviceChanged,
+    persistedPrice: bookingData.price_cents,
+    catalogPrice: svcData.price_cents,
+  });
+  addonPriceCents = resolveDeskEditPrice({
+    identityChanged: addonChanged,
+    persistedPrice: bookingData.addon_price_cents,
+    catalogPrice: addonPriceCents,
+  });
 
   const { data: existing, error: exErr } = await supabase
     .from("bookings")
@@ -689,6 +700,12 @@ export async function performEditBooking(
   if (input.newAddonServiceId !== undefined) {
     baseUpdate.addon_service_id = effectiveAddonId;
     baseUpdate.addon_price_cents = addonPriceCents;
+  }
+  if (serviceChanged || addonChanged) {
+    // The public quote describes the old service composition. Never leave a
+    // stale receipt attached after the receptionist intentionally changes the
+    // priced items; time/staff/resource-only edits preserve it untouched.
+    baseUpdate.public_booking_pricing_snapshot = null;
   }
 
   // Resource-mode: honour the receptionist's explicit bed pick (newResourceId),

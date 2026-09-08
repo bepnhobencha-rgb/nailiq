@@ -30,6 +30,8 @@ import { SalonClosureBanner } from "@/components/booking/SalonClosureBanner";
 import { hasUpcomingClosure } from "@/shared/booking/upcomingClosureNotice";
 import { loadAuthorizedBookingChatContext } from "@/shared/booking/bookingChatApiBoundary";
 import { loadPublicBookingSequenceReadiness } from "@/shared/booking/bookingSequenceReadiness";
+import { serializeJsonLd } from "@/shared/seo/serializeJsonLd";
+import { loadPublicBookingConsentRequirements } from "@/shared/booking/loadPublicBookingConsentRequirements";
 
 /** Avoid stale static segments for salons created after deploy. */
 export const dynamic = "force-dynamic";
@@ -102,6 +104,7 @@ async function PublicBookingRouteBody({
     pageSections,
     nailTryOnSalon,
     serviceCategories,
+    consentRequirements,
   ] = await Promise.all([
     langOverride
       ? Promise.resolve(langOverride)
@@ -120,6 +123,7 @@ async function PublicBookingRouteBody({
     load.salon.acceptingBookings
       ? loadServiceCategories()
       : Promise.resolve([]),
+    loadPublicBookingConsentRequirements(load.salon.id),
   ]);
   const t = getBookingMessages(lang);
   const bookingChatVisible = bookingChatContext?.ok === true;
@@ -197,7 +201,7 @@ async function PublicBookingRouteBody({
       <>
         <script
           type="application/ld+json"
-          dangerouslySetInnerHTML={{ __html: JSON.stringify(localBusinessSchema) }}
+          dangerouslySetInnerHTML={{ __html: serializeJsonLd(localBusinessSchema) }}
         />
         <BookingDocumentEn lang={lang} />
         <div
@@ -218,7 +222,7 @@ async function PublicBookingRouteBody({
     <>
       <script
         type="application/ld+json"
-        dangerouslySetInnerHTML={{ __html: JSON.stringify(localBusinessSchema) }}
+        dangerouslySetInnerHTML={{ __html: serializeJsonLd(localBusinessSchema) }}
       />
       {/* QA re-test follow-up — the prop was missing on this branch
           so `<html lang>` defaulted to "vi" forever even after the
@@ -250,11 +254,14 @@ async function PublicBookingRouteBody({
 
         {/* P0.1 — language toggle anchored top-right; floats above
             the main column so it doesn't push the layout. */}
-        <div className="pointer-events-none absolute top-4 right-4 z-20 sm:top-6 sm:right-6 lg:top-8 lg:right-8">
+        <nav
+          aria-label={lang === "vi" ? "Ngôn ngữ đặt lịch" : "Booking language"}
+          className="pointer-events-none absolute top-4 right-4 z-20 sm:top-6 sm:right-6 lg:top-8 lg:right-8"
+        >
           <div className="pointer-events-auto">
             <BookingLanguageToggle currentLang={lang} />
           </div>
-        </div>
+        </nav>
 
         {load.salon.closureNotice &&
         hasUpcomingClosure(load.salon.booking_closed_dates, load.salon.timezone) ? (
@@ -345,6 +352,7 @@ async function PublicBookingRouteBody({
                 voiceAiEnabled={load.salon.voiceAiEnabled}
                 groupBookingEnabled={load.salon.groupBookingEnabled}
                 multiServiceSequenceEnabled={multiServiceSequenceEnabled}
+                smsConsentRequired={consentRequirements.smsConsentRequired}
               />
             </BookingFlowErrorBoundary>
           </div>

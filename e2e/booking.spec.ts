@@ -1,6 +1,7 @@
 import { test, expect } from "@playwright/test";
 
 import {
+  acceptSmsConsentIfPresented,
   cleanupTestSalon,
   gotoBookingServiceStep,
   seedTestSalon,
@@ -60,7 +61,7 @@ test.describe("Booking Flow", () => {
     await clientName.fill("Test Client");
     await page.getByRole("button", { name: "Continue" }).first().click();
 
-    await page.getByTestId("sms-consent").check();
+    await acceptSmsConsentIfPresented(page);
     await page.getByRole("button", { name: "Confirm booking" }).click();
 
     await expect(

@@ -30,6 +30,8 @@ import type { SalonDashboardBooking } from "@/shared/types";
 import { cn } from "@/shared/lib/cn";
 import { formatCurrency, formatServicePrice } from "@/shared/lib/currencyFormat";
 import type { BookingSequenceRescheduleQuote } from "@/shared/booking/bookingSequenceReschedule";
+import { resolveDeskEditPrice } from "@/shared/dashboard/editBookingPricing";
+import { restoreOriginalBookingSlot } from "@/shared/dashboard/editBookingSlotTruth";
 
 /** Desk day row: ids + times required for edit defaults (receptionist `bookingsForDay`).
  *  Addon fields ride along for read-only display + correct end-time calc on save. */
@@ -417,33 +419,20 @@ export function EditBookingForm({
     })
       .then((res) => {
         if (cancelled) return;
-        let next = res;
-        // Self-occupancy patch: only on the booking's original day, force the
-        // original slot to be selectable again.
-        if (selectedDay === originalDayYmd) {
-          let found = false;
-          next = res.map((s) => {
-            if (s.label === originalSlotLabel) {
-              found = true;
-              return { ...s, available: true };
-            }
-            return s;
-          });
-          if (!found) {
-            // Original start isn't on the grid (off-grid time) — inject it.
-            next = [{ label: originalSlotLabel, available: true }, ...next];
-          }
-          // Re-sort: getAvailableTimeSlots orders available-first then
-          // chronological, but forcing the original slot to available (above)
-          // leaves it in its old unavailable position (end of list), so "4:00 PM"
-          // showed up after "5:45 PM". Sort again so times read in order.
-          next = [...next].sort((a, b) => {
-            const av = (b.available ? 1 : 0) - (a.available ? 1 : 0);
-            if (av !== 0) return av;
-            return (slotLabelToMinutes(a.label) ?? 0) - (slotLabelToMinutes(b.label) ?? 0);
-          });
-        }
-        setSlots(next);
+        setSlots(restoreOriginalBookingSlot(res, {
+          sameSalonDay: selectedDay === originalDayYmd,
+          originalSlotLabel,
+        }));
+      })
+      .catch(() => {
+        if (cancelled) return;
+        // The current slot is the only safe degraded choice: it is already
+        // occupied by this booking, and the server excludes only this booking
+        // ID before revalidating every mutation. Other days fail closed.
+        setSlots(restoreOriginalBookingSlot([], {
+          sameSalonDay: selectedDay === originalDayYmd,
+          originalSlotLabel,
+        }));
       })
       .finally(() => {
         if (!cancelled) setSlotsLoading(false);
@@ -491,15 +480,31 @@ export function EditBookingForm({
 
   const priceDisplay = useMemo(() => {
     if (!selectedSvc) return "—";
-    const mainCents = Number(selectedSvc.price_cents);
-    if (!Number.isFinite(mainCents)) return "—";
-    const addonCents = selectedAddonSvc
-      ? Number(selectedAddonSvc.priceCents ?? 0)
-      : 0;
-    const total = mainCents + (Number.isFinite(addonCents) ? addonCents : 0);
+    const mainCents = resolveDeskEditPrice({
+      identityChanged: selectedService !== originalService,
+      persistedPrice: booking.price_cents,
+      catalogPrice: selectedSvc.price_cents,
+    });
+    if (mainCents === null) return "—";
+    const addonCents = resolveDeskEditPrice({
+      identityChanged: selectedAddon !== originalAddon,
+      persistedPrice: booking.addon_price_cents,
+      catalogPrice: selectedAddonSvc?.priceCents ?? null,
+    });
+    const total = mainCents + (addonCents ?? 0);
     // P0.2 — render in the salon's currency.
     return formatCurrency(total, currency) ?? "—";
-  }, [selectedSvc, selectedAddonSvc, currency]);
+  }, [
+    selectedSvc,
+    selectedAddonSvc,
+    selectedService,
+    selectedAddon,
+    originalService,
+    originalAddon,
+    booking.price_cents,
+    booking.addon_price_cents,
+    currency,
+  ]);
 
   const proposedStartUtc = useMemo(() => {
     const startMin = slotLabelToMinutes(selectedSlotLabel);

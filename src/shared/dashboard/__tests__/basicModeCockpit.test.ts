@@ -155,6 +155,18 @@ test("available staff + empty queue → suggest walk-in", () => {
   assertEqual(a?.action?.target, "add_walkin");
 });
 
+test("closed intake never suggests a new walk-in", () => {
+  const a = computeNextAction(
+    {
+      ...base,
+      availableStaffName: "Anna",
+      walkinIntakeOpen: false,
+    },
+    labels,
+  );
+  assertEqual(a, null);
+});
+
 test("returns null when nothing useful — no 'all clear' filler", () => {
   assertEqual(computeNextAction(base, labels), null);
 });

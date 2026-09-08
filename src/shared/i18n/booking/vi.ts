@@ -103,7 +103,22 @@ export const bookingVi: BookingMessages = {
   marketingConsent: "Gửi cho tôi ưu đãi & tin tức qua SMS / email (tuỳ chọn)",
   successHeading: "Đã đặt lịch thành công!",
   successSmsSubscribed:
-    "Bạn đã đăng ký nhận tin nhắn xác nhận và nhắc lịch hẹn từ {salon}. Nhắn STOP để ngừng nhận. Nhắn HELP để được hỗ trợ.",
+    "Bạn đã chọn nhận tin nhắn xác nhận và nhắc lịch hẹn từ {salon}. Nhắn STOP để ngừng nhận. Nhắn HELP để được hỗ trợ.",
+  confirmationDeliveryHeading: "Trạng thái gửi xác nhận",
+  confirmationEmailLabel: "Email",
+  confirmationSmsLabel: "SMS",
+  confirmationEmailProcessing:
+    "Đang xử lý — vui lòng giữ mã đặt lịch cho đến khi email đến.",
+  confirmationEmailNotRequested: "Bạn chưa cung cấp email.",
+  confirmationSmsAccepted:
+    "Nhà cung cấp đã nhận để gửi. Tin nhắn có thể đến sau ít phút.",
+  confirmationSmsSuppressed:
+    "Không khả dụng cho lịch này. Lịch hẹn vẫn đã được xác nhận.",
+  confirmationSmsUnverified:
+    "Chưa xác minh được việc gửi tin. Lịch hẹn vẫn đã được xác nhận.",
+  confirmationSmsNotRequested: "Không yêu cầu gửi.",
+  confirmationDeliveryBookingSafe:
+    "Trạng thái tin nhắn không làm thay đổi lịch hẹn đã xác nhận.",
   successStaffLine: "với {name}",
   successSeeYouSoonBefore: "Hẹn gặp bạn tại ",
   bookingReferenceLabel: "Mã đặt lịch",
@@ -283,7 +298,7 @@ export const bookingVi: BookingMessages = {
     memberCustomBadge: "Đã đổi",
     seatTogetherLabel: "Xếp chỗ ngồi cạnh nhau",
     seatTogetherHint:
-      "Chúng tôi sẽ chuẩn bị 2 giường cạnh nhau và kéo rèm chung khi có thể.",
+      "Chúng tôi sẽ xếp các ghế/giường gần nhau nhất có thể; nhóm theo nhiều đợt có thể không ngồi cùng lúc.",
     seatTogetherBadge: "Ngồi cạnh nhau",
     seatTogetherConfirm: "Chúng tôi sẽ xếp cả nhóm ngồi cạnh nhau 💕",
     organizerGreeting: "Chào lại {name}!",
@@ -329,7 +344,7 @@ export const bookingVi: BookingMessages = {
       "Thợ này đã được chọn cho người khác — vui lòng chọn thợ khác.",
     totalLabel: "Tổng",
     peopleSuffix: "người",
-    maxSizeHint: "Tối đa {n} người (theo số thợ rảnh)",
+    maxSizeHint: "Tối đa {n} người; nhóm lớn có thể được chia thành nhiều đợt.",
     availabilityChecking: "Đang kiểm tra số thợ rảnh…",
     availabilityOk: "Có {free}/{total} thợ rảnh vào giờ này.",
     insufficientCapacity:

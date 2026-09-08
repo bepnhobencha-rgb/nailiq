@@ -216,13 +216,19 @@ export function SalonSettingsHub({
   const [advancedOpen, setAdvancedOpen] = useState(false);
 
   // Notification email card state
+  const [activeSalonEmail, setActiveSalonEmail] = useState(salonEmail);
+  const [activeEmailVerified, setActiveEmailVerified] = useState(emailVerified);
   const [emailEditOpen, setEmailEditOpen] = useState(false);
   const [newEmailInput, setNewEmailInput] = useState(salonEmail ?? "");
   const [emailEditPending, startEmailEditTransition] = useTransition();
   const [emailEditError, setEmailEditError] = useState<string | null>(null);
-  const [emailEditSuccess, setEmailEditSuccess] = useState(false);
+  const [emailEditSuccess, setEmailEditSuccess] = useState<
+    "sent" | "unavailable" | null
+  >(null);
   const [resendPending, startResendTransition] = useTransition();
-  const [resendSent, setResendSent] = useState(false);
+  const [resendResult, setResendResult] = useState<
+    "sent" | "unavailable" | null
+  >(null);
 
   // Reminder toggle state
   const [reminderOn, setReminderOn] = useState(remindersEnabled);
@@ -646,9 +652,9 @@ export function SalonSettingsHub({
               data-testid="settings-email-verification"
               className={cn(
                 "mt-6 overflow-hidden rounded-2xl border bg-nq-surface/35",
-                emailVerified && salonEmail
+                activeEmailVerified && activeSalonEmail
                   ? "border-nq-primary/30"
-                  : salonEmail
+                  : activeSalonEmail
                     ? "border-amber-500/30"
                     : "border-nq-border/30",
               )}
@@ -657,9 +663,9 @@ export function SalonSettingsHub({
               <div
                 className={cn(
                   "h-0.5 w-full",
-                  emailVerified && salonEmail
+                  activeEmailVerified && activeSalonEmail
                     ? "bg-gradient-to-r from-nq-primary/60 to-transparent"
-                    : salonEmail
+                    : activeSalonEmail
                       ? "bg-gradient-to-r from-amber-500/60 to-transparent"
                       : "bg-nq-border/40",
                 )}
@@ -676,8 +682,8 @@ export function SalonSettingsHub({
                       {t.emailVerification.description}
                     </p>
                   </div>
-                  {salonEmail ? (
-                    emailVerified ? (
+                  {activeSalonEmail ? (
+                    activeEmailVerified ? (
                       <Badge
                         data-testid="settings-email-verified-badge"
                         variant="success"
@@ -721,9 +727,9 @@ export function SalonSettingsHub({
                 ) : null}
 
                 {/* Current email display */}
-                {salonEmail ? (
+                {activeSalonEmail ? (
                   <p className="break-all font-mono text-sm text-nq-foreground">
-                    {salonEmail}
+                    {activeSalonEmail}
                   </p>
                 ) : (
                   <p className="text-sm text-nq-muted/70">
@@ -732,7 +738,7 @@ export function SalonSettingsHub({
                 )}
 
                 {/* Pending hint */}
-                {salonEmail && !emailVerified ? (
+                {activeSalonEmail && !activeEmailVerified ? (
                   <p className="text-xs text-nq-muted">
                     {t.emailVerification.pendingHint}
                   </p>
@@ -740,13 +746,33 @@ export function SalonSettingsHub({
 
                 {/* Success / error from inline save */}
                 {emailEditSuccess ? (
-                  <p className="rounded-lg border border-nq-success/40 bg-nq-success/10 px-3 py-2 text-xs text-nq-success">
-                    {t.emailVerification.saveSuccess}
+                  <p
+                    role={emailEditSuccess === "sent" ? "status" : "alert"}
+                    className={cn(
+                      "rounded-lg border px-3 py-2 text-xs",
+                      emailEditSuccess === "sent"
+                        ? "border-nq-success/40 bg-nq-success/10 text-nq-success"
+                        : "border-amber-500/40 bg-amber-500/10 text-amber-300",
+                    )}
+                  >
+                    {emailEditSuccess === "sent"
+                      ? t.emailVerification.saveSuccess
+                      : t.emailVerification.savePending}
                   </p>
                 ) : null}
-                {resendSent ? (
-                  <p className="rounded-lg border border-nq-success/40 bg-nq-success/10 px-3 py-2 text-xs text-nq-success">
-                    {t.emailVerification.resendSent}
+                {resendResult ? (
+                  <p
+                    role={resendResult === "sent" ? "status" : "alert"}
+                    className={cn(
+                      "rounded-lg border px-3 py-2 text-xs",
+                      resendResult === "sent"
+                        ? "border-nq-success/40 bg-nq-success/10 text-nq-success"
+                        : "border-amber-500/40 bg-amber-500/10 text-amber-300",
+                    )}
+                  >
+                    {resendResult === "sent"
+                      ? t.emailVerification.resendSent
+                      : t.emailVerification.resendUnavailable}
                   </p>
                 ) : null}
                 {emailEditError ? (
@@ -759,17 +785,19 @@ export function SalonSettingsHub({
                 {canManageSalonSettings ? (
                   <div className="flex flex-wrap items-center gap-2 pt-1">
                     {/* Resend verification — only when pending */}
-                    {salonEmail && !emailVerified ? (
+                    {activeSalonEmail && !activeEmailVerified ? (
                       <button
                         type="button"
                         data-testid="settings-email-resend"
                         disabled={resendPending}
                         onClick={() => {
-                          setResendSent(false);
+                          setResendResult(null);
                           startResendTransition(async () => {
-                            await resendVerification(slug);
-                            setResendSent(true);
-                            setTimeout(() => setResendSent(false), 4000);
+                            const result = await resendVerification(slug);
+                            setResendResult(
+                              result.ok ? result.verificationDelivery : "unavailable",
+                            );
+                            setTimeout(() => setResendResult(null), 6000);
                           });
                         }}
                         className="inline-flex min-h-11 touch-manipulation items-center rounded-lg border border-amber-500/30 bg-amber-500/10 px-3 py-2 text-xs font-medium text-amber-400 transition hover:bg-amber-500/15 disabled:opacity-50"
@@ -785,8 +813,8 @@ export function SalonSettingsHub({
                       onClick={() => {
                         setEmailEditOpen((v) => !v);
                         setEmailEditError(null);
-                        setEmailEditSuccess(false);
-                        setNewEmailInput(salonEmail ?? "");
+                        setEmailEditSuccess(null);
+                        setNewEmailInput(activeSalonEmail ?? "");
                       }}
                       className={cn(
                         "inline-flex min-h-11 touch-manipulation items-center rounded-lg border px-3 py-2 text-xs font-medium transition",
@@ -809,7 +837,7 @@ export function SalonSettingsHub({
                     onSubmit={(e) => {
                       e.preventDefault();
                       setEmailEditError(null);
-                      setEmailEditSuccess(false);
+                      setEmailEditSuccess(null);
                       const val = newEmailInput.trim();
                       if (!val || !/^[^\s@]+@[^\s@]+\.[^\s@]+$/.test(val)) {
                         setEmailEditError(t.emailVerification.invalidEmail);
@@ -825,16 +853,21 @@ export function SalonSettingsHub({
                           );
                           return;
                         }
-                        setEmailEditSuccess(true);
+                        setActiveSalonEmail(val);
+                        setActiveEmailVerified(false);
+                        setEmailEditSuccess(res.verificationDelivery);
                         setEmailEditOpen(false);
-                        router.refresh();
-                        setTimeout(() => setEmailEditSuccess(false), 5000);
+                        setTimeout(() => {
+                          setEmailEditSuccess(null);
+                          router.refresh();
+                        }, 6000);
                       });
                     }}
                   >
                     <input
                       type="email"
                       data-testid="settings-email-input"
+                      aria-label={t.emailVerification.sectionTitle}
                       autoComplete="email"
                       placeholder="you@example.com"
                       value={newEmailInput}

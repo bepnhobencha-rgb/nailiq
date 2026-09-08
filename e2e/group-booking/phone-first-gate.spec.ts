@@ -2,8 +2,9 @@ import { createClient } from "@supabase/supabase-js";
 import { expect, test } from "@playwright/test";
 
 import {
+  acceptSmsConsentIfPresented,
   cleanupTestSalon,
-  setReactInputValue,
+  enterBookingPhone,
 } from "../helpers/db";
 import { seedGroupTestSalon } from "./helpers";
 
@@ -53,19 +54,15 @@ test.describe("Phone-first entry gate", () => {
     // who merely types a phone number.
     // CountryPhoneField's inner input takes the 10-digit NATIONAL number; the
     // full E.164 would be sliced to a bogus area code and rejected.
-    // Use the React-aware helper so the controlled CountryPhoneField receives
-    // an input event even when hydration finishes just after the gate appears.
-    await setReactInputValue(
-      page.getByTestId("booking-entry-phone"),
-      PHONE.slice(-10),
-    );
+    // Wait for hydration before dispatching input to the controlled phone field.
+    await enterBookingPhone(page, PHONE);
     const recognized = page.getByTestId("booking-entry-recognized");
     await expect(recognized).toBeVisible({ timeout: 10_000 });
     await expect(recognized).not.toContainText(NAME);
 
-    // A recognized customer satisfies the name requirement from their profile,
-    // but SMS consent is still required before the flow mounts.
-    await page.getByTestId("sms-consent").check();
+    // A recognized customer satisfies the name requirement from their profile.
+    // Accept SMS consent only when this salon exposes outbound SMS.
+    await acceptSmsConsentIfPresented(page);
 
     // Switch to Individual → the flow should start on service selection
     // (phone step skipped because the gate already captured it).

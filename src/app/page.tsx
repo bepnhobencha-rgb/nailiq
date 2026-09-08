@@ -8,6 +8,7 @@ import { LandingFAQ } from "@/components/landing/LandingFAQ";
 import { LandingFinalCta } from "@/components/landing/LandingFinalCta";
 import { LandingFooter } from "@/components/landing/LandingFooter";
 import { getLandingJsonLd } from "@/shared/seo/jsonLd";
+import { serializeJsonLd } from "@/shared/seo/serializeJsonLd";
 
 const landingDescription =
   "NailIQ provides done-for-you website, online booking, staff scheduling and salon setup. Keep using Square, Clover, Toast or your current POS.";
@@ -50,7 +51,7 @@ export default function Home() {
     <>
       <script
         type="application/ld+json"
-        dangerouslySetInnerHTML={{ __html: JSON.stringify(schema) }}
+        dangerouslySetInnerHTML={{ __html: serializeJsonLd(schema) }}
       />
       <div
         className="min-h-screen bg-nq-bg text-nq-foreground antialiased font-[family-name:var(--font-landing-inter),system-ui,-apple-system,sans-serif]"

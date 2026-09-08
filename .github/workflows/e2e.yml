@@ -198,6 +198,7 @@ jobs:
               e2e/accessibility
               e2e/ai-agent-activation.spec.ts
               e2e/ai-control-freshness.spec.ts
+              e2e/booking-capability-acceptance.spec.ts
               e2e/booking-conflict.spec.ts
               e2e/booking-errors.spec.ts
               e2e/booking-otp.spec.ts
@@ -230,6 +231,16 @@ jobs:
             project: "mobile"
             browser: "webkit"
             testpath: "e2e/receptionist-center"
+          # These permission checks deliberately present a forged demo cookie.
+          # Keep their server and browser on real Auth with demo fully disabled.
+          - shard: 4
+            name: "settings recovery — real auth"
+            project: "settings"
+            browser: "chromium webkit"
+            testpath: >-
+              e2e/notification-settings-preflight.spec.ts
+              e2e/notification-settings-recovery.spec.ts
+              e2e/loyalty-widget-recovery.spec.ts
     env:
       # ── NO PRODUCTION SECRETS. NONE. ────────────────────────────────────────
       #
@@ -251,11 +262,11 @@ jobs:
       NEXT_PUBLIC_SITE_URL: http://localhost:3000
       BASE_URL: http://localhost:3000
       PLAYWRIGHT_BASE_URL: http://localhost:3000
-      NEXT_PUBLIC_DEMO_OTP: "true"
-      DEMO_OTP: "true"
+      NEXT_PUBLIC_DEMO_OTP: ${{ matrix.shard == 4 && 'false' || 'true' }}
+      DEMO_OTP: ${{ matrix.shard == 4 && 'false' || 'true' }}
       # Allows demo cookie with non-"demo-salon" slugs so E2E fixtures can
       # use arbitrary test slugs. NEVER set on Vercel production.
-      NAILIQ_TEST_BYPASS_SLUG_PIN: "1"
+      NAILIQ_TEST_BYPASS_SLUG_PIN: ${{ matrix.shard == 4 && '0' || '1' }}
       # ── External integrations: all off, all of them ─────────────────────────
       # A test database must not be able to reach a real provider even by
       # accident. The suite once billed 555 real Twilio sends.
@@ -422,7 +433,11 @@ jobs:
         if: steps.preflight.outputs.configured == 'true'
         id: projects
         run: |
-          if [ "${{ matrix.project }}" != "auto" ]; then
+          if [ "${{ matrix.project }}" = "settings" ]; then
+            echo "flag=--project=chromium --project=mobile" >> "$GITHUB_OUTPUT"
+            echo "browsers=chromium webkit" >> "$GITHUB_OUTPUT"
+            echo "::notice::Settings recovery — both engines with real Auth and demo disabled"
+          elif [ "${{ matrix.project }}" != "auto" ]; then
             echo "flag=--project=${{ matrix.project }}" >> "$GITHUB_OUTPUT"
             echo "browsers=${{ matrix.browser }}" >> "$GITHUB_OUTPUT"
             echo "::notice::Dedicated ${{ matrix.project }} shard"
@@ -499,6 +514,36 @@ jobs:
         run: >-
           npx playwright test e2e/client-identity-merge.spec.ts
           --project=mobile --reporter=list
+      - name: Run Superadmin page authority in WebKit
+        if: >-
+          always() &&
+          steps.preflight.outputs.configured == 'true' &&
+          matrix.shard == 1 &&
+          github.event_name == 'pull_request'
+        # This boundary can pass Chromium but fail on WebKit after sign-in.
+        # Keep a separate report so the primary shard's evidence is retained.
+        run: >-
+          npx playwright test e2e/superadmin/page-role-boundary.spec.ts
+          --project=mobile --reporter=list,html,json
+          --output=test-results/superadmin-webkit
+        env:
+          PLAYWRIGHT_HTML_OUTPUT_DIR: playwright-report/superadmin-webkit
+          PLAYWRIGHT_JSON_OUTPUT_NAME: playwright-report/superadmin-webkit-results.json
+      - name: Run Booking capability acceptance in WebKit
+        if: >-
+          always() &&
+          steps.preflight.outputs.configured == 'true' &&
+          matrix.shard == 1 &&
+          github.event_name == 'pull_request'
+        # The primary PR suite covers Chromium; certify the same scoped links
+        # in WebKit before merge while preserving the primary report.
+        run: >-
+          npx playwright test e2e/booking-capability-acceptance.spec.ts
+          --project=mobile --reporter=list,html,json
+          --output=test-results/booking-capability-webkit
+        env:
+          PLAYWRIGHT_HTML_OUTPUT_DIR: playwright-report/booking-capability-webkit
+          PLAYWRIGHT_JSON_OUTPUT_NAME: playwright-report/booking-capability-webkit-results.json
       - name: Next server log (the app's side of a failed test)
         # A Playwright failure tells you what the BROWSER saw. When the page says
         # "Could not complete booking. Please try again.", that is the app's

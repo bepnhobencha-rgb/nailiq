@@ -17,13 +17,15 @@ import { useEffect } from "react";
  * effect happened to complete inside the same macrotask, so it
  * was flaky.
  *
- * Defense in depth, in order of operation:
+ * The request proxy now carries an explicit booking-language hint into the
+ * root layout, so a hard navigation starts with the correct server-rendered
+ * `<html lang>`. This component covers client navigation and then watches for
+ * any competing dashboard-language mutation.
  *
- *   1. Inline `<script>` rendered server-side — runs at HTML
- *      parse time, before React mounts, so the page is tagged
- *      correctly from the very first paint.
- *   2. `useEffect` — re-asserts on mount and on lang change.
- *   3. `MutationObserver` — watches `<html lang>` for any other
+ * Defense in depth:
+ *
+ *   1. `useEffect` — re-asserts on mount and on lang change.
+ *   2. `MutationObserver` — watches `<html lang>` for any other
  *      mutation (root `UserLanguageProvider`, browser extension,
  *      third-party script) and immediately reverts to the
  *      booking-resolved value. Order-of-effects no longer
@@ -59,16 +61,5 @@ export function BookingDocumentEn({
     return () => observer.disconnect();
   }, [lang]);
 
-  return (
-    <script
-      // Synchronous DOM update during HTML parse — closes the
-      // window between root-layout `<html lang="en">` (which may
-      // disagree with the server-resolved booking lang) and the
-      // first React effect. `JSON.stringify` ensures the lang
-      // literal can't break out of the script context.
-      dangerouslySetInnerHTML={{
-        __html: `try{document.documentElement.lang=${JSON.stringify(lang)};}catch(e){}`,
-      }}
-    />
-  );
+  return null;
 }

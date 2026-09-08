@@ -58,25 +58,8 @@ describe("MQA-0099 customer action-link acceptance", () => {
     expect(html).not.toContain("token=confirm&next=");
   });
 
-  it.todo(
-    "email-link GET is preview-only and explicit POST performs confirmation",
-  );
-  it.todo(
-    "confirm, reschedule, cancel, and card-management capabilities have independent scopes",
-  );
-  it.todo(
-    "using Confirm does not invalidate Reschedule or Cancel from the same reminder",
-  );
-  it.todo(
-    "a requested appointment-long expiry is never shortened by reuse of a 48-hour token",
-  );
-  it.todo(
-    "concurrent token minting leaves one authoritative usable capability per scope",
-  );
-  it.todo(
-    "a reschedule/cancel transition revokes every stale action capability for the old state",
-  );
-  it.todo(
-    "the public booking-status URL uses a bounded capability rather than a permanent naked booking id",
-  );
+  // The seven MQA-0099 acceptance scenarios execute against the real local
+  // database/API in e2e/booking-capability-acceptance.spec.ts. Confirmation and
+  // status additionally assert browser UI. Keep them in the non-RC CI shard;
+  // mocking these boundaries in Vitest would not prove capability isolation.
 });

@@ -109,7 +109,8 @@ export const SUPERADMIN_NAV: readonly SuperadminNavItem[] = [
     key: "settings",
     label: "Settings",
     href: "/superadmin/settings",
-    allowedRoles: ALL_ROLES,
+    // This page manages platform-wide provider credentials.
+    allowedRoles: ["founder", "ops_admin"],
   },
 ];
 

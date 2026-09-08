@@ -1,3 +1,4 @@
+import { requireSuperadminPage } from "@/shared/superadmin/requireSuperadminPage";
 import { notFound } from "next/navigation";
 import { SalonDetailView } from "@/components/superadmin/SalonDetailView";
 import { loadSalonDetail } from "@/shared/superadmin/superadminActions";
@@ -17,6 +18,7 @@ type Props = { params: Promise<{ salonId: string }> };
  * Auth + role gate runs in `(shell)/layout.tsx`.
  */
 export default async function SuperadminSalonDetailPage({ params }: Props) {
+  const pageAccess = await requireSuperadminPage("salons");
   const { salonId } = await params;
   const [result, squareResult] = await Promise.all([
     loadSalonDetail(salonId),
@@ -40,6 +42,7 @@ export default async function SuperadminSalonDetailPage({ params }: Props) {
 
   return (
     <SalonDetailView
+      canManage={["founder", "ops_admin"].includes(pageAccess.role)}
       salon={result.salon}
       squareConnection={squareResult.ok ? squareResult.status : null}
     />

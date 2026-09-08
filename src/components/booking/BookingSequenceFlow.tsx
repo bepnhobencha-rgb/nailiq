@@ -650,9 +650,32 @@ export function BookingSequenceFlow({
         </button>
       ) : null}
 
-      <div className="grid grid-cols-2 gap-3">
-        <input type="date" min={salonTodayYmd} value={date} onChange={(event) => { setDate(event.target.value); beginNewIntent(); }} className="nq-booking-field" />
-        <input type="time" value={time} onChange={(event) => { setTime(event.target.value); beginNewIntent(); }} className="nq-booking-field" />
+      <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+        <label className="block text-sm" htmlFor="booking-sequence-date">
+          <span className="mb-1 block text-[var(--booking-text-muted)]">
+            {vi ? "Ngày bắt đầu" : "Start date"}
+          </span>
+          <input
+            id="booking-sequence-date"
+            type="date"
+            min={salonTodayYmd}
+            value={date}
+            onChange={(event) => { setDate(event.target.value); beginNewIntent(); }}
+            className="nq-booking-field w-full"
+          />
+        </label>
+        <label className="block text-sm" htmlFor="booking-sequence-time">
+          <span className="mb-1 block text-[var(--booking-text-muted)]">
+            {vi ? "Giờ bắt đầu" : "Start time"}
+          </span>
+          <input
+            id="booking-sequence-time"
+            type="time"
+            value={time}
+            onChange={(event) => { setTime(event.target.value); beginNewIntent(); }}
+            className="nq-booking-field w-full"
+          />
+        </label>
       </div>
       <label className="flex items-center gap-2 text-sm">
         <input type="checkbox" checked={sameStaffForAll} disabled={lines.some((line) => line.timingPreference === "parallel")} onChange={(event) => { setSameStaffForAll(event.target.checked); beginNewIntent(); }} />
