@@ -1,3 +1,4 @@
+import { requireSuperadminPage } from "@/shared/superadmin/requireSuperadminPage";
 import Link from "next/link";
 
 export const dynamic = "force-dynamic";
@@ -31,7 +32,8 @@ const items = [
   },
 ];
 
-export default function OperationsIndexPage() {
+export default async function OperationsIndexPage() {
+  await requireSuperadminPage("operations");
   return (
     <main className="mx-auto w-full max-w-5xl px-5 py-8 md:px-8">
       <header className="mb-6">

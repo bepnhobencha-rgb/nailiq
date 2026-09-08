@@ -1,3 +1,4 @@
+import { requireSuperadminPage } from "@/shared/superadmin/requireSuperadminPage";
 import Link from "next/link";
 
 const tools = [
@@ -15,7 +16,8 @@ const tools = [
   },
 ] as const;
 
-export default function AiIndexPage() {
+export default async function AiIndexPage() {
+  await requireSuperadminPage("ai");
   return (
     <main className="mx-auto w-full max-w-5xl px-5 py-8 md:px-8">
       <header className="mb-6">

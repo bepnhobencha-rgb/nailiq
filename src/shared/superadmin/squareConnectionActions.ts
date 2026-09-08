@@ -82,6 +82,7 @@ export async function loadSquareConnectionStatus(
   const access = await requireActiveSuperAdminSession();
   if (!access.ok) return { ok: false, error: "unauthorized" };
   const { role } = access;
+  if (!["founder", "ops_admin", "support_admin", "billing_admin"].includes(role)) return { ok: false, error: "forbidden" };
 
   try {
     const admin = createServiceRoleClient();

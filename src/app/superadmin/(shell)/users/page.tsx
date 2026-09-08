@@ -1,9 +1,11 @@
+import { requireSuperadminPage } from "@/shared/superadmin/requireSuperadminPage";
 export const dynamic = "force-dynamic";
 
 import { loadAllUsers } from "@/shared/superadmin/superadminActions";
 import { UserListTable } from "@/components/superadmin/UserListTable";
 
 export default async function SuperadminUsersPage() {
+  await requireSuperadminPage("users");
   const result = await loadAllUsers();
 
   if (!result.ok) {

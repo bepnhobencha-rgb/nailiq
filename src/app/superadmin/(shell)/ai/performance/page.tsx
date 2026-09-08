@@ -1,3 +1,4 @@
+import { requireSuperadminPage } from "@/shared/superadmin/requireSuperadminPage";
 import { Badge, type BadgeVariant } from "@/components/ui/Badge";
 import { Card } from "@/components/ui/Card";
 import { KPIWidget } from "@/components/ui/KPIWidget";
@@ -32,6 +33,7 @@ function formatEvidenceDate(value: string | null): string {
 }
 
 export default async function AiPerformancePage() {
+  await requireSuperadminPage("ai");
   const result = await loadAgentCertificationMatrix();
 
   return (

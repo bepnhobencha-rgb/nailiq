@@ -1,3 +1,4 @@
+import { requireSuperadminPage } from "@/shared/superadmin/requireSuperadminPage";
 import { SalonListTable } from "@/components/superadmin/SalonListTable";
 import { loadAllSalons } from "@/shared/superadmin/superadminActions";
 
@@ -16,6 +17,7 @@ export const dynamic = "force-dynamic";
  * assume an active superadmin.
  */
 export default async function SuperadminSalonsPage() {
+  await requireSuperadminPage("salons");
   const result = await loadAllSalons();
   if (!result.ok) {
     return (

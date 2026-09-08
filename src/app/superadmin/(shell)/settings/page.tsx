@@ -1,3 +1,4 @@
+import { requireSuperadminPage } from "@/shared/superadmin/requireSuperadminPage";
 import type { Metadata } from "next";
 import { loadPlatformSettings } from "@/shared/superadmin/superadminActions";
 import { PlatformSettingsAdmin } from "@/components/superadmin/PlatformSettingsAdmin";
@@ -7,6 +8,7 @@ export const metadata: Metadata = {
 };
 
 export default async function SuperAdminSettingsPage() {
+  await requireSuperadminPage("settings");
   const result = await loadPlatformSettings();
 
   if (!result.ok) {

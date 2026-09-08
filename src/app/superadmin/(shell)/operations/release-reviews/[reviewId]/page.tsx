@@ -1,3 +1,4 @@
+import { requireSuperadminPage } from "@/shared/superadmin/requireSuperadminPage";
 import Link from "next/link";
 import { notFound } from "next/navigation";
 import { Button } from "@/components/ui/Button";
@@ -21,6 +22,7 @@ export default async function ReleaseReviewDecisionPage({
     error?: string | string[];
   }>;
 }) {
+  await requireSuperadminPage("operations");
   const access = await requireActiveSuperAdminSession();
   if (!access.ok || !["founder", "ops_admin"].includes(access.role)) {
     notFound();

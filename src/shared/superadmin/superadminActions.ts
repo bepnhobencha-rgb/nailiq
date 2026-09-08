@@ -5,6 +5,7 @@ import { createServiceRoleClient } from "@/shared/lib/supabase/serviceRole";
 import { emailExperienceTags } from "@/shared/lib/emailExperienceRegistry";
 import type { SuperAdminRole } from "@/shared/lib/superadmin";
 import { requireActiveSuperAdminSession } from "@/shared/auth/requireActiveSuperAdminSession";
+import { SUPERADMIN_OPERATORS, SUPERADMIN_SALON_READERS, SUPERADMIN_USER_READERS } from "@/shared/superadmin/permissions";
 import { writeAuditLog } from "@/shared/superadmin/audit";
 import {
   graceDeadline,
@@ -66,9 +67,10 @@ type CallerContext = {
   role: SuperAdminRole;
 };
 
-async function requireSuperAdminCaller(): Promise<CallerContext | null> {
+async function requireSuperAdminCaller(allowed: readonly SuperAdminRole[]): Promise<CallerContext | { ok: false; error: "unauthorized" | "forbidden" }> {
   const access = await requireActiveSuperAdminSession();
-  if (!access.ok) return null;
+  if (!access.ok) return { ok: false, error: "unauthorized" };
+  if (!allowed.includes(access.role)) return { ok: false, error: "forbidden" };
 
   return {
     userId: access.user.id,
@@ -79,8 +81,8 @@ async function requireSuperAdminCaller(): Promise<CallerContext | null> {
 }
 
 export async function loadAllSalons(): Promise<LoadAllSalonsResult> {
-  const caller = await requireSuperAdminCaller();
-  if (!caller) return { ok: false, error: "unauthorized" };
+  const caller = await requireSuperAdminCaller(SUPERADMIN_SALON_READERS);
+  if ("error" in caller) return caller;
 
   let admin;
   try {
@@ -206,8 +208,8 @@ function startOfLast7DaysUtc(): Date {
  * role only) then joins against `salon_members` + `salons` in one query.
  */
 export async function loadAllUsers(): Promise<LoadAllUsersResult> {
-  const caller = await requireSuperAdminCaller();
-  if (!caller) return { ok: false, error: "unauthorized" };
+  const caller = await requireSuperAdminCaller(SUPERADMIN_USER_READERS);
+  if ("error" in caller) return caller;
 
   let admin;
   try {
@@ -288,8 +290,8 @@ export async function loadAllUsers(): Promise<LoadAllUsersResult> {
 export async function loadSalonDetail(
   salonId: string,
 ): Promise<LoadSalonDetailResult> {
-  const caller = await requireSuperAdminCaller();
-  if (!caller) return { ok: false, error: "unauthorized" };
+  const caller = await requireSuperAdminCaller(SUPERADMIN_SALON_READERS);
+  if ("error" in caller) return caller;
 
   const id = salonId.trim();
   if (!id) return { ok: false, error: "not_found" };
@@ -480,8 +482,8 @@ export async function pauseSalonTenant(
   reason: TenantPauseReason,
   note: string,
 ): Promise<TenantControlResult> {
-  const caller = await requireSuperAdminCaller();
-  if (!caller) return { ok: false, error: "unauthorized" };
+  const caller = await requireSuperAdminCaller(SUPERADMIN_OPERATORS);
+  if ("error" in caller) return caller;
   const id = salonId.trim();
   const cleanNote = note.trim();
   if (!UUID_RE.test(id) || !["manual", "non_payment"].includes(reason) || cleanNote.length < 3 || cleanNote.length > 500) {
@@ -525,8 +527,8 @@ export async function beginSalonPaymentGrace(
   days: number,
   note: string,
 ): Promise<TenantControlResult> {
-  const caller = await requireSuperAdminCaller();
-  if (!caller) return { ok: false, error: "unauthorized" };
+  const caller = await requireSuperAdminCaller(SUPERADMIN_OPERATORS);
+  if ("error" in caller) return caller;
   const id = salonId.trim();
   const cleanNote = note.trim();
   if (!UUID_RE.test(id) || !Number.isFinite(days) || days < 1 || days > 30 || cleanNote.length < 3 || cleanNote.length > 500) {
@@ -573,8 +575,8 @@ export async function resumeSalonTenant(
   salonId: string,
   note: string,
 ): Promise<TenantControlResult> {
-  const caller = await requireSuperAdminCaller();
-  if (!caller) return { ok: false, error: "unauthorized" };
+  const caller = await requireSuperAdminCaller(SUPERADMIN_OPERATORS);
+  if ("error" in caller) return caller;
   const id = salonId.trim();
   const cleanNote = note.trim();
   if (!UUID_RE.test(id) || cleanNote.length < 3 || cleanNote.length > 500) {
@@ -612,8 +614,8 @@ export async function updateSalonFlags(
   salonId: string,
   patch: UpdateSalonFlagsInput,
 ): Promise<UpdateSalonFlagsResult> {
-  const caller = await requireSuperAdminCaller();
-  if (!caller) return { ok: false, error: "unauthorized" };
+  const caller = await requireSuperAdminCaller(SUPERADMIN_OPERATORS);
+  if ("error" in caller) return caller;
 
   const id = salonId.trim();
   if (!id) return { ok: false, error: "invalid_payload" };
@@ -755,8 +757,8 @@ export async function updateSalonFlags(
 export async function loadDeletedRecordsForSalon(
   salonId: string,
 ): Promise<LoadDeletedRecordsResult> {
-  const caller = await requireSuperAdminCaller();
-  if (!caller) return { ok: false, error: "unauthorized" };
+  const caller = await requireSuperAdminCaller(SUPERADMIN_SALON_READERS);
+  if ("error" in caller) return caller;
 
   const id = salonId.trim();
   if (!id) return { ok: true, records: [] };
@@ -824,8 +826,8 @@ export async function restoreSalonRecord(
   table: string,
   recordId: string,
 ): Promise<RestoreSalonRecordResult> {
-  const caller = await requireSuperAdminCaller();
-  if (!caller) return { ok: false, error: "unauthorized" };
+  const caller = await requireSuperAdminCaller(SUPERADMIN_OPERATORS);
+  if ("error" in caller) return caller;
 
   if (!isRestorableTable(table)) {
     return { ok: false, error: "invalid_payload" };
@@ -910,8 +912,8 @@ export async function restoreSalonRecord(
  * a second round trip.
  */
 export async function loadPlatformFlags(): Promise<LoadPlatformFlagsResult> {
-  const caller = await requireSuperAdminCaller();
-  if (!caller) return { ok: false, error: "unauthorized" };
+  const caller = await requireSuperAdminCaller(SUPERADMIN_OPERATORS);
+  if ("error" in caller) return caller;
 
   let admin;
   try {
@@ -965,8 +967,8 @@ export async function updatePlatformFlag(
   key: string,
   enabled: boolean,
 ): Promise<UpdatePlatformFlagResult> {
-  const caller = await requireSuperAdminCaller();
-  if (!caller) return { ok: false, error: "unauthorized" };
+  const caller = await requireSuperAdminCaller(SUPERADMIN_OPERATORS);
+  if ("error" in caller) return caller;
 
   if (!isPlatformFlagKey(key)) {
     return { ok: false, error: "invalid_payload" };
@@ -1044,8 +1046,8 @@ export async function updatePlatformFeatureFlag(
 ): Promise<
   { ok: true; key: string; enabled: boolean } | { ok: false; error: string }
 > {
-  const caller = await requireSuperAdminCaller();
-  if (!caller) return { ok: false, error: "unauthorized" };
+  const caller = await requireSuperAdminCaller(SUPERADMIN_OPERATORS);
+  if ("error" in caller) return caller;
 
   if (
     !RELEASE_FEATURE_KEYS.includes(key as ReleaseFeatureKey) ||
@@ -1123,8 +1125,8 @@ function normalizeCategoryName(raw: unknown): string | null {
 }
 
 export async function loadAllCategories(): Promise<LoadAllCategoriesResult> {
-  const caller = await requireSuperAdminCaller();
-  if (!caller) return { ok: false, error: "unauthorized" };
+  const caller = await requireSuperAdminCaller(SUPERADMIN_OPERATORS);
+  if ("error" in caller) return caller;
 
   const admin = createServiceRoleClient();
   const { data, error } = await admin
@@ -1163,8 +1165,8 @@ export async function loadAllCategories(): Promise<LoadAllCategoriesResult> {
 export async function addCategory(
   input: AddCategoryInput,
 ): Promise<CategoryMutationResult> {
-  const caller = await requireSuperAdminCaller();
-  if (!caller) return { ok: false, error: "unauthorized" };
+  const caller = await requireSuperAdminCaller(SUPERADMIN_OPERATORS);
+  if ("error" in caller) return caller;
 
   const slug = typeof input.slug === "string" ? input.slug.trim() : "";
   if (!SUPERADMIN_CATEGORY_SLUG_RE.test(slug)) {
@@ -1225,8 +1227,8 @@ export async function addCategory(
 export async function updateCategory(
   input: UpdateCategoryInput,
 ): Promise<CategoryMutationResult> {
-  const caller = await requireSuperAdminCaller();
-  if (!caller) return { ok: false, error: "unauthorized" };
+  const caller = await requireSuperAdminCaller(SUPERADMIN_OPERATORS);
+  if ("error" in caller) return caller;
 
   const slug = typeof input.slug === "string" ? input.slug.trim() : "";
   if (!slug) return { ok: false, error: "invalid_slug" };
@@ -1309,8 +1311,8 @@ export async function updateCategory(
 export async function deleteCategory(
   slug: string,
 ): Promise<CategoryMutationResult> {
-  const caller = await requireSuperAdminCaller();
-  if (!caller) return { ok: false, error: "unauthorized" };
+  const caller = await requireSuperAdminCaller(SUPERADMIN_OPERATORS);
+  if ("error" in caller) return caller;
 
   const trimmed = typeof slug === "string" ? slug.trim() : "";
   if (!trimmed) return { ok: false, error: "invalid_slug" };
@@ -1398,8 +1400,8 @@ function maskSecret(v: string | null | undefined): string {
 }
 
 export async function loadPlatformSettings(): Promise<LoadPlatformSettingsResult> {
-  const caller = await requireSuperAdminCaller();
-  if (!caller) return { ok: false, error: "unauthorized" };
+  const caller = await requireSuperAdminCaller(SUPERADMIN_OPERATORS);
+  if ("error" in caller) return caller;
 
   const admin = createServiceRoleClient();
   const { data, error } = await admin
@@ -1455,8 +1457,8 @@ type UpdatePlatformSettingsResult =
 export async function updatePlatformSettings(
   input: UpdatePlatformSettingsInput,
 ): Promise<UpdatePlatformSettingsResult> {
-  const caller = await requireSuperAdminCaller();
-  if (!caller) return { ok: false, error: "unauthorized" };
+  const caller = await requireSuperAdminCaller(SUPERADMIN_OPERATORS);
+  if ("error" in caller) return caller;
 
   const admin = createServiceRoleClient();
 
@@ -1516,8 +1518,8 @@ export async function updatePlatformSettings(
 type TestResult = { ok: true; message: string } | { ok: false; error: string };
 
 export async function testTwilioConnection(): Promise<TestResult> {
-  const caller = await requireSuperAdminCaller();
-  if (!caller) return { ok: false, error: "unauthorized" };
+  const caller = await requireSuperAdminCaller(SUPERADMIN_OPERATORS);
+  if ("error" in caller) return caller;
 
   const { sendVerification } = await import("@/shared/lib/twilioVerify");
   // Twilio Verify will reject a non-real number but the HTTP call itself
@@ -1539,8 +1541,8 @@ export async function testTwilioConnection(): Promise<TestResult> {
 export async function testResendConnection(
   toEmail: string,
 ): Promise<TestResult> {
-  const caller = await requireSuperAdminCaller();
-  if (!caller) return { ok: false, error: "unauthorized" };
+  const caller = await requireSuperAdminCaller(SUPERADMIN_OPERATORS);
+  if ("error" in caller) return caller;
 
   if (!toEmail || !toEmail.includes("@")) {
     return { ok: false, error: "invalid_email" };
