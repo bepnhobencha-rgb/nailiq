@@ -198,6 +198,7 @@ jobs:
               e2e/accessibility
               e2e/ai-agent-activation.spec.ts
               e2e/ai-control-freshness.spec.ts
+              e2e/booking-capability-acceptance.spec.ts
               e2e/booking-conflict.spec.ts
               e2e/booking-errors.spec.ts
               e2e/booking-otp.spec.ts
@@ -527,6 +528,21 @@ jobs:
         env:
           PLAYWRIGHT_HTML_OUTPUT_DIR: playwright-report/superadmin-webkit
           PLAYWRIGHT_JSON_OUTPUT_NAME: playwright-report/superadmin-webkit-results.json
+      - name: Run Booking capability acceptance in WebKit
+        if: >-
+          always() &&
+          steps.preflight.outputs.configured == 'true' &&
+          matrix.shard == 1 &&
+          github.event_name == 'pull_request'
+        # The primary PR suite covers Chromium; certify the same scoped links
+        # in WebKit before merge while preserving the primary report.
+        run: >-
+          npx playwright test e2e/booking-capability-acceptance.spec.ts
+          --project=mobile --reporter=list,html,json
+          --output=test-results/booking-capability-webkit
+        env:
+          PLAYWRIGHT_HTML_OUTPUT_DIR: playwright-report/booking-capability-webkit
+          PLAYWRIGHT_JSON_OUTPUT_NAME: playwright-report/booking-capability-webkit-results.json
       - name: Next server log (the app's side of a failed test)
         # A Playwright failure tells you what the BROWSER saw. When the page says
         # "Could not complete booking. Please try again.", that is the app's
