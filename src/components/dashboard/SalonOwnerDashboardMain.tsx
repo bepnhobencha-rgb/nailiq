@@ -133,7 +133,7 @@ export function SalonOwnerDashboardMain({
             onManualRefresh={onManualRefresh}
             manualRefreshing={manualRefreshing}
           />
-          <LoyaltyDashboardWidget slug={slug} />
+          <LoyaltyDashboardWidget slug={slug} language={language} />
         </>
       ) : (
         /* homeData unavailable (permissions or server error) — render a clean
@@ -174,7 +174,7 @@ export function SalonOwnerDashboardMain({
               </button>
             </div>
           </div>
-          <LoyaltyDashboardWidget slug={slug} />
+          <LoyaltyDashboardWidget slug={slug} language={language} />
         </>
       )}
     </MobileStack>

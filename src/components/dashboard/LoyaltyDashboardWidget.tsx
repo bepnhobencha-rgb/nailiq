@@ -2,15 +2,18 @@
 
 import { useState, useTransition, useEffect } from "react";
 import { StampCard } from "@/components/loyalty/StampCard";
+import { Button } from "@/components/ui/Button";
 import { getClientLoyaltyCard, addStampsManually, getLoyaltyProgram, getLoyaltyStats } from "@/shared/loyalty/loyaltyActions";
 import type { LoyaltyCard, LoyaltyProgram, LoyaltyStats } from "@/shared/loyalty/types";
 
-type Props = { slug: string };
+type Props = { slug: string; language: "en" | "vi" };
+type LoadState =
+  | { slug: string; ok: true; program: LoyaltyProgram | null; stats: LoyaltyStats | null }
+  | { slug: string; ok: false; retrying?: boolean };
 
-export function LoyaltyDashboardWidget({ slug }: Props) {
-  const [stats, setStats] = useState<LoyaltyStats | null>(null);
-  const [program, setProgram] = useState<LoyaltyProgram | null>(null);
-  const [loaded, setLoaded] = useState(false);
+export function LoyaltyDashboardWidget({ slug, language }: Props) {
+  const [load, setLoad] = useState<LoadState | null>(null);
+  const [retry, setRetry] = useState(0);
 
   const [phone, setPhone] = useState("");
   const [card, setCard] = useState<LoyaltyCard | null>(null);
@@ -19,14 +22,17 @@ export function LoyaltyDashboardWidget({ slug }: Props) {
   const [msg, setMsg] = useState<string | null>(null);
 
   useEffect(() => {
+    let active = true;
     void Promise.all([getLoyaltyProgram(slug), getLoyaltyStats(slug)]).then(
-      ([prog, st]) => {
-        setProgram(prog);
-        setStats(st);
-        setLoaded(true);
+      ([program, stats]) => {
+        if (active) setLoad({ slug, ok: true, program, stats });
+      },
+      () => {
+        if (active) setLoad({ slug, ok: false });
       },
     );
-  }, [slug]);
+    return () => { active = false; };
+  }, [slug, retry]);
 
   function handleLookup() {
     if (!phone.trim()) return;
@@ -50,7 +56,26 @@ export function LoyaltyDashboardWidget({ slug }: Props) {
     });
   }
 
-  if (!loaded) return null;
+  if (!load || load.slug !== slug) return null;
+
+  if (!load.ok) {
+    return (
+      <div role="alert" className="mb-12 rounded-2xl border border-nq-border bg-nq-surface p-5 space-y-4 xl:mb-0">
+        <h3 className="text-sm font-semibold text-nq-foreground">🎟 Loyalty</h3>
+        <p className="text-sm text-nq-muted">
+          {language === "vi" ? "Chưa tải được thông tin tích điểm" : "Unable to load loyalty information"}
+        </p>
+        <Button variant="secondary" size="lg" loading={load.retrying} onClick={() => {
+          setLoad({ slug, ok: false, retrying: true });
+          setRetry(value => value + 1);
+        }}>
+          {language === "vi" ? "Thử tải lại tích điểm" : "Retry loyalty load"}
+        </Button>
+      </div>
+    );
+  }
+
+  const { program, stats } = load;
 
   return (
     <div className="rounded-2xl border border-white/10 bg-[#1c1c1e] p-5 space-y-4">
