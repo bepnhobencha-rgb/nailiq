@@ -138,6 +138,16 @@ export function DashboardShell({
             sidebar/nav + portaled drawers all stay usable. */}
         <div id="nq-dashboard-content">
           {!guidedFocusMode ? <DashboardViewControls /> : null}
+          {/* Coco — in-admin AI assistant. Gated by the admin_copilot release
+              feature; nail_tech is view-only so the operational copilot is hidden
+              for them. The API route re-checks both (defence in depth). */}
+          {!guidedFocusMode && releaseFeatures?.admin_copilot && role !== "nail_tech" && (
+            <AdminCopilot
+              slug={slug}
+              role={role}
+              compactFab={releaseFeatures.receptionist_shell_v2 === true}
+            />
+          )}
           {children}
         </div>
       </main>
@@ -152,16 +162,6 @@ export function DashboardShell({
           releaseFeatures={releaseFeatures}
         />
       ) : null}
-      {/* Coco — in-admin AI assistant. Gated by the admin_copilot release
-          feature; nail_tech is view-only so the operational copilot is hidden
-          for them. The API route re-checks both (defence in depth). */}
-      {!guidedFocusMode && releaseFeatures?.admin_copilot && role !== "nail_tech" && (
-        <AdminCopilot
-          slug={slug}
-          role={role}
-          compactFab={releaseFeatures.receptionist_shell_v2 === true}
-        />
-      )}
     </div>
   );
 }

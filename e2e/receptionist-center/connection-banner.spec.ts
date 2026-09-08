@@ -56,69 +56,140 @@ test.afterAll(async ({}, testInfo) => {
 });
 
 test.describe("Connection banner — stale-data recovery UX", () => {
-  test("offline/reconnecting banner shows Reload + last-updated", async ({
-    page,
-  }) => {
-    await loginAsOwner(page);
+  for (const language of ["en", "vi"] as const) {
+    test(`offline/reconnecting banner shows Reload + last-updated${language === "vi" ? " (Vietnamese)" : ""}`, async ({
+      page,
+      isMobile,
+    }) => {
+      const hydrationErrors: string[] = [];
+      page.on("pageerror", (error) => {
+        if (/#418|hydration/i.test(error.message))
+          hydrationErrors.push(error.message);
+      });
+      await page
+        .context()
+        .addCookies([
+          {
+            name: "nailiq-user-lang",
+            value: language,
+            url: "http://localhost:3000",
+          },
+        ]);
+      await page.addInitScript(
+        (lang) => localStorage.setItem("nailiq-user-lang", lang),
+        language,
+      );
+      await loginAsOwner(page);
 
-    let allowReconnect = false;
-    let blockedConnections = 0;
-    let recoveredSubscriptions = 0;
-    await page.routeWebSocket(/realtime\/v1\/websocket/, (ws) => {
-      if (!allowReconnect) {
-        blockedConnections += 1;
-        void ws.close();
-        return;
+      let allowReconnect = false;
+      let blockedConnections = 0;
+      let recoveredSubscriptions = 0;
+      await page.routeWebSocket(/realtime\/v1\/websocket/, (ws) => {
+        if (!allowReconnect) {
+          blockedConnections += 1;
+          void ws.close();
+          return;
+        }
+
+        const server = ws.connectToServer();
+        server.onMessage((message) => {
+          const frame = message.toString();
+          if (
+            frame.includes(`receptionist-center-${fx.salonId}`) &&
+            frame.includes('"phx_reply"') &&
+            frame.includes('"status":"ok"')
+          ) {
+            recoveredSubscriptions += 1;
+          }
+          // Observe the real subscription reply without fabricating a response.
+          ws.send(message);
+        });
+      });
+
+      await gotoReceptionistCenter(page, fx.slug, {
+        dateYmd: fx.ymdUtc,
+        expectWalkinQueue: false,
+        useDemoCookie: false,
+      });
+      expect(
+        (await page.context().cookies()).map((cookie) => cookie.name),
+      ).not.toContain("nailiq-demo-slug");
+      await expect.poll(() => blockedConnections).toBeGreaterThan(0);
+
+      const banner = page.locator(
+        '[data-testid="connection-banner-offline"], [data-testid="connection-banner-reconnecting"]',
+      );
+
+      await expect(banner.first()).toBeVisible({ timeout: 15_000 });
+      await expect(page.getByTestId("connection-reload")).toBeVisible();
+      await expect(page.getByTestId("connection-last-updated")).toBeVisible();
+      await expect(page.getByTestId("connection-last-updated")).toContainText(
+        /Updated|Cập nhật/,
+      );
+
+      const viewports = isMobile
+        ? [page.viewportSize()!, { width: 320, height: 568 }]
+        : [page.viewportSize()!];
+      for (const viewport of viewports) {
+        await page.setViewportSize(viewport);
+        // Put Updated in the lower viewport where the old floating assistant
+        // covered it. Center first so short screens can reach the same position.
+        await page.getByTestId("connection-last-updated").evaluate((el) => {
+          el.scrollIntoView({ block: "center" });
+          const r = el.getBoundingClientRect();
+          window.scrollBy(0, r.y + r.height / 2 - (window.innerHeight - 112));
+        });
+        await expect
+          .poll(() =>
+            page.getByTestId("connection-last-updated").evaluate((el) => {
+              const r = el.getBoundingClientRect();
+              const hit = document.elementFromPoint(
+                r.x + r.width / 2,
+                r.y + r.height / 2,
+              );
+              return !!hit && (hit === el || el.contains(hit));
+            }),
+          )
+          .toBe(true);
       }
 
-      const server = ws.connectToServer();
-      server.onMessage((message) => {
-        const frame = message.toString();
-        if (
-          frame.includes(`receptionist-center-${fx.salonId}`) &&
-          frame.includes('"phx_reply"') &&
-          frame.includes('"status":"ok"')
-        ) {
-          recoveredSubscriptions += 1;
-        }
-        // Observe the real subscription reply without fabricating a response.
-        ws.send(message);
-      });
+      // Keep the fault in place until the button actually requests a document
+      // reload, then let the new page subscribe to the real local server.
+      const reloadRequested = page
+        .waitForRequest(
+          (request) =>
+            request.isNavigationRequest() &&
+            request.frame() === page.mainFrame(),
+        )
+        .then(() => {
+          allowReconnect = true;
+        });
+      await Promise.all([
+        reloadRequested,
+        page.waitForEvent("domcontentloaded"),
+        page.getByTestId("connection-reload").click(),
+      ]);
+      await expect(
+        page.getByTestId("receptionist-center-loaded"),
+      ).toBeVisible();
+      await expect
+        .poll(() => recoveredSubscriptions, { timeout: 15_000 })
+        .toBeGreaterThan(0);
+      await expect(banner.first()).toBeHidden();
+
+      // Opening the assistant remains available after recovery; do not submit
+      // a prompt or trigger a provider call in this layout regression.
+      const coco = page.getByRole("button", { name: /^(Ask Coco|Hỏi Coco)$/ });
+      await coco.click();
+      await expect(
+        page.getByPlaceholder(/^(Type your question…|Nhập câu hỏi của bạn…)$/),
+      ).toBeVisible();
+      await page
+        .getByRole("button", { name: "Close", exact: true })
+        .last()
+        .click();
+      await expect(coco).toBeVisible();
+      expect(hydrationErrors).toEqual([]);
     });
-
-    await gotoReceptionistCenter(page, fx.slug, {
-      dateYmd: fx.ymdUtc,
-      expectWalkinQueue: false,
-      useDemoCookie: false,
-    });
-    expect((await page.context().cookies()).map((cookie) => cookie.name))
-      .not.toContain("nailiq-demo-slug");
-    await expect.poll(() => blockedConnections).toBeGreaterThan(0);
-
-    const banner = page.locator(
-      '[data-testid="connection-banner-offline"], [data-testid="connection-banner-reconnecting"]',
-    );
-
-    await expect(banner.first()).toBeVisible({ timeout: 15_000 });
-    await expect(page.getByTestId("connection-reload")).toBeVisible();
-    await expect(page.getByTestId("connection-last-updated")).toBeVisible();
-    await expect(page.getByTestId("connection-last-updated")).toContainText(
-      /Updated|Cập nhật/,
-    );
-
-    // Keep the fault in place until the button actually requests a document
-    // reload, then let the new page subscribe to the real local server.
-    const reloadRequested = page.waitForRequest((request) =>
-      request.isNavigationRequest() && request.frame() === page.mainFrame(),
-    ).then(() => { allowReconnect = true; });
-    await Promise.all([
-      reloadRequested,
-      page.waitForEvent("domcontentloaded"),
-      page.getByTestId("connection-reload").click(),
-    ]);
-    await expect(page.getByTestId("receptionist-center-loaded")).toBeVisible();
-    await expect.poll(() => recoveredSubscriptions, { timeout: 15_000 })
-      .toBeGreaterThan(0);
-    await expect(banner.first()).toBeHidden();
-  });
+  }
 });

@@ -1,5 +1,7 @@
 import { test, expect } from "@playwright/test";
 
+import { salonWallTimeToUtcIso } from "@/shared/lib/salonTime";
+
 import { cleanupTestSalon } from "../helpers/db";
 import {
   cleanReceptionistData,
@@ -19,18 +21,18 @@ function endIsoFromDurationBuffer(startIso: string, durationMin: number, bufferM
   return new Date(Date.parse(startIso) + totalMin * 60 * 1000).toISOString();
 }
 
-/** Slot grid minutes-from-midnight for the UTC salon (testid suffix on the
+/** Slot grid minutes-from-midnight in the fixture salon timezone (testid suffix on the
  *  new edit-time-slot buttons: `edit-time-slot-${minutes}`). */
-function salonMinutesUtc(hour: number, minute: number): number {
+function salonMinutes(hour: number, minute: number): number {
   return hour * 60 + minute;
 }
 
 /**
- * A future salon-local (UTC) day, ≥ `daysAhead` from the fixture day, that is
+ * A future salon-local day, ≥ `daysAhead` from the fixture day, that is
  * NOT a Sunday (the default opening hours close Sunday → empty grid).
  *
  * Why a future day for the time tests: the availability grid hides past slots
- * (`isToday && slotStartMs < now + lead`). On the fixture day (= today UTC) the
+ * (`isToday && slotStartMs < now + lead`). On the fixture day the
  * set of selectable slots depends on the CI wall-clock — a late-UTC run would
  * leave the 09:00–18:00 grid empty. A near-future open day makes the WHOLE
  * opening-hours grid selectable regardless of when CI runs, and staffX has no
@@ -91,7 +93,7 @@ test.describe("Receptionist desk — edit booking", () => {
     // current day), then click a free slot. staffX has no bookings on that day,
     // so 11:00 is guaranteed free.
     const targetYmd = futureOpenYmdUtc(fx.ymdUtc);
-    const targetMinutes = salonMinutesUtc(11, 0); /* 660 → "11:00 AM" */
+    const targetMinutes = salonMinutes(11, 0); /* 660 → "11:00 AM" */
     await page.getByTestId("edit-date-input").fill(targetYmd);
 
     const slot = page.getByTestId(`edit-time-slot-${targetMinutes}`);
@@ -106,7 +108,7 @@ test.describe("Receptionist desk — edit booking", () => {
       .poll(async () => (await fetchBookingDeskSnapshot(fx.salonId, bookingId))?.start_time_utc, {
         timeout: 25_000,
       })
-      .toBe(isoAtUtcYmdHourMinute(targetYmd, 11, 0));
+      .toBe(salonWallTimeToUtcIso(targetYmd, targetMinutes, fx.timezone));
   });
 
   test("eb-2: Edit staff successfully", async ({ page }) => {
@@ -224,8 +226,9 @@ test.describe("Receptionist desk — edit booking", () => {
     // baseline bookings there besides these two.
     const dayYmd = futureOpenYmdUtc(fx.ymdUtc);
 
+    // Use salon wall time for seed and slot IDs, including the UTC-5 fixture.
     // Booking A — the one we edit. Sits at 11:00.
-    const startA = isoAtUtcYmdHourMinute(dayYmd, 11, 0);
+    const startA = salonWallTimeToUtcIso(dayYmd, salonMinutes(11, 0), fx.timezone);
     const endA = endIsoFromDurationBuffer(startA, 60, 15);
     const bookingAId = await seedDeskBooking(fx.salonId, {
       clientName: markerA,
@@ -239,7 +242,7 @@ test.describe("Receptionist desk — edit booking", () => {
     // Booking B — occupies 15:00 on the SAME day/staff. Its start slot (900 min)
     // must be hidden from A's grid.
     const busyHour = 15;
-    const startB = isoAtUtcYmdHourMinute(dayYmd, busyHour, 0);
+    const startB = salonWallTimeToUtcIso(dayYmd, salonMinutes(busyHour, 0), fx.timezone);
     const endB = endIsoFromDurationBuffer(startB, 30, 10);
     await seedDeskBooking(fx.salonId, {
       clientName: markerB,
@@ -264,13 +267,13 @@ test.describe("Receptionist desk — edit booking", () => {
     await expect(page.getByTestId("edit-time-grid")).toBeVisible({ timeout: 15_000 });
 
     // Prevention: the busy slot (B's 15:00 start) is NOT offered.
-    const busyMinutes = salonMinutesUtc(busyHour, 0); /* 900 */
+    const busyMinutes = salonMinutes(busyHour, 0); /* 900 */
     await expect(page.getByTestId(`edit-time-slot-${busyMinutes}`)).toHaveCount(0);
 
     // Sanity: a known-free slot on the same day IS selectable, proving the grid
     // loaded with real availability (so the absence above is a real "blocked",
     // not an empty/unrendered grid). 09:00 is free for staffX.
-    const freeMinutes = salonMinutesUtc(9, 0); /* 540 */
+    const freeMinutes = salonMinutes(9, 0); /* 540 */
     await expect(page.getByTestId(`edit-time-slot-${freeMinutes}`)).toBeVisible();
 
     // Nothing was saved — A is unchanged.

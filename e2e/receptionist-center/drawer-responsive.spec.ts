@@ -1,11 +1,12 @@
 import { test, expect, type Page } from "@playwright/test";
 
+import { salonWallTimeToUtcIso } from "@/shared/lib/salonTime";
+
 import { cleanupTestSalon } from "../helpers/db";
 import { USER_LANGUAGE_STORAGE_KEY } from "@/shared/i18n/user/types";
 import {
   cleanReceptionistData,
   gotoReceptionistCenter,
-  isoAtUtcYmdHourMinute,
   rcSlug,
   seedDeskBooking,
   seedReceptionistCenterFixture,
@@ -115,6 +116,8 @@ test.describe("Booking detail drawer — viewport (Issue #9)", () => {
 });
 
 test.describe("Booking detail drawer — service buffer hint (Issue #12)", () => {
+  // Labels below are salon-local. The fixture switches to UTC-5 after 19:00 UTC.
+
   async function presetUserLang(page: Page, lang: "en" | "vi") {
     await page.addInitScript(
       ({ key, value }: { key: string; value: string }) => {
@@ -130,8 +133,8 @@ test.describe("Booking detail drawer — service buffer hint (Issue #12)", () =>
     await presetUserLang(page, "en");
 
     const marker = testClientNameMarker();
-    const startIso = new Date(`${fx.ymdUtc}T12:00:00.000Z`).toISOString();
-    const endIso = new Date(`${fx.ymdUtc}T12:55:00.000Z`).toISOString();
+    const startIso = salonWallTimeToUtcIso(fx.ymdUtc, 12 * 60, fx.timezone);
+    const endIso = salonWallTimeToUtcIso(fx.ymdUtc, 12 * 60 + 55, fx.timezone);
     const bookingId = await seedDeskBooking(fx.salonId, {
       clientName: marker,
       serviceId: fx.serviceIds[0]!,
@@ -155,8 +158,8 @@ test.describe("Booking detail drawer — service buffer hint (Issue #12)", () =>
     await presetUserLang(page, "vi");
 
     const marker = testClientNameMarker();
-    const startIso = new Date(`${fx.ymdUtc}T12:30:00.000Z`).toISOString();
-    const endIso = new Date(`${fx.ymdUtc}T13:25:00.000Z`).toISOString();
+    const startIso = salonWallTimeToUtcIso(fx.ymdUtc, 12 * 60 + 30, fx.timezone);
+    const endIso = salonWallTimeToUtcIso(fx.ymdUtc, 13 * 60 + 25, fx.timezone);
     const bookingId = await seedDeskBooking(fx.salonId, {
       clientName: marker,
       serviceId: fx.serviceIds[0]!,
@@ -182,8 +185,8 @@ test.describe("Booking detail drawer — service buffer hint (Issue #12)", () =>
 
     const marker = testClientNameMarker();
     /** Long Overflow Service — duration 240, buffer 0 */
-    const startIso = isoAtUtcYmdHourMinute(fx.ymdUtc, 12, 0);
-    const endIso = isoAtUtcYmdHourMinute(fx.ymdUtc, 16, 0);
+    const startIso = salonWallTimeToUtcIso(fx.ymdUtc, 12 * 60, fx.timezone);
+    const endIso = salonWallTimeToUtcIso(fx.ymdUtc, 16 * 60, fx.timezone);
     const bookingId = await seedDeskBooking(fx.salonId, {
       clientName: marker,
       serviceId: fx.serviceIds[5]!,
