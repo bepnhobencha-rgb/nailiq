@@ -24,6 +24,9 @@ jobs:
       - name: Install dependencies
         run: npm ci
 
+      - name: Validate Vercel lockfile
+        run: npx --yes pnpm@10.34.5 install --lockfile-only --frozen-lockfile --ignore-scripts
+
       - name: Type check
         run: npm run typecheck
 
@@ -60,6 +63,9 @@ jobs:
 
       - name: npm audit (high severity)
         run: npm audit --package-lock-only --audit-level=high
+
+      - name: pnpm audit for Vercel (high severity)
+        run: npx --yes pnpm@10.34.5 audit --audit-level=high
 
       - name: Check for committed secrets
         run: |

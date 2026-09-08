@@ -33,6 +33,14 @@ Bằng chứng các lần audit được giữ riêng, không thay kết quả c
 
 Không sửa code ứng dụng, schema, quyền, feature flag hoặc ngưỡng audit.
 
+## Đồng bộ lockfile cho Vercel
+
+Preview đầu tiên của [PR #1360](https://github.com/bepnhobencha-rgb/nailiq/pull/1360), commit `d8d3aa0d`, dừng ở `ERR_PNPM_OUTDATED_LOCKFILE`: Vercel chọn pnpm 10 từ `pnpm-lock.yaml`, còn CI dùng npm. Bốn specifier Next, Sharp, eslint-config-next và Vitest chưa khớp với manifest. Lỗi được giữ tại `publication/preview-initial-build.log`.
+
+Đồng bộ pnpm bằng pnpm 10.34.5; giữ các phiên bản không liên quan đã được lock. Audit npm và pnpm cùng báo 0 lỗ hổng. CI thêm `Validate Vercel lockfile` bằng frozen lockfile và thêm audit pnpm ở ngưỡng high, bên cạnh audit npm hiện có. Lệnh kiểm tra đã tái hiện việc từ chối lock cũ và chấp nhận lock mới mà không sửa file.
+
+Bản build pnpm được kiểm tra riêng trong worktree QA: cài đặt `--frozen-lockfile`, 4.524 unit PASS/1 SKIP và production build/typecheck trên Node 20.20.2. Smoke giao diện pnpm cũng 6/6 PASS trên desktop/iPhone, không pageerror/HTTP 5xx. Bằng chứng ở `publication/pnpm-*`. Hai lockfile vẫn giữ dependency graph riêng; không đồng nhất kết quả npm CI với phép chứng minh mọi flow authenticated trên graph pnpm.
+
 ## Kiểm tra local
 
 Bản cuối gồm cả Sharp/js-yaml được chạy bằng Node 20.20.2 như CI; bằng chứng ở `local-revision-2/`.
@@ -56,7 +64,7 @@ Cảnh báo Edge Runtime đã có trước vẫn được ghi trong build log.
 
 ## Giới hạn và bước tiếp theo
 
-Bản vá này mới ở local, chưa có commit/PR/CI/Preview/Production riêng.
+Bản vá đã được mở thành Draft PR #1360. Các kết quả local ở trên không thay thế CI/Preview trên commit cuối. Chưa merge hoặc phát hành Production bản vá dependency.
 Các flow có đăng nhập, dữ liệu salon, booking và server action trên framework mới phải được chạy bằng CI với database dùng một lần trước khi phát hành. Smoke local không thay thế các flow này.
 Các con số ở đây là test case, không xác nhận 784 chức năng hoàn thành.
 
