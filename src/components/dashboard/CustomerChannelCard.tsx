@@ -3,6 +3,7 @@
 import { useEffect, useState, useTransition } from "react";
 import { Button } from "@/components/ui/Button";
 import { useUserLanguage } from "@/shared/lib/useUserLanguage";
+import { SETTINGS_SAVE_UNCONFIRMED } from "@/shared/dashboard/settingsSaveFeedback";
 import {
   getCustomerChannelSettings,
   saveCustomerChannelSettings,
@@ -59,28 +60,45 @@ export function CustomerChannelCard({ slug }: { slug: string }) {
 
   const [settings, setSettings] = useState<CustomerChannelSettings>(DEFAULT);
   const [loaded, setLoaded] = useState(false);
+  const [loadFailed, setLoadFailed] = useState(false);
+  const [loadAttempt, setLoadAttempt] = useState(0);
   const [saving, startSave] = useTransition();
   const [toast, setToast] = useState<{ kind: "ok" | "err"; msg: string } | null>(null);
 
   useEffect(() => {
-    let alive = true;
-    void getCustomerChannelSettings(slug).then((r) => {
-      if (!alive) return;
-      if (r.ok) setSettings(r.settings);
-      setLoaded(true);
-    });
-    return () => { alive = false; };
-  }, [slug]);
+    let active = true;
+    async function load() {
+      try {
+        const r = await getCustomerChannelSettings(slug);
+        if (!active) return;
+        if (r.ok) {
+          setSettings(r.settings);
+          setLoadFailed(false);
+          setLoaded(true);
+        } else {
+          setLoadFailed(true);
+        }
+      } catch {
+        if (active) setLoadFailed(true);
+      }
+    }
+    void load();
+    return () => { active = false; };
+  }, [slug, loadAttempt]);
 
   function onSave() {
     setToast(null);
     startSave(async () => {
-      const r = await saveCustomerChannelSettings(slug, settings);
-      if (r.ok) {
-        setSettings(r.settings);
-        setToast({ kind: "ok", msg: isVi ? "Đã lưu." : "Saved." });
-      } else {
-        setToast({ kind: "err", msg: isVi ? "Lưu thất bại." : "Save failed." });
+      try {
+        const r = await saveCustomerChannelSettings(slug, settings);
+        if (r.ok) {
+          setSettings(r.settings);
+          setToast({ kind: "ok", msg: isVi ? "Đã lưu." : "Saved." });
+        } else {
+          setToast({ kind: "err", msg: isVi ? "Lưu thất bại." : "Save failed." });
+        }
+      } catch {
+        setToast({ kind: "err", msg: SETTINGS_SAVE_UNCONFIRMED[isVi ? "vi" : "en"] });
       }
     });
   }
@@ -109,12 +127,25 @@ export function CustomerChannelCard({ slug }: { slug: string }) {
           : "Controls how automated messages and AI agents reach your customers."}
       </p>
 
-      {!loaded ? (
+      {loadFailed ? (
+        <div className="mt-4 space-y-3">
+          <p role="alert" className="text-sm text-nq-error">
+            {isVi ? "Chưa tải được cài đặt. Kiểm tra kết nối rồi thử lại." : "Settings could not be loaded. Check your connection, then try again."}
+          </p>
+          <Button type="button" onClick={() => {
+            setLoadFailed(false);
+            setLoaded(false);
+            setLoadAttempt((attempt) => attempt + 1);
+          }}>
+            {isVi ? "Thử tải lại" : "Try loading again"}
+          </Button>
+        </div>
+      ) : !loaded ? (
         <p className="mt-4 text-sm italic text-nq-muted">
           {isVi ? "Đang tải…" : "Loading…"}
         </p>
       ) : (
-        <div className="mt-4 flex flex-col gap-4">
+        <fieldset disabled={saving} className="mt-4 flex min-w-0 flex-col gap-4">
           {/* SMS outbound toggle */}
           <div className="flex flex-col gap-2 rounded-lg border border-nq-border/60 bg-nq-surface-2 p-4">
             <p className="text-xs font-semibold uppercase tracking-wide text-nq-muted">
@@ -221,7 +252,7 @@ export function CustomerChannelCard({ slug }: { slug: string }) {
             <p
               data-testid="channel-card-toast"
               className={toast.kind === "ok" ? "text-sm text-nq-success" : "text-sm text-nq-error"}
-              role="status"
+              role={toast.kind === "ok" ? "status" : "alert"}
             >
               {toast.msg}
             </p>
@@ -232,7 +263,7 @@ export function CustomerChannelCard({ slug }: { slug: string }) {
               {isVi ? "Lưu" : "Save"}
             </Button>
           </div>
-        </div>
+        </fieldset>
       )}
     </section>
   );

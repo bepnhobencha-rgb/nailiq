@@ -230,6 +230,15 @@ jobs:
             project: "mobile"
             browser: "webkit"
             testpath: "e2e/receptionist-center"
+          # These permission checks deliberately present a forged demo cookie.
+          # Keep their server and browser on real Auth with demo fully disabled.
+          - shard: 4
+            name: "settings recovery — real auth"
+            project: "settings"
+            browser: "chromium webkit"
+            testpath: >-
+              e2e/notification-settings-preflight.spec.ts
+              e2e/notification-settings-recovery.spec.ts
     env:
       # ── NO PRODUCTION SECRETS. NONE. ────────────────────────────────────────
       #
@@ -251,11 +260,11 @@ jobs:
       NEXT_PUBLIC_SITE_URL: http://localhost:3000
       BASE_URL: http://localhost:3000
       PLAYWRIGHT_BASE_URL: http://localhost:3000
-      NEXT_PUBLIC_DEMO_OTP: "true"
-      DEMO_OTP: "true"
+      NEXT_PUBLIC_DEMO_OTP: ${{ matrix.shard == 4 && 'false' || 'true' }}
+      DEMO_OTP: ${{ matrix.shard == 4 && 'false' || 'true' }}
       # Allows demo cookie with non-"demo-salon" slugs so E2E fixtures can
       # use arbitrary test slugs. NEVER set on Vercel production.
-      NAILIQ_TEST_BYPASS_SLUG_PIN: "1"
+      NAILIQ_TEST_BYPASS_SLUG_PIN: ${{ matrix.shard == 4 && '0' || '1' }}
       # ── External integrations: all off, all of them ─────────────────────────
       # A test database must not be able to reach a real provider even by
       # accident. The suite once billed 555 real Twilio sends.
@@ -422,7 +431,11 @@ jobs:
         if: steps.preflight.outputs.configured == 'true'
         id: projects
         run: |
-          if [ "${{ matrix.project }}" != "auto" ]; then
+          if [ "${{ matrix.project }}" = "settings" ]; then
+            echo "flag=--project=chromium --project=mobile" >> "$GITHUB_OUTPUT"
+            echo "browsers=chromium webkit" >> "$GITHUB_OUTPUT"
+            echo "::notice::Settings recovery — both engines with real Auth and demo disabled"
+          elif [ "${{ matrix.project }}" != "auto" ]; then
             echo "flag=--project=${{ matrix.project }}" >> "$GITHUB_OUTPUT"
             echo "browsers=${{ matrix.browser }}" >> "$GITHUB_OUTPUT"
             echo "::notice::Dedicated ${{ matrix.project }} shard"

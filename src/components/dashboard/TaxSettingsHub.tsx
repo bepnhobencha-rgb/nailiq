@@ -6,6 +6,7 @@ import { Button } from "@/components/ui/Button";
 import { Toggle } from "@/components/ui/Toggle";
 import { loadTaxSettings, saveTaxSettings } from "@/shared/dashboard/taxSettingsActions";
 import type { TaxLine } from "@/shared/tax/taxTypes";
+import { useUserLanguage } from "@/shared/lib/useUserLanguage";
 
 function rateToPercent(rate: number): string {
   return (rate * 100).toFixed(rate === Math.round(rate * 100) / 100 ? 0 : 3).replace(/\.?0+$/, "");
@@ -18,25 +19,39 @@ function percentToRate(pct: string): number | null {
 }
 
 export function TaxSettingsHub({ slug }: { slug: string }) {
+  const { language } = useUserLanguage();
   const [lines, setLines] = useState<TaxLine[]>([]);
   const [preset, setPreset] = useState<TaxLine[] | null>(null);
   const [locationLabel, setLocationLabel] = useState<string | null>(null);
   const [loading, setLoading] = useState(true);
+  const [loadFailed, setLoadFailed] = useState(false);
+  const [loadAttempt, setLoadAttempt] = useState(0);
   const [saved, setSaved] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [isPending, startTransition] = useTransition();
 
   useEffect(() => {
+    let active = true;
     void (async () => {
-      const res = await loadTaxSettings(slug);
-      if (res.ok) {
+      try {
+        const res = await loadTaxSettings(slug);
+        if (!active) return;
+        if (!res.ok) {
+          setLoadFailed(true);
+          return;
+        }
         setLines(res.taxLines);
         setPreset(res.preset);
         setLocationLabel(res.locationLabel);
+        setLoadFailed(false);
+      } catch {
+        if (active) setLoadFailed(true);
+      } finally {
+        if (active) setLoading(false);
       }
-      setLoading(false);
     })();
-  }, [slug]);
+    return () => { active = false; };
+  }, [slug, loadAttempt]);
 
   function handleToggle(idx: number, val: boolean) {
     setLines((prev) => prev.map((l, i) => (i === idx ? { ...l, enabled: val } : l)));
@@ -99,6 +114,25 @@ export function TaxSettingsHub({ slug }: { slug: string }) {
     return (
       <Card variant="default" padding="md">
         <p className="text-sm text-nq-muted">Loading tax settings…</p>
+      </Card>
+    );
+  }
+
+  if (loadFailed) {
+    return (
+      <Card variant="default" padding="md">
+        <p role="alert" className="text-sm text-nq-error">
+          {language === "vi"
+            ? "Chưa tải được cài đặt thuế. Kiểm tra kết nối rồi thử lại."
+            : "Tax settings could not be loaded. Check your connection, then try again."}
+        </p>
+        <Button type="button" onClick={() => {
+          setLoading(true);
+          setLoadFailed(false);
+          setLoadAttempt((attempt) => attempt + 1);
+        }}>
+          {language === "vi" ? "Thử tải lại cài đặt thuế" : "Try loading tax settings again"}
+        </Button>
       </Card>
     );
   }
