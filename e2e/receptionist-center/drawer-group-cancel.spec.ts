@@ -80,9 +80,9 @@ test.describe("Drawer cancel — group-aware scope", () => {
 
     // Switch to whole-party, confirm, and verify every member is cancelled.
     await page.getByTestId("cancel-scope-whole").click();
-    await page
-      .getByTestId("notify-cancel-confirm")
-      .evaluate((el: HTMLElement) => el.click());
+    // The whole-party preview loads asynchronously and disables confirmation.
+    // A locator click waits for the button to become actionable before sending.
+    await page.getByTestId("notify-cancel-confirm").click();
     await expect(page.getByTestId("desk-status-success")).toBeVisible();
 
     await expect
