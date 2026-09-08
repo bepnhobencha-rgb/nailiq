@@ -574,6 +574,16 @@ test.describe("Booking error scenarios — /[slug]", () => {
     ).toHaveCount(0);
   });
 
+  test("hours-7b: reopening a paused salon is visible on the next page load", async ({ page }) => {
+    await setSalonRow(PRIMARY_SLUG, { profile_complete: false });
+    await page.goto(`/${PRIMARY_SLUG}`);
+    await expect(page.getByRole("heading", { name: "Booking is paused" })).toBeVisible();
+    await setSalonRow(PRIMARY_SLUG, { profile_complete: true });
+    await page.reload();
+    await expect(page.getByTestId("booking-entry-hydrated")).toBeAttached();
+    await expect(page.getByRole("heading", { name: "Booking is paused" })).toHaveCount(0);
+  });
+
   // ──────────────────────────────────────────────────────────
   // GROUP 3 — SECURITY / IDOR
   // ──────────────────────────────────────────────────────────
@@ -597,6 +607,10 @@ test.describe("Booking error scenarios — /[slug]", () => {
       .eq("salon_id", otherSalonId);
     const otherIds = (otherStaff ?? []).map((s: { id: string }) => String(s.id));
     expect(otherIds.length).toBeGreaterThan(0);
+    const { data: primary, error: primaryError } = await supabase
+      .from("salons").select("profile_complete").eq("slug", PRIMARY_SLUG).single();
+    expect(primaryError).toBeNull();
+    expect(primary?.profile_complete, "the IDOR fixture must be accepting bookings").toBe(true);
 
     await gotoBookingServiceStep(page, PRIMARY_SLUG);
     await page.locator('[data-testid="service-tile-select"]').first().click();
