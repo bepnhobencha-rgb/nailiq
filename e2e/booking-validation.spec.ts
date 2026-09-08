@@ -4,6 +4,7 @@ import {
   acceptSmsConsentIfPresented,
   cleanupClientProfile,
   cleanupTestSalon,
+  enterBookingPhone,
   gotoBookingServiceStep,
   seedTestSalon,
   setReactInputValue,
@@ -80,7 +81,7 @@ test.describe("Booking validation — info step", () => {
     // individual flow (service step) must never mount.
     await page.goto(`/${testSlug}`);
     await expect(page.getByTestId("booking-phone-gate")).toBeVisible();
-    await setReactInputValue(page.getByTestId("booking-entry-phone"), "123");
+    await enterBookingPhone(page, "123");
     await expect(page.getByTestId("booking-entry-phone")).toHaveAttribute(
       "aria-invalid",
       "true",
@@ -94,6 +95,11 @@ test.describe("Booking validation — info step", () => {
   test("bv-2: valid phone formats at the gate reveal the service step", async ({ page }) => {
     await page.goto(`/${testSlug}`);
     await expect(page.getByTestId("booking-phone-gate")).toBeVisible();
+    // Keep the raw format inputs below, but wait until React handles input events.
+    await page.getByTestId("booking-entry-hydrated").waitFor({
+      state: "attached",
+      timeout: 15_000,
+    });
 
     const phoneInput = page.getByTestId("booking-entry-phone");
     const nameInput = page.getByTestId("booking-entry-name");
