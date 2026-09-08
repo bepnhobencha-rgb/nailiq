@@ -22,7 +22,8 @@ export default function DashboardError({
         </div>
         <h1 className="mt-5 text-lg font-semibold">Dashboard could not load</h1>
         <p className="mt-2 text-sm leading-relaxed text-nq-muted">
-          Please try again. Your salon data has not been changed.
+          Please try again. If you were saving changes, check the saved settings
+          before repeating the action.
         </p>
         <button
           type="button"

@@ -5,6 +5,7 @@ import { useEffect, useState, useTransition } from "react";
 import { Button } from "@/components/ui/Button";
 import { useUserLanguage } from "@/shared/lib/useUserLanguage";
 import { getUserMessages } from "@/shared/i18n/user";
+import { SETTINGS_SAVE_UNCONFIRMED } from "@/shared/dashboard/settingsSaveFeedback";
 import {
   DEFAULT_OWNER_NOTIFICATION_SETTINGS,
   OWNER_NOTIFICATION_EVENTS,
@@ -30,6 +31,8 @@ export function OwnerNotificationCard({ slug }: { slug: string }) {
   );
   const [emailsText, setEmailsText] = useState("");
   const [loaded, setLoaded] = useState(false);
+  const [loadFailed, setLoadFailed] = useState(false);
+  const [loadAttempt, setLoadAttempt] = useState(0);
   const [saving, startSave] = useTransition();
   const [testing, startTest] = useTransition();
   const [toast, setToast] = useState<{ kind: "ok" | "err"; msg: string } | null>(
@@ -37,19 +40,26 @@ export function OwnerNotificationCard({ slug }: { slug: string }) {
   );
 
   useEffect(() => {
-    let alive = true;
-    void getOwnerNotificationSettings(slug).then((r) => {
-      if (!alive) return;
-      if (r.ok) {
-        setSettings(r.settings);
-        setEmailsText(r.settings.customEmails.join(", "));
+    let active = true;
+    async function load() {
+      try {
+        const r = await getOwnerNotificationSettings(slug);
+        if (!active) return;
+        if (r.ok) {
+          setSettings(r.settings);
+          setEmailsText(r.settings.customEmails.join(", "));
+          setLoadFailed(false);
+          setLoaded(true);
+        } else {
+          setLoadFailed(true);
+        }
+      } catch {
+        if (active) setLoadFailed(true);
       }
-      setLoaded(true);
-    });
-    return () => {
-      alive = false;
-    };
-  }, [slug]);
+    }
+    void load();
+    return () => { active = false; };
+  }, [slug, loadAttempt]);
 
   function patch(p: Partial<OwnerNotificationSettings>) {
     setSettings((s) => ({ ...s, ...p }));
@@ -62,13 +72,17 @@ export function OwnerNotificationCard({ slug }: { slug: string }) {
     setToast(null);
     startSave(async () => {
       const payload = { ...settings, customEmails: emailsText };
-      const r = await saveOwnerNotificationSettings(slug, payload);
-      if (r.ok) {
-        setSettings(r.settings);
-        setEmailsText(r.settings.customEmails.join(", "));
-        setToast({ kind: "ok", msg: t.saved });
-      } else {
-        setToast({ kind: "err", msg: t.saveError });
+      try {
+        const r = await saveOwnerNotificationSettings(slug, payload);
+        if (r.ok) {
+          setSettings(r.settings);
+          setEmailsText(r.settings.customEmails.join(", "));
+          setToast({ kind: "ok", msg: t.saved });
+        } else {
+          setToast({ kind: "err", msg: t.saveError });
+        }
+      } catch {
+        setToast({ kind: "err", msg: SETTINGS_SAVE_UNCONFIRMED[language] });
       }
     });
   }
@@ -98,10 +112,23 @@ export function OwnerNotificationCard({ slug }: { slug: string }) {
       <h2 className="text-base font-semibold text-nq-foreground">{t.title}</h2>
       <p className="mt-1 text-sm text-nq-muted">{t.subtitle}</p>
 
-      {!loaded ? (
+      {loadFailed ? (
+        <div className="mt-4 space-y-3">
+          <p role="alert" className="text-sm text-nq-error">
+            {language === "vi" ? "Chưa tải được cài đặt. Kiểm tra kết nối rồi thử lại." : "Settings could not be loaded. Check your connection, then try again."}
+          </p>
+          <Button type="button" onClick={() => {
+            setLoadFailed(false);
+            setLoaded(false);
+            setLoadAttempt((attempt) => attempt + 1);
+          }}>
+            {language === "vi" ? "Thử tải lại" : "Try loading again"}
+          </Button>
+        </div>
+      ) : !loaded ? (
         <p className="mt-4 text-sm italic text-nq-muted">{t.loading}</p>
       ) : (
-        <div className="mt-4 flex flex-col gap-4">
+        <fieldset disabled={saving || testing} className="mt-4 flex min-w-0 flex-col gap-4">
           {/* Master toggle */}
           <label className="flex cursor-pointer items-center gap-3">
             <input
@@ -182,7 +209,7 @@ export function OwnerNotificationCard({ slug }: { slug: string }) {
                   ? "text-sm text-nq-success"
                   : "text-sm text-nq-error"
               }
-              role="status"
+              role={toast.kind === "ok" ? "status" : "alert"}
             >
               {toast.msg}
             </p>
@@ -203,7 +230,7 @@ export function OwnerNotificationCard({ slug }: { slug: string }) {
               </Button>
             ) : null}
           </div>
-        </div>
+        </fieldset>
       )}
     </section>
   );

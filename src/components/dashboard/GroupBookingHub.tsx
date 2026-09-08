@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useState, useTransition } from "react";
+import { SETTINGS_SAVE_UNCONFIRMED } from "@/shared/dashboard/settingsSaveFeedback";
 import { Card } from "@/components/ui/Card";
 import { Button } from "@/components/ui/Button";
 import {
@@ -13,26 +14,47 @@ const PRESETS = [1, 2, 4, 12, 24];
 export function GroupBookingHub({ slug }: { slug: string }) {
   const [cutoff, setCutoff] = useState(2);
   const [loading, setLoading] = useState(true);
+  const [loadFailed, setLoadFailed] = useState(false);
+  const [loadAttempt, setLoadAttempt] = useState(0);
   const [saved, setSaved] = useState(false);
   const [error, setError] = useState<string | null>(null);
   const [isPending, startTransition] = useTransition();
 
   useEffect(() => {
-    void loadGroupBookingSettings(slug).then((res) => {
-      if (res.ok && res.settings) setCutoff(res.settings.declineCutoffHours);
-      setLoading(false);
-    });
-  }, [slug]);
+    let active = true;
+    async function load() {
+      try {
+        const res = await loadGroupBookingSettings(slug);
+        if (!active) return;
+        if (res.ok && res.settings) {
+          setCutoff(res.settings.declineCutoffHours);
+        } else {
+          setLoadFailed(true);
+        }
+      } catch {
+        if (active) setLoadFailed(true);
+      } finally {
+        if (active) setLoading(false);
+      }
+    }
+    void load();
+    return () => { active = false; };
+  }, [slug, loadAttempt]);
 
   function handleSave() {
     setError(null);
+    setSaved(false);
     startTransition(async () => {
-      const res = await saveGroupBookingSettings(slug, { declineCutoffHours: cutoff });
-      if (res.ok) {
-        setSaved(true);
-        setTimeout(() => setSaved(false), 2500);
-      } else {
-        setError("Lưu thất bại. Vui lòng thử lại.");
+      try {
+        const res = await saveGroupBookingSettings(slug, { declineCutoffHours: cutoff });
+        if (res.ok) {
+          setSaved(true);
+          setTimeout(() => setSaved(false), 2500);
+        } else {
+          setError("Lưu thất bại. Vui lòng thử lại.");
+        }
+      } catch {
+        setError(SETTINGS_SAVE_UNCONFIRMED.vi);
       }
     });
   }
@@ -45,9 +67,26 @@ export function GroupBookingHub({ slug }: { slug: string }) {
     );
   }
 
+  if (loadFailed) {
+    return (
+      <Card variant="default" padding="md">
+        <p role="alert" className="text-sm text-nq-error">
+          Chưa tải được cài đặt đặt nhóm. Kiểm tra kết nối rồi thử lại.
+        </p>
+        <Button type="button" onClick={() => {
+          setLoading(true);
+          setLoadFailed(false);
+          setLoadAttempt((attempt) => attempt + 1);
+        }}>
+          Thử tải lại cài đặt đặt nhóm
+        </Button>
+      </Card>
+    );
+  }
+
   return (
     <Card variant="default" padding="md">
-      <div className="space-y-4">
+      <fieldset disabled={isPending} className="min-w-0 space-y-4">
         <div>
           <h3 className="text-sm font-semibold text-nq-foreground">Thời hạn huỷ tham dự nhóm</h3>
           <p className="mt-0.5 text-xs text-nq-muted">
@@ -103,13 +142,13 @@ export function GroupBookingHub({ slug }: { slug: string }) {
         </div>
 
         <div className="flex items-center justify-end gap-3 border-t border-nq-border/30 pt-3">
-          {error && <p className="text-xs text-nq-error">{error}</p>}
-          {saved && <p className="text-xs text-nq-success">Đã lưu!</p>}
+          {error && <p role="alert" className="text-xs text-nq-error">{error}</p>}
+          {saved && <p role="status" className="text-xs text-nq-success">Đã lưu!</p>}
           <Button type="button" variant="primary" size="sm" onClick={handleSave} disabled={isPending}>
             {isPending ? "Đang lưu…" : "Lưu cài đặt"}
           </Button>
         </div>
-      </div>
+      </fieldset>
     </Card>
   );
 }
