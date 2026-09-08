@@ -20,6 +20,8 @@ Phạm vi: local từ main `2909db45`, nhánh `fix/coco-mobile-status-overlap-20
 
 Các lượt WebKit mở rộng vẫn ghi nhận `TypeError: Load failed` và thông báo `due to access control checks` quanh URL chuyển trang. Dấu hiệu cũng có trên bản gốc; chưa xác định nguyên nhân và không kết luận CORS/backend. Toàn bộ thông báo giữ trong JSON/trace. Diagnostic chỉ nghiệm thu bố cục và lỗi hydration đã xác định, không tuyên bố console sạch toàn bộ. Lượt đầu chọn `textarea` quá rộng, và lần chạy cấu hình ma trận đầu sai đường dẫn globalSetup, là lỗi bộ kiểm tra đã được sửa và lưu log.
 
-Chưa có CI/Preview/Production cho bản sửa này. 16 ca skip còn lại trên main không thuộc phạm vi sửa. Số lượt test không tương đương số chức năng trong danh sách 784.
+PR #1358, commit ứng dụng `401af08c`: CI build/typecheck/lint/security PASS; 4.524 unit PASS và 1 skip. Preview READY, `/api/version` khớp SHA. Lượt visual CI đầu có 14 PASS và 2 FAIL do ảnh chuẩn mobile vẫn dùng bố cục Coco/Create cũ: ảnh mới cao 1.541 px thay vì 1.425 px, đúng 60 px cho Coco và 56 px cho Create. Đã xem expected/actual của Chromium và WebKit, xác nhận ảnh giữa hai lượt chạy giống nhau hoàn toàn; cập nhật đúng hai PNG Linux từ artifact CI. Không nới ngưỡng ảnh, thêm skip hoặc đổi code ứng dụng. Cần lượt CI kế tiếp xác nhận ảnh chuẩn mới.
+
+Chưa merge hoặc triển khai Production. 16 ca skip còn lại trên main không thuộc phạm vi sửa. Số lượt test không tương đương số chức năng trong danh sách 784.
 
 Bằng chứng local: `/Users/huytran/nailiq-audit-results-20260907/coco-mobile-status/` (JSON, trace, ảnh, log build/kiểm tra và biên bản dọn database).
