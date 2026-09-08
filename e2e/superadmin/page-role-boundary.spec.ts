@@ -27,6 +27,9 @@ for (const role of roles) {
     ];
     try {
       await loginAsSuperadmin(page, account);
+      // The sign-in helper waits for the dashboard URL. Let its RSC/prefetch
+      // work settle before a full-document navigation can cancel that work.
+      await page.waitForLoadState("networkidle");
       for (const route of routes) {
         const target = `/superadmin/${route.path}`;
         const response = await page.goto(target, { waitUntil: "networkidle" });
