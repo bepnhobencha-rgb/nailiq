@@ -28,7 +28,7 @@ Bước tái hiện:
 - Hiển thị lỗi riêng bằng Việt/Anh và nút thử lại theo ngôn ngữ Dashboard. Không biến lỗi tải thành kết luận "chưa có chương trình".
 - Giữ thông báo trong khi thử lại, hiển thị trạng thái đang tải và khóa nút để tránh bấm lặp.
 - Dùng Button và màu token hiện có. Chừa khoảng trống ở màn hình nhỏ để thông báo và nút không bị Coco/thanh điều hướng che.
-- Thêm regression vào shard CI dùng Auth thật và tắt demo; chỉ cấu hình đã được cập nhật, CI mới chưa chạy.
+- Thêm regression vào shard CI dùng Auth thật và tắt demo; đã chạy trên CI của PR #1359; kết quả và phần sửa harness bổ sung ghi ở cuối báo cáo.
 
 Không đổi server action, schema, quyền, feature flag hoặc đường ghi giá trị Loyalty. Không thay đổi nội dung của widget khi tải thành công.
 
@@ -54,7 +54,7 @@ Hai sai lệch của harness đã được loại trừ trước nghiệm thu: s
 - Cleanup sau cùng xác nhận 0 salon, 0 booking, 0 Auth user, 0 payment operation, 0 loyalty card và 0 stamp event trong database QA.
 - Phản hồi thật sau retry thuộc cấu hình Loyalty mặc định tắt/không có chương trình. Chưa chứng minh hoạt động tích điểm, đổi quà hoặc toàn bộ chương trình Loyalty đã bật bằng bộ test này.
 - Trace Receptionist Center WebKit vẫn ghi nhận thông báo access-control trong lúc hard navigation hủy request, gồm POST action và RSC prefetch; không còn unhandled rejection của Loyalty trong các trace đó. Không kết luận mọi cảnh báo mạng/CORS đã được sửa hoặc suy ra cấu hình CORS Production sai.
-- PR CI, Preview và Production của lô sửa mới: **chưa chạy/chưa phát hành**. Bằng chứng local không chứng minh đủ 784 chức năng hoặc tất cả vai trò.
+- PR #1359: CI/Preview của bản đầu `ffe6f560` đã chạy; bản cập nhật harness bên dưới cần CI xác nhận lại. **Chưa merge hoặc phát hành Production**. Bằng chứng này không chứng minh đủ 784 chức năng hoặc mọi tình huống của tất cả vai trò.
 
 ## Bằng chứng
 
@@ -68,3 +68,22 @@ Thư mục local: `/Users/huytran/nailiq-audit-results-20260907/loyalty-widget-r
 - `cleanup-counts.json`, `cleanup-sweep.log`, `manifest.json`.
 
 Trace và dữ liệu xác thực QA chỉ nằm trong thư mục bằng chứng local, không đưa vào Git.
+
+## Bổ sung sau lượt CI đầu tiên của PR #1359
+
+Commit `ffe6f560`: CI `34277343716` và E2E `34277343713` đều kết thúc success. Bộ E2E chính đạt **458 ca, 16 skip, 0 fail, 0 flaky, không retry**. So với PR trước chỉ thêm 10 kịch bản Loyalty; không đổi kết quả của các ca cũ. Cả 10 probe Loyalty đều ghi nhận đúng số lượt gọi và không có lỗi trình duyệt. Unit 4.524 pass/1 skip; Smoke 8 pass; Visual 16 pass. Sáu job QA xác nhận cleanup và hủy database thành công. Preview READY, `/api/version` khớp commit.
+
+Lượt WebKit bổ sung có **1 ca `ops_admin` phải retry rồi mới đạt**, ngoài 458 ca chính. Assertion quyền và HTTP đều qua; assertion mảng browser errors thất bại vì hai cảnh báo RSC prefetch của `/superadmin/support` và `/superadmin/settings`.
+
+Trace chỉ ra race của harness: dashboard URL được nhận lúc 16.393 giây; `waitForLoadState("networkidle")` trả về ngay lúc 16.396 vì event đã xảy ra trên document trước; `page.goto("/superadmin/dashboard")` tiếp theo bắt đầu lúc 16.397. Cảnh báo xuất hiện lúc 16.427–16.428, cùng đợt chuyển trang có request RSC bị `Load request cancelled`. Những endpoint đó sau đó trả 200. Không lấy hiện tượng này làm bằng chứng cấu hình CORS Production sai.
+
+Đã sửa riêng `e2e/superadmin/page-role-boundary.spec.ts`: giữ trang đăng nhập mở; mỗi URL kiểm tra quyền mở ở trang mới trong cùng BrowserContext với phiên Auth thật. Vẫn kiểm tra HTTP dưới 500, quyền allow/deny, heading 404, nút thao tác và browser errors trên từng trang trước khi đóng. Trang đăng nhập cũng tiếp tục được theo dõi lỗi. Không lọc bỏ chuỗi lỗi, không sửa server/role policy, không tăng retry.
+
+Kiểm chứng harness trên production build local có cùng mã ứng dụng:
+
+- `ops_admin` WebKit: 5 lần liên tiếp PASS, không retry; 40 quan sát role/route đúng.
+- Sáu vai trò × Chromium/WebKit: 12/12 PASS, không skip/retry; 96 quan sát role/route đúng và 0 page error trong toàn bộ trace, kể cả teardown.
+- Lint, typecheck, diff check PASS. Không build lại ứng dụng vì chỉ đổi test và tài liệu.
+- Cleanup: 0 salon, booking, Auth user, superadmin, payment operation, loyalty card và stamp event trong database QA.
+
+Bằng chứng bổ sung: `publication/ci-acceptance-initial.json`, `publication/superadmin-webkit-failure-trace.zip`, `publication/superadmin-webkit-failure-events.json` và `publication/role-harness-fix/`. Lượt CI đầu có flaky vẫn được giữ nguyên; không thay thế nó bằng kết quả local.
