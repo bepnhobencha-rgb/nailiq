@@ -698,6 +698,11 @@ test.describe("Booking error scenarios — /[slug]", () => {
   }) => {
     await page.goto(`/${PRIMARY_SLUG}`);
     await expect(page.getByTestId("booking-phone-gate")).toBeVisible();
+    // Preserve the malformed input, but wait for React to handle its event.
+    await page.getByTestId("booking-entry-hydrated").waitFor({
+      state: "attached",
+      timeout: 15_000,
+    });
     await setReactInputValue(
       page.getByTestId("booking-entry-phone"),
       "abc123",
