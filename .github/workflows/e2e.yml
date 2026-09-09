@@ -245,6 +245,7 @@ jobs:
               e2e/auth-email-callback.spec.ts
               e2e/auth-signup-confirmation.spec.ts
               e2e/auth-request-recovery.spec.ts
+              e2e/auth-keyboard-submit.spec.ts
               e2e/google-auth-recovery.spec.ts
               e2e/forgot-password-request-recovery.spec.ts
     env:
