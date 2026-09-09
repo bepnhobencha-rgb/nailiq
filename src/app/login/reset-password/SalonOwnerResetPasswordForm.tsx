@@ -1,5 +1,6 @@
 "use client";
 
+import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useMemo, useState, useTransition } from "react";
 import { Button } from "@/components/ui/Button";
@@ -13,7 +14,8 @@ type ErrorCode =
   | "mismatch"
   | "no_session"
   | "no_salon_member"
-  | "server_error";
+  | "server_error"
+  | "unconfirmed";
 
 export function SalonOwnerResetPasswordForm() {
   const router = useRouter();
@@ -46,6 +48,7 @@ export function SalonOwnerResetPasswordForm() {
         ? "Tài khoản này không còn thuộc salon nào."
         : "This account is no longer associated with a salon.",
     server_error: t.resetPasswordServerError,
+    unconfirmed: t.resetPasswordUnconfirmed,
   };
 
   const onSubmit = (e: React.FormEvent) => {
@@ -60,7 +63,15 @@ export function SalonOwnerResetPasswordForm() {
       return;
     }
     startTransition(async () => {
-      const result = await completeSalonOwnerPasswordReset(password);
+      let result: Awaited<ReturnType<typeof completeSalonOwnerPasswordReset>>;
+      try {
+        result = await completeSalonOwnerPasswordReset(password);
+      } catch {
+        // A lost response cannot tell us whether the password was committed.
+        // Preserve the form without retrying or claiming success.
+        setError("unconfirmed");
+        return;
+      }
       if (result.ok) {
         // Recovery session is consumed; force a fresh sign-in.
         router.replace("/login?reset=ok");
@@ -166,9 +177,19 @@ export function SalonOwnerResetPasswordForm() {
       </Button>
 
       {error ? (
-        <p className="text-sm text-nq-error" role="alert">
-          {ERROR_COPY[error]}
-        </p>
+        <div className="flex flex-col gap-2">
+          <p className="text-sm text-nq-error" role="alert">
+            {ERROR_COPY[error]}
+          </p>
+          {error === "unconfirmed" ? (
+            <Link
+              href="/login"
+              className="inline-flex min-h-11 items-center text-sm text-nq-primary underline underline-offset-4"
+            >
+              {t.forgotPasswordBackToSignIn}
+            </Link>
+          ) : null}
+        </div>
       ) : null}
     </form>
   );
