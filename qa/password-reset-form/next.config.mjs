@@ -8,6 +8,10 @@ const config = {
       /(?:^@\/|[\\/]src[\\/])shared[\\/]auth[\\/]salonOwnerAuth(?:\.ts)?$/,
       path.join(fixture, "action.ts"),
     ));
+    config.plugins.push(new webpack.NormalModuleReplacementPlugin(
+      /(?:^@\/|[\\/]src[\\/])shared[\\/]superadmin[\\/]superadminAuth(?:\.ts)?$/,
+      path.join(fixture, "superadmin-action.ts"),
+    ));
     return config;
   },
 };

@@ -1,12 +1,13 @@
 "use client";
 
+import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useState, useTransition } from "react";
 import { Button } from "@/components/ui/Button";
 import { Input } from "@/components/ui/Input";
 import { completeSuperadminPasswordReset } from "@/shared/superadmin/superadminAuth";
 
-type ErrorCode = "weak_password" | "mismatch" | "no_session" | "no_role" | "server_error";
+type ErrorCode = "weak_password" | "mismatch" | "no_session" | "no_role" | "server_error" | "unconfirmed";
 
 const ERROR_COPY: Record<ErrorCode, string> = {
   weak_password: "Password must be 8–72 characters. / Mật khẩu phải có 8–72 ký tự.",
@@ -16,6 +17,8 @@ const ERROR_COPY: Record<ErrorCode, string> = {
   no_role:
     "This account is not an active SuperAdmin. / Tài khoản này không phải SuperAdmin đang hoạt động.",
   server_error: "Something went wrong. Try again. / Có lỗi xảy ra. Vui lòng thử lại.",
+  unconfirmed:
+    "We could not confirm whether your password changed. Try signing in with your new password. If it does not work, request a new reset link. / Chưa thể xác nhận mật khẩu đã được đổi. Hãy thử đăng nhập bằng mật khẩu mới. Nếu không đăng nhập được, hãy yêu cầu link đặt lại mới.",
 };
 
 export function SuperadminResetPasswordForm() {
@@ -37,7 +40,15 @@ export function SuperadminResetPasswordForm() {
       return;
     }
     startTransition(async () => {
-      const result = await completeSuperadminPasswordReset(password);
+      let result: Awaited<ReturnType<typeof completeSuperadminPasswordReset>>;
+      try {
+        result = await completeSuperadminPasswordReset(password);
+      } catch {
+        // A lost response cannot tell us whether the password was committed.
+        // Preserve the form without retrying or claiming success.
+        setError("unconfirmed");
+        return;
+      }
       if (result.ok) {
         // Recovery session is consumed; force a fresh sign-in.
         router.replace("/superadmin/login?reset=ok");
@@ -107,9 +118,19 @@ export function SuperadminResetPasswordForm() {
       </Button>
 
       {error ? (
-        <p className="text-sm text-nq-error" role="alert">
-          {ERROR_COPY[error]}
-        </p>
+        <div className="flex flex-col gap-2">
+          <p className="text-sm text-nq-error" role="alert">
+            {ERROR_COPY[error]}
+          </p>
+          {error === "unconfirmed" ? (
+            <Link
+              href="/superadmin/login"
+              className="inline-flex min-h-11 items-center text-sm text-nq-primary underline underline-offset-4"
+            >
+              Back to sign in / Quay lại đăng nhập
+            </Link>
+          ) : null}
+        </div>
       ) : null}
     </form>
   );
