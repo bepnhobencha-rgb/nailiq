@@ -157,13 +157,20 @@ export function SocialAuthButtons({
     setInfo(null);
     setPendingAction("google");
     startTransition(async () => {
-      const supabase = createClient();
-      const { error: oauthErr } = await supabase.auth.signInWithOAuth({
-        provider: "google",
-        options: { redirectTo: authCallbackUrl() },
-      });
-      if (oauthErr) {
-        setError(oauthErr.message ?? t.googleSigninFailed);
+      try {
+        const supabase = createClient();
+        const { error: oauthErr } = await supabase.auth.signInWithOAuth({
+          provider: "google",
+          options: { redirectTo: authCallbackUrl() },
+        });
+        if (oauthErr) {
+          setError(oauthErr.message ?? t.googleSigninFailed);
+          setPendingAction(null);
+        }
+      } catch {
+        // Client initialization and PKCE preparation can throw before redirect.
+        // Keep the draft in place and let the user retry explicitly.
+        setError(t.googleSigninFailed);
         setPendingAction(null);
       }
       // On success the browser is redirected by Supabase — keep pending
