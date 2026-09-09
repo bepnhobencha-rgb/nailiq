@@ -179,8 +179,7 @@ export function SocialAuthButtons({
     });
   };
 
-  const onMagicLink = (e: React.FormEvent) => {
-    e.preventDefault();
+  const onMagicLink = () => {
     setError(null);
     setInfo(null);
     const normalized = validEmail(email);
@@ -496,7 +495,21 @@ export function SocialAuthButtons({
       ) : null}
 
       {showEmail ? (
-        <div id={emailSectionId} className="flex flex-col gap-3">
+        <form
+          id={emailSectionId}
+          className="flex flex-col gap-3"
+          noValidate
+          onSubmit={(event) => {
+            event.preventDefault();
+            if (!isHydrated || pending) return;
+            if (passwordSupported && showPassword) {
+              if (primaryPasswordAction === "signup" && !isPasswordAcceptable) return;
+              onPasswordSubmit(primaryPasswordAction);
+            } else {
+              onMagicLink();
+            }
+          }}
+        >
           {/* In open+password mode: label above the email section */}
           {passwordSupported ? (
             <p className="text-sm font-semibold text-nq-foreground">
@@ -587,7 +600,7 @@ export function SocialAuthButtons({
               ) : null}
               <div className="flex flex-col gap-2 sm:flex-row">
                 <Button
-                  type="button"
+                  type="submit"
                   data-testid={`password-${primaryPasswordAction}-submit`}
                   variant="primary"
                   size="md"
@@ -599,7 +612,6 @@ export function SocialAuthButtons({
                     (primaryPasswordAction === "signup" &&
                       !isPasswordAcceptable)
                   }
-                  onClick={() => onPasswordSubmit(primaryPasswordAction)}
                 >
                   {passwordActionLabel(
                     primaryPasswordAction,
@@ -628,31 +640,28 @@ export function SocialAuthButtons({
                 </Button>
               </div>
               {/* Magic-link as "forgot password" fallback */}
-              <form onSubmit={onMagicLink} method="post">
-                <button
-                  type="submit"
-                  disabled={!isHydrated || pending}
-                  className="w-full min-h-[44px] text-sm text-nq-muted underline-offset-4 transition hover:text-nq-foreground hover:underline disabled:opacity-50"
-                >
-                  {pending && pendingAction === "magic" ? "…" : t.forgotPasswordLinkText}
-                </button>
-              </form>
+              <button
+                type="button"
+                onClick={onMagicLink}
+                disabled={!isHydrated || pending}
+                className="w-full min-h-[44px] text-sm text-nq-muted underline-offset-4 transition hover:text-nq-foreground hover:underline disabled:opacity-50"
+              >
+                {pending && pendingAction === "magic" ? "…" : t.forgotPasswordLinkText}
+              </button>
             </div>
           ) : (
             /* Magic-link mode: either compact layout, or password form was dismissed */
             <>
-              <form onSubmit={onMagicLink} method="post">
-                <Button
-                  type="submit"
-                  variant={layout === "open" ? "secondary" : "ghost"}
-                  size="md"
-                  className="w-full min-h-[48px]"
-                  loading={pending && pendingAction === "magic"}
-                  disabled={!isHydrated || pending}
-                >
-                  {magicLinkButtonLabel}
-                </Button>
-              </form>
+              <Button
+                type="submit"
+                variant={layout === "open" ? "secondary" : "ghost"}
+                size="md"
+                className="w-full min-h-[48px]"
+                loading={pending && pendingAction === "magic"}
+                disabled={!isHydrated || pending}
+              >
+                {magicLinkButtonLabel}
+              </Button>
               {/* When user switched from password mode, offer a way back */}
               {passwordSupported ? (
                 <button
@@ -670,7 +679,7 @@ export function SocialAuthButtons({
               ) : null}
             </>
           )}
-        </div>
+        </form>
       ) : null}
 
       {error ? (
