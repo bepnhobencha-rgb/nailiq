@@ -69,8 +69,8 @@ inactivity_timeout = "30m"
 [auth.email]
 enable_signup = true
 double_confirm_changes = false
-# E2E seeds users with email_confirm: true via the admin API; requiring a real
-# confirmation click would make every seeded account unusable.
+# The default shards seed confirmed users via the admin API. The real-auth
+# shard enables confirmation before boot to exercise new signup email delivery.
 enable_confirmations = false
 
 [auth.sms]
