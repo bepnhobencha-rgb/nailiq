@@ -7,10 +7,14 @@ const buildId = readFileSync(".next/BUILD_ID", "utf8").trim();
 const email = "e2e-password-recovery@example.com";
 const copy = {
   en: {
+    title: "Reset your password",
+    subtitle: "Enter the email associated with your salon owner account. If it matches, we'll send a recovery link.",
     unconfirmed: "We could not confirm whether your request completed. Wait a few minutes, then try again.",
     serverError: "Something went wrong. Try again.",
   },
   vi: {
+    title: "Đặt lại mật khẩu",
+    subtitle: "Nhập email liên kết với tài khoản chủ salon của bạn. Nếu email khớp, chúng tôi sẽ gửi link khôi phục.",
     unconfirmed: "Chưa thể xác nhận yêu cầu đã hoàn tất. Hãy đợi vài phút rồi thử lại.",
     serverError: "Có lỗi xảy ra. Thử lại.",
   },
@@ -44,6 +48,9 @@ for (const language of ["en", "vi"] as const) {
           body: `0:${JSON.stringify({ a: "$@1", f: "", q: "", i: false, b: buildId })}\n1:${JSON.stringify(result)}\n` });
       });
       await page.goto("/login/forgot-password");
+      const heading = page.getByRole("heading", { level: 1 });
+      await expect(heading).toHaveText(copy[language].title);
+      await expect(page.locator("main header")).toContainText(copy[language].subtitle);
       const form = page.getByTestId("salon-owner-forgot-password-form");
       const input = form.locator('input[type="email"]');
       const submit = form.getByRole("button", { name: language === "vi" ? "Gửi link đặt lại" : "Send reset link", exact: true });
@@ -69,6 +76,8 @@ for (const language of ["en", "vi"] as const) {
       await submit.click();
       await expect(page.getByTestId("salon-owner-forgot-password-sent")).toBeVisible();
       await expect(form).toHaveCount(0);
+      await expect(heading).toHaveText(copy[language].title);
+      await expect(page.locator("main header")).toContainText(copy[language].subtitle);
       expect(calls).toBe(2);
       expect(errors).toEqual([]);
     });

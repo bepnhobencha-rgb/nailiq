@@ -803,7 +803,7 @@ export const userVi: UserMessages = {
     registerMicrotrust: "14 ngày dùng thử miễn phí · Không cần thẻ tín dụng",
     forgotPasswordPageTitle: "Đặt lại mật khẩu",
     forgotPasswordPageSubtitle:
-      "Nhập địa chỉ email của bạn và chúng tôi sẽ gửi link để đặt lại mật khẩu.",
+      "Nhập email liên kết với tài khoản chủ salon của bạn. Nếu email khớp, chúng tôi sẽ gửi link khôi phục.",
     forgotPasswordSubmit: "Gửi link đặt lại",
     forgotPasswordSubmitting: "Đang gửi…",
     forgotPasswordSentTitle: "Kiểm tra hộp thư",
