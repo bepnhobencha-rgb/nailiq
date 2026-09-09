@@ -127,3 +127,18 @@ có bằng chứng thao tác xóa hai tên file nguồn legacy là nguyên nhân
 workaround đó đã được gỡ. Các bước cài browser giữ nguyên cách cài Playwright
 ban đầu. Không tắt xác minh hash/chữ ký và không nới assertion/retry/timeout.
 Lỗi APT lần đầu vẫn được lưu như lỗi hạ tầng xảy ra trước khi chạy test.
+
+## Rà soát ảnh mẫu booking mobile
+
+Visual CI trên `e0825630` đạt 15/16 ca; ca `booking-mobile-mobile-linux.png`
+lệch ảnh mẫu cũ. Ảnh mẫu cũ lưu chính lỗi chữ trắng/nền trắng của select.
+Đã xem expected/actual/diff: ảnh mới có CA đọc rõ và mũi tên mới; chiều cao form
+chuẩn làm nội dung phía dưới dịch lên 4 px. Mọi pixel thay đổi nằm trong vùng
+form x=16..373, y=317..652 của ảnh 390×844; phần đầu và ngoài form không đổi.
+Ảnh actual ở lần đầu và retry giống nhau từng pixel, expected CI trùng baseline
+trong repo. Chỉ cập nhật đúng một ảnh mẫu Linux/WebKit đã xem; giữ nguyên mọi
+assertion, `maxDiffPixelRatio`, timeout và retry. Chưa gắn nhãn Visual PASS
+cho đến khi CI chạy lại trên commit cập nhật ảnh.
+
+Bằng chứng: `visual-baseline-review.json`, `current-visual-failed.log`,
+`current-visual-diffs/` trong thư mục artifact của đợt kiểm tra.
