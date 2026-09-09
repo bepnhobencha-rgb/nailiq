@@ -84,20 +84,24 @@ test.describe("Receptionist queue + assign", () => {
     await page.getByTestId("header-add-walkin").click();
     await expect(panel).toHaveAttribute("aria-hidden", "false");
     await expect(panel).toHaveClass(/translate-x-0/);
-    await page.waitForTimeout(350);
-    await expect(panel).toHaveAttribute("aria-hidden", "false");
 
     const header = page.getByTestId("receptionist-center-header");
     const actions = page.getByTestId("receptionist-header-actions");
-    const [panelBox, actionsBox, paddingRight] = await Promise.all([
-      panel.boundingBox(),
-      actions.boundingBox(),
-      header.evaluate((element) => getComputedStyle(element).paddingRight),
-    ]);
-    expect(panelBox, "queue panel must have measurable geometry").not.toBeNull();
-    expect(actionsBox, "header actions must have measurable geometry").not.toBeNull();
-    expect(Number.parseFloat(paddingRight)).toBeGreaterThanOrEqual(320);
-    expect(actionsBox!.x + actionsBox!.width).toBeLessThanOrEqual(panelBox!.x + 1);
+    // Attribute/class changes can precede the final animated geometry.
+    // Poll both layout checks while the panel is open so a slow paint does
+    // not fail an otherwise correct layout after a fixed delay.
+    await expect(async () => {
+      await expect(panel).toHaveAttribute("aria-hidden", "false");
+      const [panelBox, actionsBox, paddingRight] = await Promise.all([
+        panel.boundingBox(),
+        actions.boundingBox(),
+        header.evaluate((element) => getComputedStyle(element).paddingRight),
+      ]);
+      expect(panelBox, "queue panel must have measurable geometry").not.toBeNull();
+      expect(actionsBox, "header actions must have measurable geometry").not.toBeNull();
+      expect(Number.parseFloat(paddingRight)).toBeGreaterThanOrEqual(320);
+      expect(actionsBox!.x + actionsBox!.width).toBeLessThanOrEqual(panelBox!.x + 1);
+    }).toPass({ timeout: 5_000 });
   });
 
   test("critical queue actions keep 44px touch targets on a phone", async ({
