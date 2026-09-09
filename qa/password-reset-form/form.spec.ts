@@ -5,8 +5,12 @@ import { expect, test, type BrowserContext } from "@playwright/test";
 // bypass of the protected production page. Every POST is intercepted.
 const manifest = JSON.parse(readFileSync("qa/password-reset-form/.next/server/server-reference-manifest.json", "utf8"));
 const actions = Object.values(manifest.node) as { filename: string; exportedName: string }[];
-if (actions.length !== 1 || actions[0].filename !== "action.ts" || actions[0].exportedName !== "completeSalonOwnerPasswordReset") {
-  throw new Error("Fixture must contain only its inert action; refusing to test an Auth-backed build");
+const expectedActions = [
+  "action.ts:completeSalonOwnerPasswordReset",
+  "superadmin-action.ts:completeSuperadminPasswordReset",
+];
+if (JSON.stringify(actions.map(action => `${action.filename}:${action.exportedName}`).sort()) !== JSON.stringify(expectedActions)) {
+  throw new Error("Fixture must contain only its two inert actions; refusing to test an Auth-backed build");
 }
 const buildId = readFileSync("qa/password-reset-form/.next/BUILD_ID", "utf8").trim();
 const password = "QA-Only-Password-42";
@@ -31,7 +35,7 @@ const copy = {
   },
 };
 const faults = ["429", "503", "abort", "server_error", "no_session", "no_salon_member", "weak_password"] as const;
-type Fault = typeof faults[number];
+type Fault = typeof faults[number] | "no_role";
 async function intercept(context: BrowserContext, fault: Fault) {
   const state = { calls: 0, acknowledge: false, hold: null as Promise<void> | null };
   await context.route("**/*", async route => {
@@ -143,3 +147,103 @@ for (const language of ["en", "vi"] as const) {
   });
   });
 }
+
+const superadminCopy = {
+  unconfirmed: `${copy.en.unconfirmed} / ${copy.vi.unconfirmed}`,
+  server_error: "Something went wrong. Try again. / Có lỗi xảy ra. Vui lòng thử lại.",
+  no_session: "Reset link is no longer valid. Request a new one. / Link đặt lại không còn hiệu lực. Vui lòng yêu cầu link mới.",
+  no_role: "This account is not an active SuperAdmin. / Tài khoản này không phải SuperAdmin đang hoạt động.",
+  weak_password: "Password must be 8–72 characters. / Mật khẩu phải có 8–72 ký tự.",
+  mismatch: "Passwords don't match. / Mật khẩu không khớp.",
+};
+const superadminBack = "Back to sign in / Quay lại đăng nhập";
+test.describe("SuperAdmin bilingual form", () => {
+  for (const fault of ["429", "503", "abort", "server_error", "no_session", "no_role", "weak_password"] as const) {
+    test(`${fault}: preserve form and only navigate after acknowledged retry`, async ({ page, context }, info) => {
+      const state = await intercept(context, fault);
+      const errors: string[] = [];
+      page.on("pageerror", error => errors.push(error.message));
+      await page.goto("/superadmin");
+      const form = page.getByTestId("superadmin-reset-password-form");
+      const fields = form.locator("input");
+      for (const field of await fields.all()) await field.fill(password);
+      await form.getByRole("button").click();
+      const transport = ["429", "503", "abort"].includes(fault);
+      await expect(form.getByRole("alert")).toHaveText(transport ? superadminCopy.unconfirmed : superadminCopy[fault as keyof typeof superadminCopy]);
+      for (const field of await fields.all()) {
+        await expect(field).toHaveValue(password);
+        await expect(field).toHaveAttribute("aria-invalid", "true");
+      }
+      await expect(form.getByRole("button")).toBeEnabled();
+      expect(state.calls).toBe(1);
+      await expect(page).toHaveURL("http://127.0.0.1:3113/superadmin");
+      expect(errors).toEqual([]);
+      await expect(page.getByTestId("fixture-error-boundary")).toHaveCount(0);
+      await expect(page.getByText("QA private transport detail")).toHaveCount(0);
+      expect(await page.evaluate(() => document.documentElement.scrollWidth > innerWidth)).toBe(false);
+      const alertColor = await form.getByRole("alert").evaluate(el => getComputedStyle(el).color);
+      await expect(fields.first()).toHaveCSS("border-top-color", alertColor);
+      if (transport) {
+        const back = form.getByRole("link", { name: superadminBack });
+        await expect(back).toHaveAttribute("href", "/superadmin/login");
+        expect((await back.boundingBox())!.height).toBeGreaterThanOrEqual(44);
+      } else await expect(form.getByRole("link")).toHaveCount(0);
+      if (fault === "abort") await page.screenshot({ path: info.outputPath("superadmin-unconfirmed.png"), fullPage: true });
+      await fields.nth(1).fill(password + "X");
+      await expect(form.getByRole("alert")).toHaveCount(0);
+      expect(state.calls).toBe(1);
+      await fields.nth(0).fill(password + "X");
+      state.acknowledge = true;
+      await form.getByRole("button").click();
+      await expect(page).toHaveURL("http://127.0.0.1:3113/superadmin/login?reset=ok");
+      expect(state.calls).toBe(2);
+      expect(errors).toEqual([]);
+    });
+  }
+  test("validation blocks empty, short and mismatched passwords", async ({ page, context }) => {
+    const state = await intercept(context, "503");
+    await page.goto("/superadmin");
+    const form = page.getByTestId("superadmin-reset-password-form");
+    const fields = form.locator("input");
+    await form.getByRole("button").click();
+    await expect(form.getByRole("alert")).toHaveText(superadminCopy.weak_password);
+    for (const field of await fields.all()) {
+      await expect(field).toHaveAttribute("maxlength", "72");
+      await field.fill("short");
+    }
+    await form.getByRole("button").click();
+    await expect(form.getByRole("alert")).toHaveText(superadminCopy.weak_password);
+    await fields.first().fill(password);
+    await form.getByRole("button").click();
+    await expect(form.getByRole("alert")).toHaveText(superadminCopy.mismatch);
+    expect(state.calls).toBe(0);
+  });
+  test("unconfirmed password returns to SuperAdmin sign in without success or mutation", async ({ page, context }) => {
+    const state = await intercept(context, "abort");
+    await page.goto("/superadmin");
+    const form = page.getByTestId("superadmin-reset-password-form");
+    for (const field of await form.locator("input").all()) await field.fill(password);
+    await form.getByRole("button").click();
+    await form.getByRole("link", { name: superadminBack }).click();
+    await expect(page).toHaveURL("http://127.0.0.1:3113/superadmin/login");
+    expect(state.calls).toBe(1);
+  });
+  test("pending request blocks repeated submission", async ({ page, context }) => {
+    const state = await intercept(context, "abort");
+    let release!: () => void;
+    state.hold = new Promise<void>(resolve => { release = resolve; });
+    try {
+      await page.goto("/superadmin");
+      const form = page.getByTestId("superadmin-reset-password-form");
+      for (const field of await form.locator("input").all()) await field.fill(password);
+      await form.getByRole("button").click();
+      await expect(form.getByRole("button")).toBeDisabled();
+      await form.locator("input").last().press("Enter");
+      expect(state.calls).toBe(1);
+      release();
+      await expect(form.getByRole("alert")).toHaveText(superadminCopy.unconfirmed);
+      await expect(form.getByRole("button")).toBeEnabled();
+      expect(state.calls).toBe(1);
+    } finally { release(); }
+  });
+});
