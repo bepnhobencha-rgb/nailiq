@@ -14,7 +14,7 @@ import { requestSalonOwnerPasswordReset } from "@/shared/auth/salonOwnerAuth";
  * Always surfaces the same success copy on submit, regardless of
  * whether the email matched a salon owner account. The server action
  * enforces the anti-enumeration contract; the form just renders the outcome.
- * `server_error` is the only branch that surfaces a distinct message.
+ * A typed server error and an unconfirmed transport outcome stay inline.
  */
 export function ForgotPasswordClient({
   invalidOrExpired = false,
@@ -26,14 +26,23 @@ export function ForgotPasswordClient({
   const { language } = useUserLanguage();
   const t = useMemo(() => getUserMessages(language).auth, [language]);
   const [email, setEmail] = useState("");
-  const [status, setStatus] = useState<"idle" | "sent" | "error">("idle");
+  const [status, setStatus] = useState<"idle" | "sent" | "error" | "unconfirmed">("idle");
   const [pending, startTransition] = useTransition();
+  const hasError = status === "error" || status === "unconfirmed";
 
   const onSubmit = (e: React.FormEvent) => {
     e.preventDefault();
-    if (status === "error") setStatus("idle");
+    if (hasError) setStatus("idle");
     startTransition(async () => {
-      const result = await requestSalonOwnerPasswordReset(email);
+      let result: Awaited<ReturnType<typeof requestSalonOwnerPasswordReset>>;
+      try {
+        result = await requestSalonOwnerPasswordReset(email);
+      } catch {
+        // A lost response does not tell us whether an email was requested.
+        // Preserve the draft and never replay the request automatically.
+        setStatus("unconfirmed");
+        return;
+      }
       setStatus(result.ok ? "sent" : "error");
     });
   };
@@ -91,10 +100,10 @@ export function ForgotPasswordClient({
           value={email}
           onChange={(ev) => {
             setEmail(ev.target.value);
-            if (status === "error") setStatus("idle");
+            if (hasError) setStatus("idle");
           }}
-          aria-invalid={status === "error"}
-          error={status === "error"}
+          aria-invalid={hasError}
+          error={hasError}
           autoFocus
         />
       </label>
@@ -109,9 +118,9 @@ export function ForgotPasswordClient({
         {pending ? t.forgotPasswordSubmitting : t.forgotPasswordSubmit}
       </Button>
 
-      {status === "error" ? (
+      {hasError ? (
         <p className="text-sm text-nq-error" role="alert">
-          {t.resetPasswordServerError}
+          {status === "unconfirmed" ? t.authRequestUnconfirmed : t.resetPasswordServerError}
         </p>
       ) : null}
 
