@@ -242,6 +242,7 @@ jobs:
               e2e/notification-settings-preflight.spec.ts
               e2e/notification-settings-recovery.spec.ts
               e2e/loyalty-widget-recovery.spec.ts
+              e2e/auth-email-callback.spec.ts
     env:
       # ── NO PRODUCTION SECRETS. NONE. ────────────────────────────────────────
       #

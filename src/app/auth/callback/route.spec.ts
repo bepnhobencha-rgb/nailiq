@@ -73,7 +73,12 @@ function installAuthClient(input?: {
         return { error: input?.exchangeError ?? null };
       });
       getUser.mockResolvedValue({
-        data: { user: input?.user ?? { id: "user-new", email: "new@example.test" } },
+        data: {
+          user:
+            input && "user" in input
+              ? input.user
+              : { id: "user-new", email: "new@example.test" },
+        },
       });
       return {
         auth: {
@@ -181,8 +186,40 @@ describe("OAuth and email-link callback session boundary", () => {
     );
 
     expect(response.headers.get("location")).toBe(
-      "https://www.nailiq.ca/login?error=Access+denied",
+      "https://www.nailiq.ca/login?error=session",
     );
     expect(exchangeCodeForSession).not.toHaveBeenCalled();
+  });
+});
+
+describe("Callback failures remain visible without reflecting provider text", () => {
+  it.each([
+    "?error=access_denied",
+    "?error_description=Email%20link%20is%20invalid%20or%20has%20expired",
+    "?error=access_denied&error_description=",
+    "",
+  ])("returns a recognized login error for %s", async (query) => {
+    createServerClient.mockClear();
+    const response = await GET(
+      new NextRequest(`https://www.nailiq.ca/auth/callback${query}`),
+    );
+    expect(response.status).toBe(307);
+    expect(response.headers.get("location")).toBe(
+      "https://www.nailiq.ca/login?error=session",
+    );
+    expect(createServerClient).not.toHaveBeenCalled();
+  });
+
+  it("shows an error if the exchanged session has no verified user", async () => {
+    installAuthClient({ user: null });
+    resolveRoleAndSlugForUser.mockClear();
+    const response = await GET(
+      new NextRequest("https://www.nailiq.ca/auth/callback?code=invalid-user"),
+    );
+    expect(response.headers.get("location")).toBe(
+      "https://www.nailiq.ca/login?error=session",
+    );
+    expect(response.cookies.getAll()).toHaveLength(0);
+    expect(resolveRoleAndSlugForUser).not.toHaveBeenCalled();
   });
 });

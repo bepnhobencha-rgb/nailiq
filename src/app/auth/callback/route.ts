@@ -28,18 +28,19 @@ export async function GET(request: NextRequest) {
   const code = url.searchParams.get("code");
   // QR invite token passed via redirectTo → /auth/callback?invite=TOKEN
   const inviteToken = url.searchParams.get("invite");
-  const errorDescription =
-    url.searchParams.get("error_description") ??
-    url.searchParams.get("error");
+  const hasProviderError =
+    url.searchParams.has("error_description") || url.searchParams.has("error");
 
-  if (errorDescription) {
+  if (hasProviderError) {
     const dest = new URL("/login", request.url);
-    dest.searchParams.set("error", errorDescription);
+    // The login page accepts stable error codes, not provider-supplied text.
+    // Keep details out of the redirect URL and show the localized retry message.
+    dest.searchParams.set("error", "session");
     return NextResponse.redirect(dest);
   }
 
   if (!code) {
-    return NextResponse.redirect(new URL("/login", request.url));
+    return NextResponse.redirect(new URL("/login?error=session", request.url));
   }
 
   // Collect cookies from exchangeCodeForSession so we can attach them
@@ -92,7 +93,7 @@ export async function GET(request: NextRequest) {
     data: { user },
   } = await supabase.auth.getUser();
   if (!user) {
-    return NextResponse.redirect(new URL("/login", request.url));
+    return NextResponse.redirect(new URL("/login?error=session", request.url));
   }
 
   let resolved = await resolveRoleAndSlugForUser(supabase, user.id);
