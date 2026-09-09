@@ -246,6 +246,82 @@ test.describe("Booking Flow — Phone OTP", () => {
     ).toBeVisible({ timeout: 20_000 });
   });
 
+  test("settling the price keeps Back stationary and preserves verified OTP", async ({ page }, testInfo) => {
+    let sendCount = 0;
+    await page.route("**/api/booking-otp/send", async (route) => {
+      if (route.request().method() === "POST") sendCount += 1;
+      await route.continue();
+    });
+    await walkToInfoStep(page);
+
+    let releaseQuote!: () => void;
+    const heldQuote = new Promise<void>((resolve) => {
+      releaseQuote = resolve;
+    });
+    let quoteReady = false;
+    await page.route("**/api/booking/quote", async (route) => {
+      const response = await route.fetch();
+      quoteReady = true;
+      await heldQuote;
+      await route.fulfill({ response });
+    });
+    try {
+      await page.locator('section[aria-labelledby="info-heading"]')
+        .getByRole("button", { name: "Continue" }).click();
+      const review = page.getByRole("region", { name: "Review & confirm" });
+      const back = review.getByRole("button", { name: "Back", exact: true });
+      const confirm = review.getByTestId("confirm-booking-btn");
+      await expect.poll(() => quoteReady).toBe(true);
+      await expect(review.getByRole("status")).toHaveText("Verifying the current price…");
+      await expect(confirm).toBeDisabled();
+      await back.click({ trial: true });
+      const before = await back.evaluate((el) => {
+        const box = el.getBoundingClientRect();
+        return {
+          x: box.x + box.width / 2 + scrollX,
+          y: box.y + box.height / 2 + scrollY,
+          viewportX: box.x + box.width / 2,
+          viewportY: box.y + box.height / 2,
+        };
+      });
+      await page.screenshot({ path: testInfo.outputPath("price-pending.png"), fullPage: true });
+      // Resolve the real quote between pointer down/up, matching the CI trace.
+      await page.mouse.move(before.viewportX, before.viewportY);
+      await page.mouse.down();
+      releaseQuote();
+      await expect(confirm).toBeEnabled();
+      await expect(review.getByText("Verifying the current price…", { exact: true })).not.toBeVisible();
+      const after = await back.evaluate((el) => {
+        const box = el.getBoundingClientRect();
+        return {
+          x: box.x + box.width / 2 + scrollX,
+          y: box.y + box.height / 2 + scrollY,
+          viewportX: box.x + box.width / 2,
+          viewportY: box.y + box.height / 2,
+        };
+      });
+      await testInfo.attach("back-target-positions", {
+        body: JSON.stringify({ before, after }),
+        contentType: "application/json",
+      });
+      await page.screenshot({ path: testInfo.outputPath("price-settled.png"), fullPage: true });
+      expect.soft(Math.abs(after.y - before.y), "Price response must not move the Back target").toBeLessThanOrEqual(1);
+      expect.soft(Math.abs(after.x - before.x)).toBeLessThanOrEqual(1);
+      const sendsAfterVerify = sendCount;
+      await page.mouse.up();
+      const info = page.locator('section[aria-labelledby="info-heading"]');
+      await expect(info.locator('input[name="clientName"]')).toHaveValue("OTP Test Client");
+      await info.getByRole("button", { name: "Continue" }).click();
+      await expect(review).toBeVisible();
+      await expect(page.getByTestId("booking-gate-otp")).toHaveCount(0);
+      expect(sendCount).toBe(sendsAfterVerify);
+    } finally {
+      releaseQuote();
+      await page.mouse.up();
+      await page.unrouteAll({ behavior: "wait" });
+    }
+  });
+
   // Anti-double-charge regression — the phone is verified ONCE at the gate, and
   // navigating within the flow (info ↔ confirm) must never re-send a code nor
   // re-open the gate OTP. One gate send, and it stays verified.
