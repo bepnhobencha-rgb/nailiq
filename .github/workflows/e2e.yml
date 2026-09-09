@@ -246,6 +246,7 @@ jobs:
               e2e/auth-signup-confirmation.spec.ts
               e2e/auth-request-recovery.spec.ts
               e2e/google-auth-recovery.spec.ts
+              e2e/forgot-password-request-recovery.spec.ts
     env:
       # ── NO PRODUCTION SECRETS. NONE. ────────────────────────────────────────
       #
