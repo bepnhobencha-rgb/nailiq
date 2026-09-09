@@ -9,9 +9,9 @@
  * visible and the scheduler can find non-overlapping arrangements.
  */
 import { createClient } from "@supabase/supabase-js";
-import type { Page } from "@playwright/test";
+import { expect, type Page } from "@playwright/test";
 
-import { completeBookingEntryGate, completeGateOtp, seedTestSalon } from "../helpers/db";
+import { completeBookingEntryGate, completeGateOtp, seedTestSalon, setReactInputValue } from "../helpers/db";
 
 const supabaseUrl = process.env.NEXT_PUBLIC_SUPABASE_URL;
 const serviceKey = process.env.SUPABASE_SERVICE_ROLE_KEY;
@@ -226,7 +226,13 @@ export async function fillMemberCard(
   serviceOptionIndex = 1,
   staffOptionIndex = 1,
 ): Promise<void> {
-  await page.getByTestId(`group-member-${index}-name`).fill(name);
+  const nameInput = page.getByTestId(`group-member-${index}-name`);
+  await expect(nameInput).toBeVisible();
+  await expect(nameInput).toBeEditable();
+  // The failing CI WebKit trace retained the old value after fill() completed.
+  // Establish the intended name before testing later wizard transitions.
+  await setReactInputValue(nameInput, name);
+  await expect(nameInput).toHaveValue(name);
   // Service select: index 0 is "— Services —" placeholder.
   await page
     .getByTestId(`group-member-${index}-service`)
@@ -235,6 +241,8 @@ export async function fillMemberCard(
   await page
     .getByTestId(`group-member-${index}-staff`)
     .selectOption({ index: staffOptionIndex });
+  // Service/staff selection re-renders the card: verify React retained the name.
+  await expect(nameInput).toHaveValue(name);
 }
 
 /**

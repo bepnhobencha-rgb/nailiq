@@ -1,6 +1,10 @@
 import { expect, devices, type Page } from "@playwright/test";
 
 import { test, localAuthHttpsOrigin } from "./helpers/localAuthHttps";
+import {
+  removeLocalAuthMail,
+  withLocalAuthCleanup,
+} from "./helpers/localAuthCleanup";
 
 import {
   cleanupTestSalon,
@@ -90,14 +94,6 @@ async function expectSecureSession(page: Page) {
   );
 }
 
-async function removeLocalMessage(page: Page, id?: string) {
-  if (!id) return;
-  const response = await page.request.delete(mailbox + "/api/v1/messages", {
-    data: { IDs: [id] },
-  });
-  expect(response.ok()).toBe(true);
-}
-
 test.describe("Auth callback error feedback", () => {
   for (const lang of ["en", "vi"] as const) {
     for (const [label, suffix] of [
@@ -155,10 +151,8 @@ test.describe("Local email link and real PKCE callback", () => {
     browser,
   }) => {
     const user = await seedTestUser();
-    let messageId: string | undefined;
-    try {
+    await withLocalAuthCleanup(async () => {
       const mail = await requestLocalMagicLink(page, user.email);
-      messageId = mail.messageId;
       await page.goto(mail.link);
       await expect(page).toHaveURL(/\/register\/setup$/);
       await expect(page.locator("#register-setup-salon-name")).toBeEditable();
@@ -170,23 +164,15 @@ test.describe("Local email link and real PKCE callback", () => {
         ignoreHTTPSErrors: true,
         locale: "en-US",
       });
-      try {
+      await withLocalAuthCleanup(async () => {
         const other = await fresh.newPage();
         await other.goto(mail.link);
         await expect(other).toHaveURL(/\/login\?error=session(?:#.*)?$/);
         await expect(
           other.getByRole("alert").filter({ hasText: retryCopy.en }),
         ).toBeVisible();
-      } finally {
-        await fresh.close();
-      }
-    } finally {
-      try {
-        await removeLocalMessage(page, messageId);
-      } finally {
-        await cleanupTestUser(user.userId);
-      }
-    }
+      }, () => fresh.close());
+    }, () => removeLocalAuthMail(user.email), () => cleanupTestUser(user.userId));
   });
 
   test("existing owner reaches their own salon after the email callback", async ({
@@ -194,27 +180,18 @@ test.describe("Local email link and real PKCE callback", () => {
   }) => {
     const salon = await seedTestSalon();
     const user = await seedTestSalonMember(salon.salonId, "owner");
-    let messageId: string | undefined;
-    try {
+    await withLocalAuthCleanup(async () => {
       const mail = await requestLocalMagicLink(page, user.email);
-      messageId = mail.messageId;
       await page.goto(mail.link);
       await expect(page).toHaveURL(new RegExp(`/dashboard/${salon.slug}$`));
       await expectSecureSession(page);
       await page.reload();
       await expect(page).toHaveURL(new RegExp(`/dashboard/${salon.slug}$`));
       await expect(page.locator("main")).toBeVisible();
-    } finally {
-      try {
-        await removeLocalMessage(page, messageId);
-      } finally {
-        try {
-          await cleanupTestSalon(salon.salonId);
-        } finally {
-          await cleanupTestUser(user.userId);
-        }
-      }
-    }
+    },
+    () => removeLocalAuthMail(user.email),
+    () => cleanupTestSalon(salon.salonId),
+    () => cleanupTestUser(user.userId));
   });
 
   test("a link opened in another browser explains how to restart sign-in", async ({
@@ -222,16 +199,14 @@ test.describe("Local email link and real PKCE callback", () => {
     browser,
   }) => {
     const user = await seedTestUser();
-    let messageId: string | undefined;
-    try {
+    await withLocalAuthCleanup(async () => {
       const mail = await requestLocalMagicLink(page, user.email);
-      messageId = mail.messageId;
       const fresh = await browser.newContext({
         ...(test.info().project.name === "mobile" ? devices["iPhone 14"] : {}),
         ignoreHTTPSErrors: true,
         locale: "en-US",
       });
-      try {
+      await withLocalAuthCleanup(async () => {
         const other = await fresh.newPage();
         await other.goto(mail.link);
         await expect(other).toHaveURL(/\/login\?error=pkce_restart$/);
@@ -241,15 +216,7 @@ test.describe("Local email link and real PKCE callback", () => {
             .filter({ hasText: /same browser|start.*sign.in|sign.in.*again/i }),
         ).toBeVisible();
         await expect(other.getByTestId("password-signin-submit")).toBeEnabled();
-      } finally {
-        await fresh.close();
-      }
-    } finally {
-      try {
-        await removeLocalMessage(page, messageId);
-      } finally {
-        await cleanupTestUser(user.userId);
-      }
-    }
+      }, () => fresh.close());
+    }, () => removeLocalAuthMail(user.email), () => cleanupTestUser(user.userId));
   });
 });
