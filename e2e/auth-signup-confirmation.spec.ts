@@ -3,6 +3,10 @@ import { createClient } from "@supabase/supabase-js";
 import { devices, expect, type Page } from "@playwright/test";
 import { test, localAuthHttpsOrigin } from "./helpers/localAuthHttps";
 import {
+  removeLocalAuthMail,
+  withLocalAuthCleanup,
+} from "./helpers/localAuthCleanup";
+import {
   cleanupTestUser,
   getRegisteredSalonForUser,
   setReactInputValue,
@@ -117,20 +121,15 @@ async function signup(
   ).toBeVisible();
 }
 
-async function cleanup(page: Page, email: string) {
-  try {
-    const ids = (await messages(page, email)).map((m) => m.ID);
-    if (ids.length) {
-      const response = await page.request.delete(mailbox + "/api/v1/messages", {
-        data: { IDs: ids },
-      });
-      expect(response.ok()).toBe(true);
-    }
-  } finally {
-    const user = await findUser(email);
-    if (user) await cleanupTestUser(user.id);
-    expect(await findUser(email)).toBeNull();
-  }
+async function cleanup(email: string) {
+  await withLocalAuthCleanup(
+    () => removeLocalAuthMail(email),
+    async () => {
+      const user = await findUser(email);
+      if (user) await cleanupTestUser(user.id);
+      expect(await findUser(email)).toBeNull();
+    },
+  );
 }
 
 for (const lang of ["en", "vi"] as const) {
@@ -140,19 +139,47 @@ for (const lang of ["en", "vi"] as const) {
     const email = `e2e-signup-${randomUUID()}@example.com`;
     const password = `Aa1!${randomBytes(24).toString("base64url")}`;
     const errors: string[] = [];
-    const requestFailures: Array<{
+    const startedAt = Date.now();
+    const browserDiagnostics: Array<{
+      elapsedMs: number;
+      tab: "signup" | "confirmation";
+      event: "pageerror" | "requestfailed" | "reload:start" | "reload:end";
+      origin: string;
       path: string;
-      failure: string | undefined;
+      accessControl?: boolean;
+      cancelled?: boolean;
     }> = [];
-    page.on("pageerror", (error) => errors.push(error.message));
-    page.on("requestfailed", (request) =>
-      requestFailures.push({
-        path: new URL(request.url()).pathname,
-        failure: request.failure()?.errorText,
-      }),
-    );
+    const location = (raw: string) => {
+      const url = new URL(raw);
+      return { origin: url.origin, path: url.pathname };
+    };
+    const observe = (observed: Page, tab: "signup" | "confirmation") => {
+      observed.on("pageerror", (error) => {
+        errors.push(error.message);
+        browserDiagnostics.push({
+          elapsedMs: Date.now() - startedAt,
+          tab,
+          event: "pageerror",
+          ...location(observed.url()),
+          accessControl: /access control/i.test(error.message),
+          cancelled: /abort|cancel/i.test(error.message),
+        });
+      });
+      observed.on("requestfailed", (request) => {
+        const failure = request.failure()?.errorText ?? "";
+        browserDiagnostics.push({
+          elapsedMs: Date.now() - startedAt,
+          tab,
+          event: "requestfailed",
+          ...location(request.url()),
+          accessControl: /access control/i.test(failure),
+          cancelled: /abort|cancel/i.test(failure),
+        });
+      });
+    };
+    observe(page, "signup");
     expect(await findUser(email)).toBeNull();
-    try {
+    await withLocalAuthCleanup(async () => {
       await signup(page, email, password, lang);
       const user = await findUser(email);
       expect(user).not.toBeNull();
@@ -176,7 +203,7 @@ for (const lang of ["en", "vi"] as const) {
       // Mail opens a new tab in the same browser, preserving the PKCE cookie.
       // Keep the source page alive so its prefetch is not cancelled by the test.
       page = await page.context().newPage();
-      page.on("pageerror", (error) => errors.push(error.message));
+      observe(page, "confirmation");
       await page.goto(link);
       await expect(page).toHaveURL(/\/register\/setup$/);
       await expect(page.locator("#register-setup-salon-name")).toBeEditable();
@@ -190,7 +217,19 @@ for (const lang of ["en", "vi"] as const) {
       expect(cookies.some((cookie) => cookie.name === "nailiq-demo-slug")).toBe(
         false,
       );
+      browserDiagnostics.push({
+        elapsedMs: Date.now() - startedAt,
+        tab: "confirmation",
+        event: "reload:start",
+        ...location(page.url()),
+      });
       await page.reload();
+      browserDiagnostics.push({
+        elapsedMs: Date.now() - startedAt,
+        tab: "confirmation",
+        event: "reload:end",
+        ...location(page.url()),
+      });
       await expect(page.locator("#register-setup-salon-name")).toBeEditable();
 
       const salonName = `E2E Signup ${user!.id.slice(0, 8)}`;
@@ -239,13 +278,12 @@ for (const lang of ["en", "vi"] as const) {
       );
       await expect(page.locator("main")).toBeVisible();
       expect(errors).toEqual([]);
-    } finally {
-      await test.info().attach("request-failures", {
-        body: JSON.stringify(requestFailures),
+    }, async () => {
+      await test.info().attach("auth-browser-diagnostics", {
+        body: JSON.stringify(browserDiagnostics),
         contentType: "application/json",
       });
-      await cleanup(page, email);
-    }
+    }, () => cleanup(email));
   });
 }
 
@@ -257,7 +295,7 @@ test("requesting another confirmation email keeps the signup usable", async ({
   const password = `Aa1!${randomBytes(24).toString("base64url")}`;
   const errors: string[] = [];
   page.on("pageerror", (error) => errors.push(error.message));
-  try {
+  await withLocalAuthCleanup(async () => {
     await signup(page, email, password, "en");
     await confirmationLink(page, email);
     const originalIds = (await messages(page, email)).map((mail) => mail.ID);
@@ -287,9 +325,7 @@ test("requesting another confirmation email keeps the signup usable", async ({
     await page.reload();
     await expect(page.locator("#register-setup-salon-name")).toBeEditable();
     expect(errors).toEqual([]);
-  } finally {
-    await cleanup(page, email);
-  }
+  }, () => cleanup(email));
 });
 
 test("confirmation opened in another browser can continue with password sign-in", async ({
@@ -298,7 +334,7 @@ test("confirmation opened in another browser can continue with password sign-in"
 }) => {
   const email = `e2e-signup-${randomUUID()}@example.com`;
   const password = `Aa1!${randomBytes(24).toString("base64url")}`;
-  try {
+  await withLocalAuthCleanup(async () => {
     await signup(page, email, password, "en");
     const link = await confirmationLink(page, email);
     const other = await browser.newContext({
@@ -306,7 +342,7 @@ test("confirmation opened in another browser can continue with password sign-in"
       ignoreHTTPSErrors: true,
       locale: "en-US",
     });
-    try {
+    await withLocalAuthCleanup(async () => {
       const tab = await other.newPage();
       const errors: string[] = [];
       tab.on("pageerror", (error) => errors.push(error.message));
@@ -328,10 +364,6 @@ test("confirmation opened in another browser can continue with password sign-in"
       await tab.reload();
       await expect(tab.locator("#register-setup-salon-name")).toBeEditable();
       expect(errors).toEqual([]);
-    } finally {
-      await other.close();
-    }
-  } finally {
-    await cleanup(page, email);
-  }
+    }, () => other.close());
+  }, () => cleanup(email));
 });

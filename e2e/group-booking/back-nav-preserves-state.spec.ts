@@ -108,6 +108,25 @@ test.describe("Group booking — back-nav preserves state", () => {
     );
   });
 
+  test("keyboard-edited organizer name survives forward and back navigation", async ({ page }) => {
+    await gotoGroupFlow(page, SLUG);
+    await page.getByTestId("group-size-next").click();
+    await fillMemberCard(page, 0, "Mai", 1, 1);
+    await fillMemberCard(page, 1, "Linh", 1, 2);
+
+    const name = page.getByTestId("group-member-0-name");
+    await name.click();
+    await name.press("ControlOrMeta+A");
+    await name.pressSequentially("Mai Anh");
+    await expect(name).toHaveValue("Mai Anh");
+    await page.getByTestId("group-service-next").click();
+    await expect(page.getByTestId("group-step-date-panel")).toBeVisible();
+    await page.getByTestId("group-back").click();
+    await expect(page.getByTestId("group-step-service-panel")).toBeVisible();
+    await expect(name).toHaveValue("Mai Anh");
+    await expect(page.getByTestId("group-member-1-name")).toHaveValue("Linh");
+  });
+
   test("step 4 → back to step 3 → date + arrival pill preserved", async ({
     page,
   }) => {
