@@ -8,6 +8,25 @@ import { getUserMessages } from "@/shared/i18n/user";
 import { useUserLanguage } from "@/shared/lib/useUserLanguage";
 import { requestSalonOwnerPasswordReset } from "@/shared/auth/salonOwnerAuth";
 
+export function ForgotPasswordHeader() {
+  const { language } = useUserLanguage();
+  const t = getUserMessages(language).auth;
+
+  return (
+    <header className="flex flex-col gap-2">
+      <p className="text-xs font-medium uppercase tracking-[0.18em] text-nq-muted">
+        NailIQ
+      </p>
+      <h1 className="text-2xl font-semibold tracking-tight text-nq-foreground">
+        {t.forgotPasswordPageTitle}
+      </h1>
+      <p className="text-sm text-nq-muted">
+        {t.forgotPasswordPageSubtitle}
+      </p>
+    </header>
+  );
+}
+
 /**
  * Forgot-password form for salon owners.
  *

@@ -3338,7 +3338,7 @@ export const userEn: UserMessages = {
     registerMicrotrust: "14-day free trial · No credit card required",
     forgotPasswordPageTitle: "Reset your password",
     forgotPasswordPageSubtitle:
-      "Enter your email address and we'll send you a link to reset your password.",
+      "Enter the email associated with your salon owner account. If it matches, we'll send a recovery link.",
     forgotPasswordSubmit: "Send reset link",
     forgotPasswordSubmitting: "Sending…",
     forgotPasswordSentTitle: "Check your inbox",
