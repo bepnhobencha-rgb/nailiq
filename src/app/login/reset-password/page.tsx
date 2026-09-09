@@ -43,7 +43,12 @@ export default async function SalonOwnerResetPasswordPage() {
     .eq("user_id", recovery.user.id)
     .limit(1)
     .maybeSingle();
-  if (membershipError || !membership) {
+  // A failed read does not prove membership was removed. Fail closed without
+  // revoking the user's sessions on other devices during an outage.
+  if (membershipError) {
+    redirect("/login/forgot-password?notice=temporarily_unavailable");
+  }
+  if (!membership) {
     await supabase.auth.signOut({ scope: "global" });
     redirect("/login");
   }
