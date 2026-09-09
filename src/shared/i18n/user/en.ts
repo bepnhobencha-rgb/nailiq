@@ -530,6 +530,7 @@ export type UserMessages = {
     confirmationEmailUnavailable: string;
     /** The auth provider or NailIQ limiter rejected repeated attempts. */
     authRateLimited: string;
+    authRequestUnconfirmed: string;
     /** Sign-up + email confirmation enabled: ask the user to check inbox. */
     signUpConfirmEmailTitle: string;
     /** Preview-only title for a synthetic account with no deliverable inbox. */
@@ -3316,6 +3317,8 @@ export const userEn: UserMessages = {
       "We could not send the confirmation email. Try Google sign-in or use another email. If this continues, contact NailIQ support.",
     authRateLimited:
       "Too many attempts. Wait a few minutes, then try again.",
+    authRequestUnconfirmed:
+      "We could not confirm whether your request completed. Wait a few minutes, then try again.",
     signUpConfirmEmailTitle: "Check your email to finish",
     signUpSyntheticEmailTitle: "QA test account created",
     signUpConfirmEmailBody:

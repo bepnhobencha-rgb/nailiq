@@ -782,6 +782,8 @@ export const userVi: UserMessages = {
       "NailIQ chưa gửi được email xác nhận. Hãy thử đăng nhập bằng Google hoặc dùng email khác. Nếu vẫn lỗi, liên hệ NailIQ hỗ trợ.",
     authRateLimited:
       "Bạn đã thử quá nhiều lần. Hãy đợi vài phút rồi thử lại.",
+    authRequestUnconfirmed:
+      "Chưa thể xác nhận yêu cầu đã hoàn tất. Hãy đợi vài phút rồi thử lại.",
     signUpConfirmEmailTitle: "Kiểm tra email để hoàn tất",
     signUpSyntheticEmailTitle: "Đã tạo tài khoản thử nghiệm QA",
     signUpConfirmEmailBody:

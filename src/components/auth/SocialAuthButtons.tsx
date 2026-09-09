@@ -186,7 +186,16 @@ export function SocialAuthButtons({
     }
     setPendingAction("magic");
     startTransition(async () => {
-      const result = await sendEmailMagicLink(normalized);
+      let result: Awaited<ReturnType<typeof sendEmailMagicLink>>;
+      try {
+        result = await sendEmailMagicLink(normalized);
+      } catch {
+        // A proxy rejection or lost response never reaches the action's typed
+        // result. Preserve the draft; do not replay an uncertain email request.
+        setError(t.authRequestUnconfirmed);
+        setPendingAction(null);
+        return;
+      }
       setPendingAction(null);
       if (!result.success) {
         setError(t.magicLinkSendFailed);
@@ -216,13 +225,20 @@ export function SocialAuthButtons({
     }
     setPendingAction(kind);
     startTransition(async () => {
-      const result = await authenticateWithEmailPassword(
-        normalized,
-        password,
-        kind,
-      );
+      let result: Awaited<ReturnType<typeof authenticateWithEmailPassword>>;
+      try {
+        result = await authenticateWithEmailPassword(normalized, password, kind);
+      } catch {
+        setError(t.authRequestUnconfirmed);
+        setPendingAction(null);
+        return;
+      }
       if (!result.ok) {
-        if (kind === "signin") {
+        if (result.error === "rate_limited") {
+          setError(t.authRateLimited);
+        } else if (result.error === "server_error") {
+          setError(t.authRequestUnconfirmed);
+        } else if (kind === "signin") {
           setError(t.signInFailed);
         } else if (result.error === "account_exists") {
           setError(t.accountExists);
@@ -230,8 +246,6 @@ export function SocialAuthButtons({
           setError(t.emailAddressUnusable);
         } else if (result.error === "confirmation_email_unavailable") {
           setError(t.confirmationEmailUnavailable);
-        } else if (result.error === "rate_limited") {
-          setError(t.authRateLimited);
         } else {
           setError(t.signUpFailed);
         }
@@ -259,15 +273,24 @@ export function SocialAuthButtons({
     setInfo(null);
     setPendingAction("resend");
     startTransition(async () => {
-      const result = await resendSignupConfirmationEmail(signUpConfirmTo);
+      let result: Awaited<ReturnType<typeof resendSignupConfirmationEmail>>;
+      try {
+        result = await resendSignupConfirmationEmail(signUpConfirmTo);
+      } catch {
+        setError(t.authRequestUnconfirmed);
+        setPendingAction(null);
+        return;
+      }
       setPendingAction(null);
       if (!result.ok) {
         setError(
           result.error === "rate_limited"
             ? t.authRateLimited
-            : result.error === "email_address_unusable"
-              ? t.emailAddressUnusable
-              : t.confirmationEmailUnavailable,
+            : result.error === "server_error"
+              ? t.authRequestUnconfirmed
+              : result.error === "email_address_unusable"
+                ? t.emailAddressUnusable
+                : t.confirmationEmailUnavailable,
         );
         return;
       }

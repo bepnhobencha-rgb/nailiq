@@ -244,6 +244,7 @@ jobs:
               e2e/loyalty-widget-recovery.spec.ts
               e2e/auth-email-callback.spec.ts
               e2e/auth-signup-confirmation.spec.ts
+              e2e/auth-request-recovery.spec.ts
     env:
       # ── NO PRODUCTION SECRETS. NONE. ────────────────────────────────────────
       #
