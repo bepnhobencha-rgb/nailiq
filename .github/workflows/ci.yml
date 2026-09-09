@@ -87,9 +87,7 @@ jobs:
           node-version: '20'
           cache: 'npm'
       - run: npm ci
-      - uses: ./.github/actions/install-playwright
-        with:
-          browsers: chromium webkit
+      - run: npx playwright install --with-deps chromium webkit
       - name: Build isolated component fixture (no Auth or database)
         run: npx next build qa/password-reset-form --webpack
         env:
@@ -113,9 +111,7 @@ jobs:
           node-version: '20'
           cache: 'npm'
       - run: npm ci
-      - uses: ./.github/actions/install-playwright
-        with:
-          browsers: chromium webkit
+      - run: npx playwright install --with-deps chromium webkit
       - name: Build isolated country phone fixture (no Auth or database)
         run: npx next build qa/booking-country-phone --webpack
         env:
@@ -126,5 +122,6 @@ jobs:
         if: always()
         with:
           name: booking-country-phone-results
-          path: test-results/
+          path: test-results/booking-country-phone/
+          if-no-files-found: error
           retention-days: 14

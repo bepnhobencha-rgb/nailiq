@@ -116,11 +116,14 @@ thất bại trước bước test vì APT Google Chrome trả `Hash Sum mismatc
 CI: `34385933643`; E2E: `34385933650`. Lượt retry hạ tầng được ghi riêng, không
 được tính là test browser chạy lại do flake.
 
-Bản sửa CI tiếp theo dùng composite action cài Playwright: trên runner Linux,
-bỏ hai file nguồn APT Chrome hệ thống rồi chạy nguyên lệnh Playwright với các
-browser đã chọn. Playwright dùng browser riêng theo lockfile; không dùng Chrome
-hệ thống. Cách dọn nguồn này phù hợp với script chính thức
-`actions/runner-images/images/ubuntu/scripts/build/install-google-chrome.sh`.
-Giữ nguyên xác minh chữ ký/hash APT, test, timeout, retry và điều kiện preflight.
-Các phần này đã qua parse YAML và kiểm tra cú pháp Bash; kết quả runner sẽ được
-cập nhật trong PR. Không đổi thêm mã sản phẩm hoặc dữ liệu Production.
+Lượt kế tiếp trên commit `23e32226` chạy 32/32 test country-phone thành công,
+nhưng upload báo cáo không tìm thấy file. Đã sửa config để reporter và thư mục
+artifact dùng đường dẫn tuyệt đối dưới `test-results/booking-country-phone/`,
+đồng thời cho bước upload thất bại nếu thiếu file. Smoke local xác minh đường
+dẫn mặc định, không dùng biến môi trường thay đường dẫn.
+
+Đính chính điều tra APT: log lượt PASS vẫn tải nguồn Google Chrome. Vì vậy không
+có bằng chứng thao tác xóa hai tên file nguồn legacy là nguyên nhân phục hồi;
+workaround đó đã được gỡ. Các bước cài browser giữ nguyên cách cài Playwright
+ban đầu. Không tắt xác minh hash/chữ ký và không nới assertion/retry/timeout.
+Lỗi APT lần đầu vẫn được lưu như lỗi hạ tầng xảy ra trước khi chạy test.
