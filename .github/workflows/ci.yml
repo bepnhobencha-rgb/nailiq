@@ -100,3 +100,27 @@ jobs:
           name: password-reset-form-results
           path: test-results/
           retention-days: 14
+
+  booking-country-phone:
+    name: Booking country phone browser
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-node@v6
+        with:
+          node-version: '20'
+          cache: 'npm'
+      - run: npm ci
+      - run: npx playwright install --with-deps chromium webkit
+      - name: Build isolated country phone fixture (no Auth or database)
+        run: npx next build qa/booking-country-phone --webpack
+        env:
+          NEXT_TELEMETRY_DISABLED: '1'
+      - name: Test country phone contrast and interaction
+        run: npx playwright test -c qa/booking-country-phone/playwright.config.ts
+      - uses: actions/upload-artifact@v7
+        if: always()
+        with:
+          name: booking-country-phone-results
+          path: test-results/
+          retention-days: 14

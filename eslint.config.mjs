@@ -20,6 +20,8 @@ const eslintConfig = defineConfig([
     ".next/**",
     "qa/password-reset-form/.next/**",
     "qa/password-reset-form/next-env.d.ts",
+    "qa/booking-country-phone/.next/**",
+    "qa/booking-country-phone/next-env.d.ts",
     "out/**",
     "build/**",
     "next-env.d.ts",

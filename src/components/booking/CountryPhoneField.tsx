@@ -1,6 +1,7 @@
 "use client";
 
 import { useMemo, useState } from "react";
+import { ChevronDown } from "lucide-react";
 import {
   PHONE_COUNTRIES,
   countryByIso,
@@ -132,39 +133,52 @@ export default function CountryPhoneField({
 
   return (
     <div className="flex flex-col items-stretch gap-2 min-[280px]:flex-row">
-      <select
-        aria-label={language === "vi" ? "Chọn quốc gia" : "Select country"}
-        data-testid={`${testId}-country`}
-        value={iso}
-        onChange={(e) => onCountryChange(e.target.value)}
-        className={`nq-booking-field shrink-0 ${
+      <div
+        className={`relative w-full shrink-0 ${
           showAll ? "min-[280px]:w-[150px]" : "min-[280px]:w-[78px]"
-        } ${invalid ? "border-nq-error/50" : ""}`}
+        }`}
       >
-        {showAll ? (
-          <>
-            <option value="__cluster__">
-              {language === "vi" ? "‹ Khu vực gần" : "‹ Nearby"}
-            </option>
-            {PHONE_COUNTRIES.map((c) => (
-              <option key={c.iso} value={c.iso} title={label(c)}>
-                {c.iso}  {label(c)}
+        {/* Keep native selection behavior, but paint the theme background ourselves:
+            WebKit on Linux otherwise draws a light native fill over dark-theme CSS. */}
+        <select
+          aria-label={language === "vi" ? "Chọn quốc gia" : "Select country"}
+          data-testid={`${testId}-country`}
+          value={iso}
+          onChange={(e) => onCountryChange(e.target.value)}
+          className={`nq-booking-field h-full appearance-none pr-9 ${
+            invalid ? "border-nq-error/50" : ""
+          }`}
+        >
+          {showAll ? (
+            <>
+              <option value="__cluster__">
+                {language === "vi" ? "‹ Khu vực gần" : "‹ Nearby"}
               </option>
-            ))}
-          </>
-        ) : (
-          <>
-            {cluster.map((c) => (
-              <option key={c.iso} value={c.iso} title={label(c)}>
-                {c.iso}
+              {PHONE_COUNTRIES.map((c) => (
+                <option key={c.iso} value={c.iso} title={label(c)}>
+                  {c.iso}  {label(c)}
+                </option>
+              ))}
+            </>
+          ) : (
+            <>
+              {cluster.map((c) => (
+                <option key={c.iso} value={c.iso} title={label(c)}>
+                  {c.iso}
+                </option>
+              ))}
+              <option value="__other__">
+                {language === "vi" ? "Khác…" : "Other…"}
               </option>
-            ))}
-            <option value="__other__">
-              {language === "vi" ? "Khác…" : "Other…"}
-            </option>
-          </>
-        )}
-      </select>
+            </>
+          )}
+        </select>
+        <ChevronDown
+          aria-hidden="true"
+          className="pointer-events-none absolute right-3 top-1/2 h-3.5 w-3.5 -translate-y-1/2"
+          style={{ color: "var(--booking-text, var(--color-nq-foreground))" }}
+        />
+      </div>
 
       <div
         className={`nq-booking-field flex min-w-0 flex-1 items-center gap-1.5 ${
