@@ -453,11 +453,18 @@ export function BookingFlowConfirmPanel({
           );
         })() : null}
 
-        {pricingQuoteLoading ? (
-          <p className="mt-6 shrink-0 text-sm text-[var(--booking-text-muted)]" role="status">
-            {t.pricingVerifying}
-          </p>
-        ) : null}
+        {/* Preserve the status line's space when the quote arrives so the
+            Back/Confirm targets cannot move during a pointer press. */}
+        <p
+          className={cn(
+            "mt-6 shrink-0 text-sm text-[var(--booking-text-muted)]",
+            !pricingQuoteLoading && "invisible",
+          )}
+          role={pricingQuoteLoading ? "status" : undefined}
+          aria-hidden={!pricingQuoteLoading}
+        >
+          {t.pricingVerifying}
+        </p>
         {pricingQuoteError ? (
           <p className="mt-6 shrink-0 text-sm text-nq-error" role="alert">
             {t.pricingUnavailable}
