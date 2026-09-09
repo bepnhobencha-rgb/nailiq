@@ -243,6 +243,7 @@ jobs:
               e2e/notification-settings-recovery.spec.ts
               e2e/loyalty-widget-recovery.spec.ts
               e2e/auth-email-callback.spec.ts
+              e2e/auth-signup-confirmation.spec.ts
     env:
       # ── NO PRODUCTION SECRETS. NONE. ────────────────────────────────────────
       #
@@ -355,6 +356,22 @@ jobs:
         uses: supabase/setup-cli@v2
         with:
           version: 2.109.1
+      - name: Require email confirmation in the real-auth fixture
+        if: steps.preflight.outputs.configured == 'true' && matrix.shard == 4
+        # Only this disposable stack exercises new, unconfirmed signups.
+        # Existing admin-seeded, confirmed users remain valid.
+        run: |
+          python3 - <<'PYCONFIG'
+          from pathlib import Path
+          import re
+          path = Path("supabase/config.toml")
+          config = path.read_text()
+          section = re.search(r"(?ms)^\[auth\.email\]\n.*?(?=^\[|\Z)", config)
+          assert section, "Missing auth.email fixture configuration"
+          email, count = re.subn(r"(?m)^enable_confirmations = false$", "enable_confirmations = true", section.group())
+          assert count == 1, "Unexpected confirmation fixture configuration"
+          path.write_text(config[:section.start()] + email + config[section.end():])
+          PYCONFIG
       - name: Start Supabase (local, throwaway)
         if: steps.preflight.outputs.configured == 'true'
         # Docker is preinstalled on ubuntu-latest. This boots Postgres 17 + GoTrue

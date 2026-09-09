@@ -187,10 +187,16 @@ export async function resendSignupConfirmationEmail(
 
   try {
     const supabase = await createClient();
-    const { error } = await supabase.auth.resend({
-      type: "signup",
+    // auth.resend does not create a PKCE challenge. Its confirmation link can
+    // return fragment tokens that the server callback cannot exchange. Request
+    // a fresh PKCE email link for the already-created signup instead; never
+    // allow this retry action to provision a different account.
+    const { error } = await supabase.auth.signInWithOtp({
       email,
-      options: { emailRedirectTo: emailRedirectTo() },
+      options: {
+        emailRedirectTo: emailRedirectTo(),
+        shouldCreateUser: false,
+      },
     });
     if (error) {
       const classified = classifySignupError(error);

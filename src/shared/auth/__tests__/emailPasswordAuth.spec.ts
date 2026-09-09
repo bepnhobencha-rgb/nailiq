@@ -5,7 +5,7 @@ const mocks = vi.hoisted(() => ({
   create: vi.fn(),
   signIn: vi.fn(),
   signUp: vi.fn(),
-  resend: vi.fn(),
+  otp: vi.fn(),
 }));
 vi.mock("server-only", () => ({}));
 vi.mock("@/shared/security/publicServerActionRateLimit", () => ({
@@ -29,12 +29,12 @@ describe("email/password auth server boundary", () => {
       auth: {
         signInWithPassword: mocks.signIn,
         signUp: mocks.signUp,
-        resend: mocks.resend,
+        signInWithOtp: mocks.otp,
       },
     });
     mocks.signIn.mockResolvedValue({ data: { user: { id: "user" } }, error: null });
     mocks.signUp.mockResolvedValue({ data: { session: null }, error: null });
-    mocks.resend.mockResolvedValue({ data: {}, error: null });
+    mocks.otp.mockResolvedValue({ data: {}, error: null });
   });
 
   it.each([
@@ -158,7 +158,7 @@ describe("email/password auth server boundary", () => {
     expect(mocks.create).not.toHaveBeenCalled();
   });
 
-  it("resends through the signup resend API without creating another account", async () => {
+  it("requests a PKCE email link without creating another account", async () => {
     await expect(
       resendSignupConfirmationEmail(" OWNER@example.com "),
     ).resolves.toEqual({ ok: true, status: "requested" });
@@ -169,10 +169,9 @@ describe("email/password auth server boundary", () => {
       }),
     );
     expect(mocks.signUp).not.toHaveBeenCalled();
-    expect(mocks.resend).toHaveBeenCalledWith({
-      type: "signup",
+    expect(mocks.otp).toHaveBeenCalledWith({
       email: "owner@example.com",
-      options: { emailRedirectTo: "/auth/callback" },
+      options: { emailRedirectTo: "/auth/callback", shouldCreateUser: false },
     });
   });
 
@@ -183,7 +182,7 @@ describe("email/password auth server boundary", () => {
       resendSignupConfirmationEmail("qa@example.invalid"),
     ).resolves.toEqual({ ok: true, status: "synthetic_no_delivery" });
     expect(mocks.create).not.toHaveBeenCalled();
-    expect(mocks.resend).not.toHaveBeenCalled();
+    expect(mocks.otp).not.toHaveBeenCalled();
   });
 
   it("does not call the resend provider when the durable limiter blocks it", async () => {
@@ -193,11 +192,11 @@ describe("email/password auth server boundary", () => {
       resendSignupConfirmationEmail("owner@example.com"),
     ).resolves.toEqual({ ok: false, error: "rate_limited" });
     expect(mocks.create).not.toHaveBeenCalled();
-    expect(mocks.resend).not.toHaveBeenCalled();
+    expect(mocks.otp).not.toHaveBeenCalled();
   });
 
   it("surfaces resend provider failure without claiming a delivery", async () => {
-    mocks.resend.mockResolvedValue({
+    mocks.otp.mockResolvedValue({
       data: null,
       error: { code: "unexpected_failure", message: "Provider unavailable" },
     });
