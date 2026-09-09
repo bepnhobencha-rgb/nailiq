@@ -102,3 +102,25 @@ Chạy lại theo `qa/booking-country-phone/README.md`. Linux đã kiểm chứn
 image `mcr.microsoft.com/playwright:v1.59.1-noble`, macOS dùng Playwright 1.59.1.
 Node 20 dùng cho build; bộ browser local dùng Node 24.15.0/macOS và runtime
 Node trong image Linux. CI khai báo Node 20; kết quả CI chưa có.
+
+## Theo dõi xuất bản — PR #1371
+
+Commit sản phẩm `1780ac8720f8ad8b920cd993a4774c9c697c7002` đã được push sau khi
+Huy duyệt. Preview `dpl_32Hib85AWiacwcteKPiGXwBstmGZ` READY và 6/6 lượt kiểm tra
+chỉ đọc xác nhận đúng SHA, select dùng nền mới và mũi tên hiển thị.
+
+CI lần đầu: Build & Type Check và Security Audit PASS. Tám job có trình duyệt
+thất bại trước bước test vì APT Google Chrome trả `Hash Sum mismatch` ở
+`main/binary-amd64/Packages.gz`. Cả job reset-password có sẵn cũng gặp lỗi này.
+Đã đối chiếu log từng job và tải lại Release/Packages.gz: SHA256 vẫn không khớp.
+CI: `34385933643`; E2E: `34385933650`. Lượt retry hạ tầng được ghi riêng, không
+được tính là test browser chạy lại do flake.
+
+Bản sửa CI tiếp theo dùng composite action cài Playwright: trên runner Linux,
+bỏ hai file nguồn APT Chrome hệ thống rồi chạy nguyên lệnh Playwright với các
+browser đã chọn. Playwright dùng browser riêng theo lockfile; không dùng Chrome
+hệ thống. Cách dọn nguồn này phù hợp với script chính thức
+`actions/runner-images/images/ubuntu/scripts/build/install-google-chrome.sh`.
+Giữ nguyên xác minh chữ ký/hash APT, test, timeout, retry và điều kiện preflight.
+Các phần này đã qua parse YAML và kiểm tra cú pháp Bash; kết quả runner sẽ được
+cập nhật trong PR. Không đổi thêm mã sản phẩm hoặc dữ liệu Production.

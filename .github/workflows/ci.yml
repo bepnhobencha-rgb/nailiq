@@ -87,7 +87,9 @@ jobs:
           node-version: '20'
           cache: 'npm'
       - run: npm ci
-      - run: npx playwright install --with-deps chromium webkit
+      - uses: ./.github/actions/install-playwright
+        with:
+          browsers: chromium webkit
       - name: Build isolated component fixture (no Auth or database)
         run: npx next build qa/password-reset-form --webpack
         env:
@@ -111,7 +113,9 @@ jobs:
           node-version: '20'
           cache: 'npm'
       - run: npm ci
-      - run: npx playwright install --with-deps chromium webkit
+      - uses: ./.github/actions/install-playwright
+        with:
+          browsers: chromium webkit
       - name: Build isolated country phone fixture (no Auth or database)
         run: npx next build qa/booking-country-phone --webpack
         env:

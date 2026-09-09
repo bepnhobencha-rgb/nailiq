@@ -140,7 +140,9 @@ jobs:
         env:
           RUN_OUTCOME_TRACKER_INTEGRATION: "1"
         run: npm run test:integration:outcome-isolation
-      - run: npx playwright install --with-deps chromium
+      - uses: ./.github/actions/install-playwright
+        with:
+          browsers: chromium
       - run: npm run build
       - name: Start server
         run: |
@@ -474,7 +476,9 @@ jobs:
           fi
       - name: Install Playwright browsers
         if: steps.preflight.outputs.configured == 'true'
-        run: npx playwright install --with-deps ${{ steps.projects.outputs.browsers }}
+        uses: ./.github/actions/install-playwright
+        with:
+          browsers: ${{ steps.projects.outputs.browsers }}
       - name: Build app
         if: steps.preflight.outputs.configured == 'true'
         run: npm run build
@@ -682,7 +686,9 @@ jobs:
           node-version: 20
           cache: npm
       - run: npm ci
-      - run: npx playwright install --with-deps chromium
+      - uses: ./.github/actions/install-playwright
+        with:
+          browsers: chromium
       - name: Run one distributed source shard
         run: node scripts/security/run-mqa-0148-distributed-shard.mjs
       - name: Upload source receipt
@@ -797,7 +803,9 @@ jobs:
       - name: Seed E2E fixtures
         if: steps.preflight.outputs.configured == 'true'
         run: npx tsx scripts/seed-e2e.ts
-      - run: npx playwright install --with-deps chromium webkit
+      - uses: ./.github/actions/install-playwright
+        with:
+          browsers: chromium webkit
         if: steps.preflight.outputs.configured == 'true'
       - run: npm run build
         if: steps.preflight.outputs.configured == 'true'
