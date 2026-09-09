@@ -215,6 +215,7 @@ jobs:
               e2e/noshow-deposit.spec.ts
               e2e/noshow-reschedule.spec.ts
               e2e/noshow-waitlist.spec.ts
+              e2e/register-success-auth-guard.spec.ts
               e2e/register.spec.ts
               e2e/setup-ai-prefill.spec.ts
               e2e/superadmin
@@ -544,6 +545,20 @@ jobs:
         env:
           PLAYWRIGHT_HTML_OUTPUT_DIR: playwright-report/booking-capability-webkit
           PLAYWRIGHT_JSON_OUTPUT_NAME: playwright-report/booking-capability-webkit-results.json
+      - name: Run registration authentication in WebKit
+        if: >-
+          always() &&
+          steps.preflight.outputs.configured == 'true' &&
+          matrix.shard == 1 &&
+          github.event_name == 'pull_request'
+        run: >-
+          npx playwright test e2e/register-success-auth-guard.spec.ts e2e/register.spec.ts
+          --grep 'signed-out request|New owner creates'
+          --project=mobile --reporter=list,html,json
+          --output=test-results/registration-webkit
+        env:
+          PLAYWRIGHT_HTML_OUTPUT_DIR: playwright-report/registration-webkit
+          PLAYWRIGHT_JSON_OUTPUT_NAME: playwright-report/registration-webkit-results.json
       - name: Next server log (the app's side of a failed test)
         # A Playwright failure tells you what the BROWSER saw. When the page says
         # "Could not complete booking. Please try again.", that is the app's
