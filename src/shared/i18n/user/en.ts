@@ -573,6 +573,7 @@ export type UserMessages = {
     resetPasswordMismatch: string;
     resetPasswordInvalidLink: string;
     resetPasswordServerError: string;
+    resetPasswordUnconfirmed: string;
     resetPasswordStrengthHint: string;
     /** Desktop brand panel (left column on /login and /register entry). */
     brandTagline: string;
@@ -3355,6 +3356,8 @@ export const userEn: UserMessages = {
     resetPasswordMismatch: "Passwords don't match.",
     resetPasswordInvalidLink: "This reset link has expired. Request a new one.",
     resetPasswordServerError: "Something went wrong. Try again.",
+    resetPasswordUnconfirmed:
+      "We could not confirm whether your password changed. Try signing in with your new password. If it does not work, request a new reset link.",
     resetPasswordStrengthHint: "Password strength: ",
     brandTagline: "Smart salon management — built for you",
     brandBullet1: "Free 14 days · No credit card needed",

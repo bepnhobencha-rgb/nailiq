@@ -821,6 +821,8 @@ export const userVi: UserMessages = {
     resetPasswordInvalidLink:
       "Link đặt lại này đã hết hạn. Yêu cầu một cái mới.",
     resetPasswordServerError: "Có lỗi xảy ra. Thử lại.",
+    resetPasswordUnconfirmed:
+      "Chưa thể xác nhận mật khẩu đã được đổi. Hãy thử đăng nhập bằng mật khẩu mới. Nếu không đăng nhập được, hãy yêu cầu link đặt lại mới.",
     resetPasswordStrengthHint: "Độ mạnh mật khẩu: ",
     brandTagline: "Quản lý salon thông minh — dành riêng cho bạn",
     brandBullet1: "Miễn phí 14 ngày · Không cần thẻ tín dụng",
