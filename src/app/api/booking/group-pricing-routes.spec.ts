@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { NextRequest } from "next/server";
 
 const mocks = vi.hoisted(() => ({
@@ -130,6 +130,125 @@ describe("public group pricing route boundaries", () => {
     mocks.saveCard.mockResolvedValue({ ok: true, code: "saved" });
     mocks.recordCardPending.mockResolvedValue(true);
     mocks.resolveCardContinuation.mockResolvedValue(true);
+  });
+
+  describe("group quote 503 diagnostics", () => {
+    beforeEach(() => {
+      vi.spyOn(console, "warn").mockImplementation(() => {});
+    });
+    afterEach(() => vi.restoreAllMocks());
+
+    const failures = [
+      { stage: "ip_metering", outcome: "quote_unavailable", rates: [null] },
+      { stage: "phone_metering", outcome: "quote_unavailable", rates: [true, null] },
+      { stage: "authorization", outcome: "booking_unavailable", rates: [true, true] },
+      { stage: "quote_resolution", outcome: "quote_unavailable", rates: [true, true] },
+      { stage: "quote_resolution", outcome: "slot_conflict", rates: [true, true] },
+      { stage: "quote_resolution", outcome: "pricing_invalid", rates: [true, true] },
+    ] as const;
+
+    function arrangeFailure(failure: typeof failures[number]) {
+      failure.rates.forEach((allowed) => mocks.rateLimit.mockResolvedValueOnce(allowed));
+      if (failure.stage === "authorization") {
+        mocks.authorize.mockResolvedValueOnce({
+          ok: false,
+          code: "booking_unavailable",
+          error: new Error("private dependency detail"),
+          token: "private-token",
+        });
+      }
+      if (failure.stage === "quote_resolution") {
+        mocks.quote.mockResolvedValueOnce({ ok: false, code: failure.outcome });
+      }
+    }
+
+    it.each(failures)("records only fixed metadata for $stage / $outcome", async (failure) => {
+      arrangeFailure(failure);
+      const response = await quotePost(request("group-quote", validBody, {
+        "x-forwarded-for": "192.0.2.17",
+        "x-vercel-id": "untrusted-request-id",
+        cookie: "session=private-session",
+      }));
+      expect(response.status).toBe(503);
+      expect(response.headers.get("cache-control")).toBe("no-store");
+      expect(response.headers.get("retry-after")).toBeNull();
+      await expect(response.json()).resolves.toEqual({ ok: false, code: failure.outcome });
+      // Exact keys/values rule out accidentally including request/customer data
+      // or the authorization object's raw error/token in the structured line.
+      expect(console.warn).toHaveBeenCalledExactlyOnceWith(JSON.stringify({
+        event: "group_quote_unavailable",
+        status: 503,
+        stage: failure.stage,
+        outcome: failure.outcome,
+      }));
+      expect(mocks.rateLimit).toHaveBeenCalledTimes(failure.rates.length);
+      expect(mocks.quote).toHaveBeenCalledTimes(failure.stage === "quote_resolution" ? 1 : 0);
+      expect(mocks.authorize).toHaveBeenCalledTimes(
+        failure.stage === "authorization" || failure.stage === "quote_resolution" ? 1 : 0,
+      );
+    });
+
+    it("never logs an unexpected runtime outcome string", async () => {
+      const code = "private phone 16045550100 token=private-token";
+      mocks.quote.mockResolvedValueOnce({ ok: false, code });
+      const response = await quotePost(request("group-quote", validBody));
+      expect(response.status).toBe(503);
+      // Preserve the existing response contract even for an unexpected result;
+      // only diagnostic metadata is normalized to a fixed vocabulary.
+      await expect(response.json()).resolves.toEqual({ ok: false, code });
+      expect(console.warn).toHaveBeenCalledExactlyOnceWith(JSON.stringify({
+        event: "group_quote_unavailable",
+        status: 503,
+        stage: "quote_resolution",
+        outcome: "unrecognized_failure",
+      }));
+    });
+
+    it.each(failures)("preserves $stage / $outcome when the log sink throws", async (failure) => {
+      arrangeFailure(failure);
+      vi.mocked(console.warn).mockImplementation(() => { throw new Error("sink unavailable"); });
+      const response = await quotePost(request("group-quote", validBody));
+      expect(response.status).toBe(503);
+      await expect(response.json()).resolves.toEqual({ ok: false, code: failure.outcome });
+    });
+
+    it.each([
+      { label: "success", status: 200 },
+      { label: "forbidden origin", status: 403 },
+      { label: "invalid length", status: 400 },
+      { label: "invalid schema", status: 400 },
+      { label: "IP quota exhausted", status: 429 },
+      { label: "phone quota exhausted", status: 429 },
+      { label: "resolver invalid request", status: 400 },
+      { label: "invalid voucher", status: 422 },
+    ])("does not emit a 503 diagnostic for $label", async ({ label, status }) => {
+      const req = request("group-quote", label === "invalid schema" ? {} : validBody);
+      if (label === "forbidden origin") req.headers.delete("origin");
+      if (label === "invalid length") req.headers.set("content-length", "65537");
+      if (label === "IP quota exhausted") mocks.rateLimit.mockResolvedValueOnce(false);
+      if (label === "phone quota exhausted") {
+        mocks.rateLimit.mockResolvedValueOnce(true).mockResolvedValueOnce(false);
+      }
+      if (label === "success") mocks.quote.mockResolvedValueOnce({ ok: true, quote: {} });
+      if (label === "resolver invalid request") {
+        mocks.quote.mockResolvedValueOnce({ ok: false, code: "invalid_request" });
+      }
+      if (label === "invalid voucher") {
+        mocks.quote.mockResolvedValueOnce({ ok: false, code: "voucher_invalid" });
+      }
+      const response = await quotePost(req);
+      expect(response.status).toBe(status);
+      expect(response.headers.get("cache-control")).toBe("no-store");
+      expect(response.headers.get("retry-after")).toBe(status === 429 ? "300" : null);
+      expect(console.warn).not.toHaveBeenCalled();
+    });
+
+    it("does not swallow or log raw unhandled dependency exceptions", async () => {
+      const error = new Error("private dependency detail");
+      mocks.quote.mockRejectedValueOnce(error);
+      await expect(quotePost(request("group-quote", validBody))).rejects.toBe(error);
+      expect(console.warn).not.toHaveBeenCalled();
+    });
   });
 
   it("denies missing and cross-site origins before rate or pricing work", async () => {
