@@ -92,7 +92,7 @@ export default async function EmbedBookingPage({
         hasUpcomingClosure(load.salon.booking_closed_dates, load.salon.timezone) ? (
           <SalonClosureBanner notice={load.salon.closureNotice} />
         ) : null}
-        <BookingFlowErrorBoundary shopSlug={normalizedSlug} salon={load.salon}>
+        <BookingFlowErrorBoundary shopSlug={normalizedSlug} salon={load.salon} messages={t.errorBoundary}>
           <BookingTypeSwitcher
             t={t}
             shopSlug={normalizedSlug}
