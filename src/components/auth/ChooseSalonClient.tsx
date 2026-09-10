@@ -1,6 +1,8 @@
 "use client";
 
 import Link from "next/link";
+import { useSignOutAction } from "@/shared/auth/useSignOutAction";
+import { SignOutFeedback } from "@/components/auth/SignOutFeedback";
 import { useRouter } from "next/navigation";
 import { Button } from "@/components/ui/Button";
 import { useMemo, useTransition } from "react";
@@ -28,10 +30,11 @@ export function ChooseSalonClient({ cards, unavailable = false }: Props) {
   const t = useMemo(() => getUserMessages(language).chooseSalon, [language]);
   const router = useRouter();
   const [retrying, startRetry] = useTransition();
-  const [signingOut, startSignOut] = useTransition();
+  const { pending: signingOut, failed, run: signOut, clearFailure } = useSignOutAction(signOutAction);
 
   return (
     <main className="min-h-screen bg-nq-bg text-nq-foreground">
+      <SignOutFeedback failed={failed} language={language} onDismiss={clearFailure} />
       <div className="mx-auto flex w-full max-w-md flex-col gap-8 px-5 py-12 md:py-16">
         <div className="flex justify-end">
           <AuthLanguageToggle />
@@ -87,7 +90,8 @@ export function ChooseSalonClient({ cards, unavailable = false }: Props) {
           <button
             type="button"
             disabled={signingOut || retrying}
-            onClick={() => startSignOut(() => signOutAction())}
+            aria-busy={signingOut || undefined}
+            onClick={signOut}
             className="text-sm text-nq-muted underline-offset-4 transition hover:text-nq-foreground hover:underline disabled:opacity-60"
           >
             {t.signOut}

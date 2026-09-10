@@ -15,6 +15,8 @@ type SetupToastProps = {
   onDismiss: () => void;
   /** Auto-dismiss after ms (default 3000). Set 0 to disable. */
   autoDismissMs?: number;
+  /** Optional positioning override for hosts outside the dashboard layout. */
+  className?: string;
 };
 
 /** Fixed toast for dashboard setup flows; slide in/out when motion is allowed. */
@@ -22,6 +24,7 @@ export function SetupToast({
   toast,
   onDismiss,
   autoDismissMs = 3000,
+  className,
 }: SetupToastProps) {
   const [open, setOpen] = useState(false);
   const [rendered, setRendered] = useState<SetupToastPayload | null>(null);
@@ -93,6 +96,7 @@ export function SetupToast({
         "pointer-events-none fixed z-[100] px-4 pb-safe sm:px-0 sm:pb-4",
         "bottom-0 left-0 right-0 sm:bottom-auto sm:left-auto sm:right-4 sm:top-auto",
         "flex justify-end sm:justify-start",
+        className,
       )}
     >
       <div

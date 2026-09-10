@@ -1,5 +1,7 @@
 "use server";
 
+import type { SignOutResult } from "@/shared/auth/signOutResponse";
+
 import { redirect } from "next/navigation";
 import { cookies } from "next/headers";
 import { createClient } from "@/shared/lib/supabase/server";
@@ -78,13 +80,18 @@ export async function loginSuperadmin(
 }
 
 /**
- * Signs the current user out. Used by the impersonation exit flow and
- * by the superadmin "Sign out" affordance once it lands. Kept in this
- * module so the action file owns every auth verb the surface uses.
+ * Signs the current user out and reports provider failures to the caller.
+ * Keeps the existing default (global) scope.
  */
-export async function logoutSuperadmin(): Promise<void> {
-  const supabase = await createClient();
-  await supabase.auth.signOut();
+export async function logoutSuperadmin(): Promise<SignOutResult> {
+  try {
+    const supabase = await createClient();
+    const { error } = await supabase.auth.signOut();
+    if (error) return { ok: false, error: "server_error" };
+    return { ok: true };
+  } catch {
+    return { ok: false, error: "server_error" };
+  }
 }
 
 /**
@@ -92,8 +99,9 @@ export async function logoutSuperadmin(): Promise<void> {
  * Delegates the actual sign-out to `logoutSuperadmin`, then hard-redirects to
  * the login page so no stale session state lingers in the client.
  */
-export async function signOutSuperadminAction(): Promise<void> {
-  await logoutSuperadmin();
+export async function signOutSuperadminAction(): Promise<SignOutResult> {
+  const result = await logoutSuperadmin();
+  if (!result.ok) return result;
   redirect("/superadmin/login");
 }
 

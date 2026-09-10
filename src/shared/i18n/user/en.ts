@@ -586,6 +586,7 @@ export type UserMessages = {
     /** CTA button label inside the in-app browser banner. */
     openInBrowser: string;
   };
+  signOut: { unconfirmed: string };
   /** Multi-salon picker (`/choose-salon`). Shown when an authenticated user
    * has more than one `salon_members` row. Single-salon users skip it. */
   chooseSalon: {
@@ -3368,6 +3369,9 @@ export const userEn: UserMessages = {
     inAppBrowserWarning:
       "Google sign-in is blocked inside Messenger and other in-app browsers. Open this page in Safari or Chrome to continue.",
     openInBrowser: "Open in browser",
+  },
+  signOut: {
+    unconfirmed: "We couldn’t confirm sign-out. Please try again.",
   },
   chooseSalon: {
     unavailable: "We couldn’t load your salons. Please try again.",

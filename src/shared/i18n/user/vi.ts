@@ -832,6 +832,9 @@ export const userVi: UserMessages = {
       "Google không cho phép đăng nhập từ Messenger hoặc trình duyệt trong ứng dụng. Vui lòng mở trang này bằng Safari hoặc Chrome.",
     openInBrowser: "Mở trong trình duyệt",
   },
+  signOut: {
+    unconfirmed: "Chưa xác nhận được việc đăng xuất. Vui lòng thử lại.",
+  },
   chooseSalon: {
     unavailable: "Chưa tải được danh sách tiệm. Vui lòng thử lại.",
     retry: "Thử lại",
