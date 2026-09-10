@@ -248,7 +248,13 @@ jobs:
               e2e/auth-keyboard-submit.spec.ts
               e2e/google-auth-recovery.spec.ts
               e2e/forgot-password-request-recovery.spec.ts
-              e2e/superadmin-password-recovery.spec.ts
+          # Recovery needs canonical HTTPS. Keep HTTP-based WebKit specs in
+          # shard 4: HTTPS CSP would upgrade their JS URLs on the HTTP port.
+          - shard: 5
+            name: "SuperAdmin recovery — real auth HTTPS"
+            project: "settings"
+            browser: "chromium webkit"
+            testpath: "e2e/superadmin-password-recovery.spec.ts"
     env:
       # ── NO PRODUCTION SECRETS. NONE. ────────────────────────────────────────
       #
@@ -267,14 +273,14 @@ jobs:
       #
       # e2e/helpers/guardProduction.ts is still the second lock: it aborts the run
       # if the Supabase URL ever resolves to the production project ref.
-      NEXT_PUBLIC_SITE_URL: ${{ matrix.shard == 4 && 'https://localhost:3443' || 'http://localhost:3000' }}
+      NEXT_PUBLIC_SITE_URL: ${{ matrix.shard == 5 && 'https://localhost:3443' || 'http://localhost:3000' }}
       BASE_URL: http://localhost:3000
       PLAYWRIGHT_BASE_URL: http://localhost:3000
-      NEXT_PUBLIC_DEMO_OTP: ${{ matrix.shard == 4 && 'false' || 'true' }}
-      DEMO_OTP: ${{ matrix.shard == 4 && 'false' || 'true' }}
+      NEXT_PUBLIC_DEMO_OTP: ${{ matrix.shard >= 4 && 'false' || 'true' }}
+      DEMO_OTP: ${{ matrix.shard >= 4 && 'false' || 'true' }}
       # Allows demo cookie with non-"demo-salon" slugs so E2E fixtures can
       # use arbitrary test slugs. NEVER set on Vercel production.
-      NAILIQ_TEST_BYPASS_SLUG_PIN: ${{ matrix.shard == 4 && '0' || '1' }}
+      NAILIQ_TEST_BYPASS_SLUG_PIN: ${{ matrix.shard >= 4 && '0' || '1' }}
       # ── External integrations: all off, all of them ─────────────────────────
       # A test database must not be able to reach a real provider even by
       # accident. The suite once billed 555 real Twilio sends.
@@ -362,7 +368,7 @@ jobs:
         with:
           version: 2.109.1
       - name: Configure confirmation and HTTPS recovery in the real-auth fixture
-        if: steps.preflight.outputs.configured == 'true' && matrix.shard == 4
+        if: steps.preflight.outputs.configured == 'true' && matrix.shard >= 4
         # Only this disposable stack exercises new, unconfirmed signups.
         # Existing admin-seeded, confirmed users remain valid.
         run: |
@@ -376,12 +382,13 @@ jobs:
           email, count = re.subn(r"(?m)^enable_confirmations = false$", "enable_confirmations = true", section.group())
           assert count == 1, "Unexpected confirmation fixture configuration"
           config = config[:section.start()] + email + config[section.end():]
-          config, count = re.subn(
-              r'(?m)^additional_redirect_urls = \["http://localhost:3000"\]$',
-              'additional_redirect_urls = ["http://localhost:3000", "https://localhost:3443/**"]',
-              config,
-          )
-          assert count == 1, "Unexpected local Auth redirect configuration"
+          if "${{ matrix.shard }}" == "5":
+              config, count = re.subn(
+                  r'(?m)^additional_redirect_urls = \["http://localhost:3000"\]$',
+                  'additional_redirect_urls = ["http://localhost:3000", "https://localhost:3443/**"]',
+                  config,
+              )
+              assert count == 1, "Unexpected local Auth redirect configuration"
           path.write_text(config)
           PYCONFIG
       - name: Start Supabase (local, throwaway)
@@ -437,7 +444,7 @@ jobs:
           echo "CRON_SECRET=${INTERNAL_SECRET}" >> "$GITHUB_ENV"
           # A distinct throwaway signing key lets the real recovery callback
           # issue a capability bound to the local user's Auth session.
-          if [ "${{ matrix.shard }}" = "4" ]; then
+          if [ "${{ matrix.shard }}" = "5" ]; then
             RECOVERY_SECRET="$(openssl rand -hex 32)"
             echo "::add-mask::${RECOVERY_SECRET}"
             echo "PASSWORD_RECOVERY_SIGNING_SECRET=${RECOVERY_SECRET}" >> "$GITHUB_ENV"

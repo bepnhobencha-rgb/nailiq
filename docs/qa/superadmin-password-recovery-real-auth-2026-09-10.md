@@ -42,7 +42,11 @@ Sau test: **0 auth users, 0 auth sessions, 0 superadmins, 0 salons, 0 bookings, 
 
 ## Thay đổi workflow
 
-Spec chỉ thêm vào shard 4 đang dùng Auth thật. Shard này dùng canonical HTTPS local, cho phép redirect vào proxy TLS và sinh khóa ký recovery ngẫu nhiên mỗi run. Các shard khác giữ origin hiện tại. Bộ lọc thư mục SuperAdmin của shard 1 dùng dấu gạch chéo cuối để không bắt nhầm spec recovery ở thư mục cha; đã tái hiện lỗi chọn nhầm bằng Playwright --list trước khi sửa. Sau sửa, discovery cả bốn shard PASS: 176/112/112/214 ca được liệt kê; 18 ca recovery chỉ có trong shard 4. Đây là kiểm tra chọn ca, không phải chạy lại các ca đó. Không thay biến Vercel Production hoặc secret hosted.
+Spec chạy trong shard 5 mới, dùng Auth thật, canonical HTTPS local, redirect vào proxy TLS và khóa ký recovery ngẫu nhiên mỗi run. Shard 4 giữ nguyên môi trường HTTP, tắt demo và cấu hình email confirmation của main cho 196 ca hiện có. Không thay CSP, cookie Secure, mã ứng dụng, biến Vercel Production hoặc secret hosted.
+
+Lượt CI cf4d70b6 xác nhận 18/18 ca recovery mới PASS, nhưng 77 ca mobile cũ FAIL vì dùng HTTP với CSP upgrade-insecure-requests của cấu hình HTTPS. Trace ghi nhận WebKit tải JavaScript tại https://localhost:3000 và lỗi TLS handshake. Tách recovery sang stack/build riêng giải quyết việc trộn hai origin; giữ toàn bộ 196 ca cũ và chính sách bảo mật ứng dụng.
+
+Bộ lọc thư mục SuperAdmin của shard 1 dùng dấu gạch chéo cuối để không bắt nhầm spec recovery ở thư mục cha; đã tái hiện lỗi chọn nhầm bằng Playwright --list trước khi sửa. Discovery năm shard phải liệt kê 176/112/112/196/18 ca, với recovery chỉ nằm ở shard 5. Đây là kiểm tra chọn ca, không phải chạy lại các ca đó. Kết quả CI mới sau tách nhóm được theo dõi trong PR #1385.
 
 ## Giới hạn
 
