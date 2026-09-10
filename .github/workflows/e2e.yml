@@ -598,6 +598,22 @@ jobs:
         env:
           PLAYWRIGHT_HTML_OUTPUT_DIR: playwright-report/booking-submit-webkit
           PLAYWRIGHT_JSON_OUTPUT_NAME: playwright-report/booking-submit-webkit-results.json
+      - name: Run group guest placeholders in WebKit
+        if: >-
+          always() &&
+          steps.preflight.outputs.configured == 'true' &&
+          matrix.shard == 1 &&
+          github.event_name == 'pull_request'
+        # These cases share a phone and formerly shared one salon. Repeat the
+        # full ordered suite to catch a successful booking contaminating the
+        # next new-customer gate; do not hide first-attempt failures with retry.
+        run: >-
+          npx playwright test e2e/group-booking/guest-placeholder.spec.ts
+          --project=mobile --repeat-each=3 --retries=0 --reporter=list,html,json
+          --output=test-results/group-placeholder-webkit
+        env:
+          PLAYWRIGHT_HTML_OUTPUT_DIR: playwright-report/group-placeholder-webkit
+          PLAYWRIGHT_JSON_OUTPUT_NAME: playwright-report/group-placeholder-webkit-results.json
       - name: Next server log (the app's side of a failed test)
         # A Playwright failure tells you what the BROWSER saw. When the page says
         # "Could not complete booking. Please try again.", that is the app's
