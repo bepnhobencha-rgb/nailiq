@@ -133,6 +133,44 @@ async function cleanup(email: string) {
 }
 
 for (const lang of ["en", "vi"] as const) {
+  for (const destination of ["/", "/register"] as const) {
+    test(`${lang}: login navigates to ${destination} without background signup requests`, async ({ page }) => {
+      const errors: string[] = [];
+      const signupPrefetches: string[] = [];
+      let observingLogin = true;
+      page.on("pageerror", (error) => errors.push(error.message));
+      page.on("request", (request) => {
+        if (
+          observingLogin &&
+          new URL(request.url()).pathname === "/register" &&
+          request.headers()["next-router-prefetch"] === "1"
+        ) {
+          signupPrefetches.push("/register");
+        }
+      });
+      await page.addInitScript(
+        (language) => localStorage.setItem("nailiq-user-lang", language),
+        lang,
+      );
+      await page.goto("/login");
+      await expect(page.getByTestId("social-auth-controls")).toHaveAttribute("data-hydrated", "true");
+      await page.reload();
+      await expect(page.getByTestId("social-auth-controls")).toHaveAttribute("data-hydrated", "true");
+      await page.locator('a[href="/register"]').scrollIntoViewIfNeeded();
+      await test.info().attach("login-before-navigation", {
+        body: await page.screenshot({ fullPage: true }),
+        contentType: "image/png",
+      });
+      expect(signupPrefetches).toEqual([]);
+      // The landing page may prefetch its own signup CTA after navigation.
+      observingLogin = false;
+      await page.locator(`a[href="${destination}"]`).click();
+      await expect(page).toHaveURL(localAuthHttpsOrigin + destination);
+      await expect(page.locator("main")).toBeVisible();
+      expect(errors).toEqual([]);
+    });
+  }
+
   test(`${lang}: the registration home link still navigates after reload`, async ({ page }) => {
     const errors: string[] = [];
     page.on("pageerror", (error) => errors.push(error.message));

@@ -168,6 +168,7 @@ export function LoginPageClient({
           {t.login.noSalonPrefix}
           <Link
             href="/register"
+            prefetch={false}
             className="font-medium text-nq-primary hover:underline"
           >
             {t.login.signupLink}
@@ -259,6 +260,7 @@ export function LoginPageClient({
         {t.login.noSalonPrefix}
         <Link
           href="/register"
+          prefetch={false}
           className="font-medium text-nq-primary hover:underline"
         >
           {t.login.signupLink}

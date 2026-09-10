@@ -1,8 +1,8 @@
-# Đăng ký — lỗi WebKit khi reload, 2026-09-09
+# Đăng nhập/đăng ký — lỗi WebKit khi điều hướng, 2026-09-09
 
 Base: `72202972e4fd20e33aee562e9addefc36dc53b0a` (Production #1376).
 Scope: lỗi còn mở từ ca đăng ký VI mobile trong main CI `34417958564`.
-Status: PASS_LOCAL trong phạm vi bên dưới; chưa commit/push/CI/Preview/Production.
+Status: PASS_LOCAL cho bản bổ sung liên kết đăng nhập. CI/Preview của commit 90e3c6c9 chỉ kiểm chứng bản sửa liên kết trang chủ trước đó; không thay thế các gate cần chạy lại cho bản bổ sung.
 
 ## Bằng chứng trước sửa
 
@@ -39,3 +39,15 @@ Tài liệu API: [Next.js Link prefetch](https://nextjs.org/docs/app/api-referen
 Bằng chứng xác định trigger request tải trước/reload và chứng minh bản sửa loại bỏ trigger tại local. Chưa xác định sâu hành vi nội bộ engine WebKit/Next gây thông báo access-control; không kết luận sai cấu hình CORS. Chưa chứng minh lỗi này từng xảy ra cho khách thật hoặc đã hết trên Production. Không chứng nhận 784/784 chức năng.
 
 Evidence: `/Users/huytran/nailiq-audit-results-20260907/signup-reload-prefetch/`.
+
+## Bổ sung sau kiểm tra Preview #1377
+
+- Preview 90e3c6c9: bốn lượt register/reload/Home PASS. Khi mở rộng sang login, WebKit ghi pageerror `.../register?_rsc=... due to access control checks.` trong chuỗi mở login, reload, chụp form và về Home. Không xác định chính xác bước gây ngắt request từ log đầu tiên này.
+- Production 72202972: bốn lượt đọc-only tương ứng không có pageerror. Không kết luận lỗi đăng nhập là hồi quy của PR hoặc đã tái hiện cho khách thật.
+- `LoginPageClient` còn hai vị trí Link đến `/register` (nhánh email và phone). Tắt prefetch cho cả hai; giữ nguyên explicit navigation, tất cả action/quyền/cookie và styling.
+- Bốn test mobile trước sửa ghi nhận 2–4 request tải trước `/register` mỗi ca; assertion không có background signup request FAIL 4/4, không phải bốn lỗi nghiệp vụ hay bốn pageerror. Một thử nghiệm sau sửa ghi nhầm request hợp lệ từ landing page sau navigation; đã giới hạn quan sát trước thao tác rời login, không nới pageerror assertion.
+- Regression mới: EN/VI × Home/Signup × Chromium/WebKit. Hiển thị link đăng ký, chụp form, xác nhận không tải trước signup khi còn ở login; bấm từng link, xác nhận trang đích và không pageerror.
+- Final local: **60/60 browser cases PASS trong một run**, **20/20 lượt lặp mobile PASS**, **29/29 unit PASS**, 0 fail/skip/flaky/retry. Build Webpack, sequential typecheck, focused lint, schema parity và diff check PASS.
+- Render login EN/VI × desktop Chromium 1280px/mobile WebKit 320px: 4/4, không pageerror/tràn ngang, nút Sign in 48px, màu input/button nhất quán. Đã xem ảnh VI mobile.
+- Cleanup: 0 Auth users/salons/memberships/bookings/client_profiles/Mailpit messages. Bằng chứng mới: `acceptance-v2.json`, `login-full-final.json`, `login-repeat-final.json`, `login-cleanup-counts.json`, `login-render.json` và các log `login-*`.
+- Rà React/TypeScript: chỉ thay props Link; không thêm hooks, listener hoặc logic data trong application code. Listener mới chỉ ở E2E; không có quyền hoặc query mới.
