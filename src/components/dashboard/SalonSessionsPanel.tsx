@@ -1,6 +1,9 @@
 "use client";
 
-import { useEffect, useState, useTransition } from "react";
+import { useCallback, useEffect, useRef, useState, useTransition } from "react";
+import { unstable_rethrow } from "next/navigation";
+import { Button } from "@/components/ui/Button";
+import { useUserLanguage } from "@/shared/lib/useUserLanguage";
 import { cn } from "@/shared/lib/cn";
 import { loadSalonSessions, type PresenceRow } from "@/shared/dashboard/presenceActions";
 
@@ -112,35 +115,63 @@ function EmptyState() {
 export function SalonSessionsPanel({
   slug,
   initialSessions,
+  initialError = null,
 }: {
   slug: string;
   initialSessions: PresenceRow[];
+  initialError?: string | null;
 }) {
-  const [sessions, setSessions] = useState<PresenceRow[]>(initialSessions);
+  const { language } = useUserLanguage();
+  const [sessions, setSessions] = useState<PresenceRow[]>(initialError ? [] : initialSessions);
+  const [error, setError] = useState<string | null>(initialError);
   const [lastRefresh, setLastRefresh] = useState<Date>(() => new Date());
-  const [, startTransition] = useTransition();
-
-  const refresh = () => {
+  const [pending, startTransition] = useTransition();
+  const inFlight = useRef(false);
+  const refresh = useCallback(() => {
+    // Manual clicks and the polling timer share a single outstanding read.
+    if (inFlight.current) return;
+    inFlight.current = true;
     startTransition(async () => {
-      const result = await loadSalonSessions(slug);
-      if (result.ok && result.sessions) {
-        setSessions(result.sessions);
-        setLastRefresh(new Date());
+      try {
+        const result = await loadSalonSessions(slug);
+        if (result.ok && result.sessions) {
+          setSessions(result.sessions);
+          setLastRefresh(new Date());
+          setError(null);
+        } else {
+          // Access may have changed: never keep showing unverified identities.
+          setSessions([]);
+          setError(result.error ?? "server_error");
+        }
+      } catch (cause) {
+        unstable_rethrow(cause);
+        setSessions([]);
+        setError("server_error");
+      } finally {
+        inFlight.current = false;
       }
     });
-  };
+  }, [slug]);
 
   useEffect(() => {
-    const t = setInterval(refresh, POLL_MS);
-    return () => clearInterval(t);
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [slug]);
+    const timer = setInterval(refresh, POLL_MS);
+    return () => clearInterval(timer);
+  }, [refresh]);
+
+  const denied = error === "unauthorized" || error === "not_found";
+  const errorMessage = denied
+    ? (language === "vi"
+      ? "Không thể xem phiên đăng nhập. Hãy đăng nhập lại hoặc liên hệ chủ salon."
+      : "Session access is unavailable. Sign in again or ask the salon owner.")
+    : (language === "vi"
+      ? "Không tải được phiên đang hoạt động. Vui lòng thử lại."
+      : "Couldn’t load active sessions. Please try again.");
 
   return (
     <div className="space-y-4">
       {/* Header row */}
-      <div className="flex items-center justify-between">
-        <div className="flex items-center gap-2">
+      <div className="flex flex-wrap items-center justify-between gap-3">
+        {!error && <div className="flex items-center gap-2">
           <span
             className={cn(
               "h-2 w-2 rounded-full",
@@ -154,22 +185,28 @@ export function SalonSessionsPanel({
               ? "No one online"
               : `${sessions.length} ${sessions.length === 1 ? "person" : "people"} online`}
           </span>
-        </div>
+        </div>}
         <div className="flex items-center gap-3">
-          <span className="text-xs text-nq-muted">
+          {!error && <span className="text-xs text-nq-muted">
             Updated {formatRelative(lastRefresh.toISOString())}
-          </span>
-          <button
-            type="button"
+          </span>}
+          <Button
+            variant="secondary"
+            size="sm"
             onClick={refresh}
-            className="rounded-lg border border-nq-border bg-nq-surface px-3 py-1.5 text-xs text-nq-muted transition-colors hover:border-nq-primary/40 hover:text-nq-foreground"
+            disabled={pending}
+            aria-busy={pending}
           >
-            Refresh
-          </button>
+            {language === "vi" ? (error ? "Thử lại" : "Làm mới") : (error ? "Try again" : "Refresh")}
+          </Button>
         </div>
       </div>
 
-      {sessions.length === 0 ? (
+      {error ? (
+        <div role="alert" className="rounded-xl border border-nq-border bg-nq-surface p-4 text-sm text-nq-foreground">
+          {errorMessage}
+        </div>
+      ) : sessions.length === 0 ? (
         <EmptyState />
       ) : (
         <div className="grid gap-3 sm:grid-cols-2 lg:grid-cols-3">

@@ -2,6 +2,7 @@
 
 import { createClient } from "@/shared/lib/supabase/server";
 import { headers } from "next/headers";
+import { unstable_rethrow } from "next/navigation";
 import { requireActiveAuthSession } from "@/shared/auth/requireActiveAuthSession";
 
 export type PresenceRow = {
@@ -91,25 +92,38 @@ export async function loadSalonSessions(slug: string): Promise<{
   sessions?: PresenceRow[];
   error?: string;
 }> {
+  try {
+    return await readSalonSessions(slug);
+  } catch (error) {
+    unstable_rethrow(error);
+    return { ok: false, error: "server_error" };
+  }
+}
+
+async function readSalonSessions(slug: string): ReturnType<typeof loadSalonSessions> {
   const supabase = await createClient();
   const session = await requireActiveAuthSession(supabase);
-  if (!session.ok) return { ok: false, error: "unauthorized" };
+  if (!session.ok) {
+    return { ok: false, error: session.code === "auth_unavailable" ? "server_error" : "unauthorized" };
+  }
   const user = session.user;
 
   // Verify caller is owner/admin of this salon.
-  const { data: salon } = await supabase
+  const { data: salon, error: salonError } = await supabase
     .from("salons")
     .select("id")
     .eq("slug", slug)
     .maybeSingle();
+  if (salonError) return { ok: false, error: "server_error" };
   if (!salon?.id) return { ok: false, error: "not_found" };
 
-  const { data: membership } = await supabase
+  const { data: membership, error: membershipError } = await supabase
     .from("salon_members")
     .select("role")
     .eq("salon_id", salon.id)
     .eq("user_id", user.id)
     .maybeSingle();
+  if (membershipError) return { ok: false, error: "server_error" };
   if (!membership || !["owner", "admin", "manager"].includes(membership.role)) {
     return { ok: false, error: "unauthorized" };
   }
@@ -148,11 +162,13 @@ export async function loadSalonSessions(slug: string): Promise<{
 
   // Batch-load salon_members for name + role + email.
   const userIds = rows.map((r) => r.user_id);
-  const { data: members } = await supabase
+  const { data: members, error: membersError } = await supabase
     .from("salon_members")
     .select("user_id, role, name, email")
     .eq("salon_id", salon.id)
     .in("user_id", userIds);
+
+  if (membersError) return { ok: false, error: "server_error" };
 
   const memberMap = new Map(
     (members ?? []).map((m) => [

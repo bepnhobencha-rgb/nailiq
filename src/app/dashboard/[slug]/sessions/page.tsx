@@ -29,7 +29,12 @@ export default async function SessionsPage({ params }: Props) {
           Staff currently logged into the dashboard — updated every 30 seconds.
         </p>
       </div>
-      <SalonSessionsPanel slug={slug} initialSessions={sessions} />
+      <SalonSessionsPanel
+        key={slug}
+        slug={slug}
+        initialSessions={sessions}
+        initialError={result.ok ? null : (result.error ?? "server_error")}
+      />
     </div>
   );
 }
