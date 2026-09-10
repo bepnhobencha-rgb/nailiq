@@ -27,7 +27,10 @@ if (
     "Auth callback tests require the local disposable Supabase stack",
   );
 }
-test.use({ baseURL: localAuthHttpsOrigin, ignoreHTTPSErrors: true });
+test.use({ baseURL: localAuthHttpsOrigin, ignoreHTTPSErrors: true, trace: "off", video: "off", screenshot: "off" });
+test.afterEach(async ({ context }) => {
+  for (const page of context.pages()) if (!page.isClosed()) await page.goto("about:blank");
+});
 const mailbox = "http://127.0.0.1:54324";
 const retryCopy = {
   en: "We couldn't complete sign-in. Please try again.",
@@ -47,6 +50,9 @@ async function requestLocalMagicLink(page: Page, email: string) {
   await expect(
     page.getByRole("heading", { name: "Check your inbox", exact: true }),
   ).toBeVisible();
+  const pkceCookies = (await page.context().cookies()).filter(cookie => cookie.name.includes("-code-verifier"));
+  expect(pkceCookies.length).toBeGreaterThan(0);
+  expect(pkceCookies.every(cookie => cookie.secure)).toBe(true);
   let messageId = "";
   await expect
     .poll(async () => {

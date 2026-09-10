@@ -20,6 +20,7 @@
  */
 import * as ErrorReporter from "@/shared/observability/errorReporter";
 import { createServerClient, type CookieOptions } from "@supabase/ssr";
+import { authCookieOptions } from "@/shared/lib/supabase/authCookieOptions";
 import { NextResponse, type NextRequest } from "next/server";
 import { NAILQ_DEMO_SLUG_COOKIE } from "@/shared/lib/demoDashboardCookie";
 import {
@@ -297,11 +298,9 @@ function applyCookiesFrom(
   target: NextResponse,
   source: NextResponse,
 ): NextResponse {
-  const secure = process.env.NODE_ENV === "production";
   for (const cookie of source.cookies.getAll()) {
     target.cookies.set({
       ...cookie,
-      secure,
     });
   }
   return target;
@@ -483,11 +482,15 @@ export async function proxy(request: NextRequest) {
 
   let supabaseResponse = NextResponse.next({ request });
   const proxyAuthCookieWrites: ProxyAuthCookieWrite[] = [];
+  const cookieOptions = authCookieOptions(
+    request.nextUrl.protocol === "https:" || request.headers.get("x-forwarded-proto") === "https",
+  );
 
   const supabase = createServerClient(
     resolveSupabaseServerUrl()!,
     process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
     {
+      cookieOptions,
       cookies: {
         getAll() {
           return request.cookies.getAll();
@@ -522,7 +525,7 @@ export async function proxy(request: NextRequest) {
   );
   for (const cookie of authResult.cookieWrites) {
     request.cookies.set(cookie.name, cookie.value);
-    supabaseResponse.cookies.set(cookie.name, cookie.value, cookie.options);
+    supabaseResponse.cookies.set(cookie.name, cookie.value, { ...cookie.options, ...cookieOptions });
   }
   const user = authResult.user;
 
