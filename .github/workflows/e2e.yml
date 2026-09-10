@@ -254,7 +254,7 @@ jobs:
             name: "SuperAdmin recovery — real auth HTTPS"
             project: "settings"
             browser: "chromium webkit"
-            testpath: "e2e/superadmin-password-recovery.spec.ts"
+            testpath: "e2e/superadmin-password-recovery.spec.ts e2e/superadmin-mfa-real-auth.spec.ts"
     env:
       # ── NO PRODUCTION SECRETS. NONE. ────────────────────────────────────────
       #
@@ -383,6 +383,8 @@ jobs:
           assert count == 1, "Unexpected confirmation fixture configuration"
           config = config[:section.start()] + email + config[section.end():]
           if "${{ matrix.shard }}" == "5":
+              # Real TOTP acceptance uses only this throwaway Auth stack.
+              config += "\n[auth.mfa.totp]\nenroll_enabled = true\nverify_enabled = true\n"
               config, count = re.subn(
                   r'(?m)^additional_redirect_urls = \["http://localhost:3000"\]$',
                   'additional_redirect_urls = ["http://localhost:3000", "https://localhost:3443/**"]',

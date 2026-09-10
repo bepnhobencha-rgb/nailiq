@@ -13,7 +13,13 @@ describe("MFA enrollment response recovery", () => {
     mocks.access.mockResolvedValue({ ok: true, supabase: { auth: { mfa: {
       listFactors: mocks.list, enroll: mocks.enroll, unenroll: mocks.remove, challenge: mocks.challenge, verify: mocks.verify,
     } } } });
-    mocks.list.mockResolvedValue({ data: { totp: [{ id: "pending", status: "unverified" }, { id: "verified", status: "verified" }] }, error: null });
+    // The SDK exposes pending factors in all; totp includes VERIFIED factors only.
+    const verified = { id: "verified", factor_type: "totp", status: "verified" };
+    mocks.list.mockResolvedValue({ data: {
+      all: [{ id: "pending", factor_type: "totp", status: "unverified" }, verified,
+        { id: "pending-phone", factor_type: "phone", status: "unverified" }],
+      totp: [verified], phone: [], webauthn: [],
+    }, error: null });
     mocks.remove.mockResolvedValue({ data: { id: "pending" }, error: null });
     mocks.enroll.mockResolvedValue({ data: { id: "new-factor", totp: { qr_code: "fake-qr", secret: "fake-secret" } }, error: null });
     mocks.challenge.mockResolvedValue({ data: { id: "challenge" }, error: null });
