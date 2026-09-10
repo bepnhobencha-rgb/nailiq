@@ -1,4 +1,5 @@
 import { test, expect } from "@playwright/test";
+import { withBookingSubmissionDiagnostics } from "./helpers/bookingSubmissionDiagnostics";
 
 import {
   acceptSmsConsentIfPresented,
@@ -28,46 +29,48 @@ test.describe("Booking Flow", () => {
   });
 
   test("Complete booking end-to-end", async ({ page }) => {
-    await gotoBookingServiceStep(page, testSlug);
-    await page.locator('[data-testid="service-tile-select"]').first().click();
-    await page.getByRole("button", { name: "Continue" }).first().click();
+    await withBookingSubmissionDiagnostics(page, test.info(), async () => {
+      await gotoBookingServiceStep(page, testSlug);
+      await page.locator('[data-testid="service-tile-select"]').first().click();
+      await page.getByRole("button", { name: "Continue" }).first().click();
 
-    await page
-      .locator('[data-testid="staff-item"]')
-      .first()
-      .waitFor({ state: "visible", timeout: 15_000 });
-    await page.locator('[data-testid="staff-item"]').first().click();
-    await page.getByRole("button", { name: "Continue" }).first().click();
+      await page
+        .locator('[data-testid="staff-item"]')
+        .first()
+        .waitFor({ state: "visible", timeout: 15_000 });
+      await page.locator('[data-testid="staff-item"]').first().click();
+      await page.getByRole("button", { name: "Continue" }).first().click();
 
-    await selectAvailableBookingDate(page);
-    await page.getByRole("button", { name: "Continue" }).first().click();
+      await selectAvailableBookingDate(page);
+      await page.getByRole("button", { name: "Continue" }).first().click();
 
-    const firstAvailableSlot = page
-      .locator('[data-testid="time-slot"]:not([disabled])')
-      .first();
-    await expect(firstAvailableSlot).toBeVisible({ timeout: 20_000 });
-    await firstAvailableSlot.click();
-    await expect(firstAvailableSlot).toHaveAttribute("aria-pressed", "true");
+      const firstAvailableSlot = page
+        .locator('[data-testid="time-slot"]:not([disabled])')
+        .first();
+      await expect(firstAvailableSlot).toBeVisible({ timeout: 20_000 });
+      await firstAvailableSlot.click();
+      await expect(firstAvailableSlot).toHaveAttribute("aria-pressed", "true");
 
-    const timeStep = page.getByRole("group", { name: "Choose a time" });
-    await advanceBookingStep(
-      timeStep,
-      page.getByTestId("booking-info-name"),
-    );
+      const timeStep = page.getByRole("group", { name: "Choose a time" });
+      await advanceBookingStep(
+        timeStep,
+        page.getByTestId("booking-info-name"),
+      );
 
-    // Phone-first: the phone was captured at the entry gate, so the info step
-    // only collects the name now.
-    const clientName = page.getByTestId("booking-info-name");
-    await clientName.fill("Test Client");
-    await page.getByRole("button", { name: "Continue" }).first().click();
+      // Phone-first: the phone was captured at the entry gate, so the info step
+      // only collects the name now.
+      const clientName = page.getByTestId("booking-info-name");
+      await clientName.fill("Test Client");
+      await page.getByRole("button", { name: "Continue" }).first().click();
 
-    await acceptSmsConsentIfPresented(page);
-    await page.getByRole("button", { name: "Confirm booking" }).click();
+      await acceptSmsConsentIfPresented(page);
+      await page.getByRole("button", { name: "Confirm booking" }).click();
 
-    await expect(
-      page.locator('[data-testid="booking-success"]'),
-    ).toBeVisible({ timeout: 15_000 });
-    await expect(page.getByText(/all set/i)).toBeVisible();
+      await expect(
+        page.locator('[data-testid="booking-success"]'),
+      ).toBeVisible({ timeout: 15_000 });
+      await expect(page.getByText(/all set/i)).toBeVisible();
+    });
   });
 
   test("Time step lists slots for a future day", async ({ page }) => {
