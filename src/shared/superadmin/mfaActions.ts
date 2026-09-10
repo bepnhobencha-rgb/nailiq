@@ -20,15 +20,20 @@ async function requireSuperadmin() {
 
 export type MfaStatus =
   | { ok: true; enrolled: boolean; factorId: string | null }
-  | { ok: false; error: "unauthorized" };
+  | { ok: false; error: "unauthorized" | "load_failed" };
 
 /** Is there a VERIFIED TOTP factor on this superadmin account? */
 export async function getMfaStatus(): Promise<MfaStatus> {
-  const supabase = await requireSuperadmin();
-  if (!supabase) return { ok: false, error: "unauthorized" };
-  const { data } = await supabase.auth.mfa.listFactors();
-  const verified = (data?.totp ?? []).find((f) => f.status === "verified");
-  return { ok: true, enrolled: Boolean(verified), factorId: verified?.id ?? null };
+  try {
+    const supabase = await requireSuperadmin();
+    if (!supabase) return { ok: false, error: "unauthorized" };
+    const { data, error } = await supabase.auth.mfa.listFactors();
+    if (error || !data) return { ok: false, error: "load_failed" };
+    const verified = data.totp.find((f) => f.status === "verified");
+    return { ok: true, enrolled: Boolean(verified), factorId: verified?.id ?? null };
+  } catch {
+    return { ok: false, error: "load_failed" };
+  }
 }
 
 export type StartEnrollResult =

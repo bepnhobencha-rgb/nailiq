@@ -1,6 +1,7 @@
 "use client";
 
-import { useEffect, useState, useTransition } from "react";
+import { useCallback, useEffect, useState, useTransition } from "react";
+import { Button } from "@/components/ui/Button";
 import {
   getMfaStatus,
   startMfaEnroll,
@@ -25,21 +26,37 @@ export function MfaManager() {
   const [code, setCode] = useState("");
   const [msg, setMsg] = useState<string | null>(null);
   const [err, setErr] = useState<string | null>(null);
+  const [statusError, setStatusError] = useState<string | null>(null);
+  const [loadingStatus, setLoadingStatus] = useState(true);
   const [pending, start] = useTransition();
 
-  const refresh = () =>
+  const refresh = useCallback(() => {
     start(async () => {
-      const s = await getMfaStatus();
-      if (s.ok) {
-        setEnrolled(s.enrolled);
-        setFactorId(s.factorId);
+      setEnrolled(null);
+      setFactorId(null);
+      setStatusError(null);
+      setLoadingStatus(true);
+      try {
+        const s = await getMfaStatus();
+        if (s.ok) {
+          setEnrolled(s.enrolled);
+          setFactorId(s.factorId);
+        } else {
+          setStatusError(s.error === "unauthorized"
+            ? "Session expired — sign in again."
+            : "Could not load two-factor status. Please try again.");
+        }
+      } catch {
+        setStatusError("Could not load two-factor status. Please try again.");
+      } finally {
+        setLoadingStatus(false);
       }
     });
+  }, [start]);
 
   useEffect(() => {
     refresh();
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, []);
+  }, [refresh]);
 
   const beginEnroll = () =>
     start(async () => {
@@ -91,14 +108,23 @@ export function MfaManager() {
         <span
           className={cn(
             "shrink-0 rounded-full px-2.5 py-1 text-xs font-semibold",
-            enrolled
-              ? "bg-nq-success/15 text-nq-success"
-              : "bg-nq-warning/15 text-nq-warning",
+            enrolled === null
+              ? "bg-nq-surface text-nq-muted"
+              : enrolled
+                ? "bg-nq-success/15 text-nq-success"
+                : "bg-nq-warning/15 text-nq-warning",
           )}
         >
-          {enrolled === null ? "…" : enrolled ? "ON" : "OFF"}
+          {enrolled === null ? (loadingStatus ? "…" : "Unavailable") : enrolled ? "ON" : "OFF"}
         </span>
       </div>
+
+      {statusError ? <p role="alert" className="mt-3 text-sm text-nq-error">{statusError}</p> : null}
+      {statusError || loadingStatus ? (
+        <Button variant="secondary" size="lg" className="mt-4" onClick={refresh} disabled={pending || loadingStatus}>
+          {loadingStatus ? "Checking…" : "Try again"}
+        </Button>
+      ) : null}
 
       {msg ? <p className="mt-3 text-sm text-nq-success">{msg}</p> : null}
       {err ? (
@@ -108,7 +134,7 @@ export function MfaManager() {
       ) : null}
 
       {/* Enrolled → offer disable */}
-      {enrolled && !enroll ? (
+      {enrolled === true && !loadingStatus && !enroll ? (
         <button
           type="button"
           onClick={disable}
@@ -120,7 +146,7 @@ export function MfaManager() {
       ) : null}
 
       {/* Not enrolled, not mid-enroll → start */}
-      {!enrolled && !enroll ? (
+      {enrolled === false && !loadingStatus && !enroll ? (
         <button
           type="button"
           onClick={beginEnroll}
