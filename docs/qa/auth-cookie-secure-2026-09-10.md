@@ -1,7 +1,7 @@
 # AUTH-COOKIE-01 — Shared Auth cookie transport
 
 Base: `e9fe404f4611562678d6b77ddc3fb9dc3e276dfd` (PR #1389).
-Branch: `fix/auth-cookie-secure-20260910`. Local verification; unpublished.
+Branch: `fix/auth-cookie-secure-20260910`. PR #1390; see the CI follow-up below.
 
 ## Confirmed failure and cause
 
@@ -39,7 +39,8 @@ cookies are not retroactively rewritten just by deploying this code.
 
 ## Verification
 
-Final local acceptance: **PASS**, unpublished.
+Pre-publication local acceptance: **PASS**. This table is the original local
+snapshot; CI results are tracked separately below.
 
 | Gate | Result |
 |---|---|
@@ -81,6 +82,38 @@ WebKit loopback TLS failure and an in-flight request racing test cleanup. The
 final harness drains callbacks with `behavior: "wait"`; it does not ignore
 errors. The successful HTTPS refresh checks are repeated twice per browser.
 These infrastructure retries are not counted as additional feature coverage.
+
+## CI follow-up: form readiness and fixture cleanup
+
+The first PR run at `7ff911fc` passed all nine CI jobs (4,742 unit tests,
+one skipped), but the HTTPS Auth shard passed 48 cases and failed six Linux
+WebKit password-form cases. Each failed twice while still on `/login`, before
+the cookie assertions. All 20 real-MFA and 18 recovery cases passed.
+
+A separate Linux ARM64 Chromium/WebKit probe retained Secure cookies with and
+without request interception. Both ordinary local Linux sign-in variants also
+passed. A controlled slow-script experiment reproduced the failing path:
+filling the unhydrated form yielded the missing-email message, no Auth POST and
+no cookie. Waiting for the existing submit-ready signal before filling reached
+the dashboard with Secure cookies. This demonstrates a race in the original
+test. The initial CI artifact lacks the form/network snapshot needed to prove
+that it was the cause of each original CI failure.
+
+The cookie tests now wait for the existing enabled submit button before filling,
+as the other password-Auth specs already do. The cleanup calls also now pass
+`salon.slug`, which the existing cleanup helper requires, instead of its ID.
+The global sweep and database destruction had protected the earlier runs; this
+correction makes per-case salon cleanup target the intended fixture directly.
+No product code, cookie policy, assertion or timeout was changed in this follow-up.
+
+The corrected cookie spec passed **16/16** on Linux ARM64 Chromium and WebKit,
+with zero retries, failures, skips or flaky cases. The local Next server ran on
+macOS and Auth on the disposable Linux stack; this is not an identical GitHub
+runner. Typecheck, touched-file lint and whitespace checks passed. Remote CI on
+the corrected commit must still pass before release readiness is established.
+Controlled failure evidence is retained outside Git and excluded from passing
+feature totals. The pre-hydration input behavior remains a separate existing
+form behavior; this cookie PR does not claim to fix it for end users.
 
 ## References
 

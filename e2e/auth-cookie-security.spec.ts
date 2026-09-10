@@ -47,6 +47,7 @@ for (const role of ["owner", "admin", "senior", "receptionist", "nail_tech"] as 
       });
       await page.addInitScript(() => localStorage.setItem("nailiq-user-lang", "en"));
       await page.goto("/login");
+      await expect(page.getByTestId("password-signin-submit")).toBeEnabled();
       await page.locator('input[inputmode="email"]').fill(user.email);
       await page.locator('input[type="password"]').fill(user.password);
       await page.getByTestId("password-signin-submit").click();
@@ -77,7 +78,7 @@ for (const role of ["owner", "admin", "senior", "receptionist", "nail_tech"] as 
       await expect.poll(() => new URL(page.url()).pathname).toBe(destination);
       await expect(page.locator("main")).toBeVisible();
       expect((await context.cookies()).some(cookie => cookie.name === "nailiq-demo-slug")).toBe(false);
-    }, () => cleanupTestSalon(salon.salonId), async () => { if (user) await cleanupTestUser(user.userId); });
+    }, () => cleanupTestSalon(salon.slug), async () => { if (user) await cleanupTestUser(user.userId); });
   });
 }
 
@@ -126,6 +127,7 @@ test("automatic browser refresh preserves cookie flags after returning to the fr
         ? route.continue() : route.abort("blockedbyclient");
     });
     await page.goto("/login");
+    await expect(page.getByTestId("password-signin-submit")).toBeEnabled();
     await page.locator('input[inputmode="email"]').fill(user.email);
     await page.locator('input[type="password"]').fill(user.password);
     await test.step("Submit password form", () => page.getByTestId("password-signin-submit").click(), { timeout: 10_000 });
@@ -151,5 +153,5 @@ test("automatic browser refresh preserves cookie flags after returning to the fr
     // Drain real Auth transport callbacks before closing their context or
     // removing the QA user. Do not suppress errors from unfinished requests.
     await context.unrouteAll({ behavior: "wait" });
-  }, () => cleanupTestSalon(salon.salonId), async () => { if (user) await cleanupTestUser(user.userId); });
+  }, () => cleanupTestSalon(salon.slug), async () => { if (user) await cleanupTestUser(user.userId); });
 });
