@@ -103,20 +103,38 @@ export async function unenrollMfa(factorId: string): Promise<VerifyResult> {
  * Login gate: verify a TOTP code to upgrade this session from aal1 → aal2.
  * Resolves the factor server-side (the page only sends the code).
  */
-export async function verifyMfaChallenge(code: string): Promise<VerifyResult> {
-  const supabase = await requireSuperadmin();
-  if (!supabase) return { ok: false, error: "unauthorized" };
-  const { data: list } = await supabase.auth.mfa.listFactors();
-  const factor = (list?.totp ?? []).find((f) => f.status === "verified");
-  if (!factor) return { ok: false, error: "invalid_code" };
-  const { data: ch, error: chErr } = await supabase.auth.mfa.challenge({
-    factorId: factor.id,
-  });
-  if (chErr || !ch) return { ok: false, error: "invalid_code" };
-  const { error } = await supabase.auth.mfa.verify({
-    factorId: factor.id,
-    challengeId: ch.id,
-    code: code.trim(),
-  });
-  return error ? { ok: false, error: "invalid_code" } : { ok: true };
+export async function verifyMfaChallenge(code: string): Promise<
+  VerifyResult | { ok: false; error: "verification_unavailable" }
+> {
+  try {
+    const access = await requireActiveSuperAdminSession();
+    if (!access.ok) return {
+      ok: false,
+      error: access.code === "auth_unavailable" ? "verification_unavailable" : "unauthorized",
+    };
+    const normalized = code.trim();
+    if (!/^\d{6}$/.test(normalized)) return { ok: false, error: "invalid_code" };
+    const { supabase } = access;
+    const { data: list, error: listError } = await supabase.auth.mfa.listFactors();
+    if (listError || !list) return { ok: false, error: "verification_unavailable" };
+    const factor = list.totp.find((f) => f.status === "verified");
+    if (!factor) return { ok: false, error: "invalid_code" };
+    const { data: ch, error: chErr } = await supabase.auth.mfa.challenge({ factorId: factor.id });
+    if (chErr || !ch) return { ok: false, error: "verification_unavailable" };
+    const { data, error } = await supabase.auth.mfa.verify({
+      factorId: factor.id,
+      challengeId: ch.id,
+      code: normalized,
+    });
+    if (error) return {
+      ok: false,
+      error: error.code === "mfa_verification_failed" || error.code === "mfa_challenge_expired"
+        ? "invalid_code" : "verification_unavailable",
+    };
+    return data ? { ok: true } : { ok: false, error: "verification_unavailable" };
+  } catch {
+    // A lost response does not establish whether verification took effect.
+    // Keep the form recoverable without exposing provider details or retrying.
+    return { ok: false, error: "verification_unavailable" };
+  }
 }

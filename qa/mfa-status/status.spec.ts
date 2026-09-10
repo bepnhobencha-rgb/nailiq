@@ -3,7 +3,7 @@ import { expect, test, type BrowserContext } from "@playwright/test";
 const fixture = "qa/mfa-status";
 const manifest = JSON.parse(readFileSync(`${fixture}/.next/server/server-reference-manifest.json`, "utf8"));
 const exported = Object.values(manifest.node) as { filename: string; exportedName: string }[];
-const allowed = ["getMfaStatus", "startMfaEnroll", "verifyMfaEnroll", "unenrollMfa"];
+const allowed = ["getMfaStatus", "startMfaEnroll", "verifyMfaEnroll", "unenrollMfa", "verifyMfaChallenge"];
 if (exported.some(a => a.filename !== "actions.ts" || !allowed.includes(a.exportedName)) || !exported.some(a => a.exportedName === "getMfaStatus")) throw new Error("Fixture contains unexpected actions");
 const readIds = new Set(Object.entries(manifest.node).filter(([, a]) => (a as { exportedName: string }).exportedName === "getMfaStatus").map(([id]) => id));
 const buildId = readFileSync(`${fixture}/.next/BUILD_ID`, "utf8").trim();

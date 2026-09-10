@@ -7,3 +7,9 @@ export async function getMfaStatus() {
 export async function startMfaEnroll() { throw new Error("Unexpected QA enrollment mutation"); }
 export async function verifyMfaEnroll() { throw new Error("Unexpected QA verification mutation"); }
 export async function unenrollMfa() { throw new Error("Unexpected QA unenrollment mutation"); }
+export async function verifyMfaChallenge() {
+  const fault = (await cookies()).get("qa-challenge-fault")?.value;
+  if (fault === "throw") throw new Error("private Auth detail");
+  if (fault) return { ok: false as const, error: fault };
+  return { ok: true as const };
+}

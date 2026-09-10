@@ -238,8 +238,10 @@ jobs:
         run: npx next build qa/mfa-status --webpack
         env:
           NEXT_TELEMETRY_DISABLED: '1'
-      - name: Test MFA status loading and recovery
+      - name: Test MFA status and challenge recovery
         run: npx playwright test -c qa/mfa-status/playwright.config.ts
+        env:
+          PLAYWRIGHT_JSON_OUTPUT_NAME: ${{ github.workspace }}/test-results/mfa-status-results.json
       - uses: actions/upload-artifact@v7
         if: always()
         with:
