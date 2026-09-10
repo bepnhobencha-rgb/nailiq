@@ -116,6 +116,8 @@ export function SocialAuthButtons({
   // Auth controls are server-rendered before their click handlers exist.
   // Keep them disabled for that brief window so a fast tap is not silently
   // lost (most visible on mobile/WebKit and under a busy main thread).
+  // Controlled fields need the same gate: drafts entered before onChange
+  // exists would otherwise be cleared by the first client update.
   const isHydrated = useSyncExternalStore(
     noopSubscribe,
     () => true,
@@ -524,6 +526,7 @@ export function SocialAuthButtons({
             type="email"
             inputMode="email"
             autoComplete="email"
+            disabled={!isHydrated}
             aria-label={t.emailLabel}
             placeholder={t.emailPlaceholder}
             className="text-base min-h-[48px]"
@@ -552,6 +555,7 @@ export function SocialAuthButtons({
               <Input
                 id="password-input"
                 type="password"
+                disabled={!isHydrated}
                 autoComplete={
                   mode === "register" ? "new-password" : "current-password"
                 }

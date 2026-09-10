@@ -2,6 +2,9 @@
   "extends": "../../tsconfig.json",
   "compilerOptions": {
     "paths": {
+      "@/shared/auth/emailPasswordAuth": ["./email-password-action.ts"],
+      "@/shared/register/actions": ["./magic-link-action.ts"],
+      "@/shared/lib/supabase/client": ["./supabase-client.ts"],
       "@/*": [
         "../../src/*"
       ],

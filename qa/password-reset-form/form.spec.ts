@@ -1,17 +1,10 @@
 import { readFileSync } from "node:fs";
 import { expect, test, type BrowserContext } from "@playwright/test";
+import { assertInertFixture } from "./assert-inert-fixture";
 
 // Real React component + Next action decoder in an isolated fixture, not a
 // bypass of the protected production page. Every POST is intercepted.
-const manifest = JSON.parse(readFileSync("qa/password-reset-form/.next/server/server-reference-manifest.json", "utf8"));
-const actions = Object.values(manifest.node) as { filename: string; exportedName: string }[];
-const expectedActions = [
-  "action.ts:completeSalonOwnerPasswordReset",
-  "superadmin-action.ts:completeSuperadminPasswordReset",
-];
-if (JSON.stringify(actions.map(action => `${action.filename}:${action.exportedName}`).sort()) !== JSON.stringify(expectedActions)) {
-  throw new Error("Fixture must contain only its two inert actions; refusing to test an Auth-backed build");
-}
+assertInertFixture();
 const buildId = readFileSync("qa/password-reset-form/.next/BUILD_ID", "utf8").trim();
 const password = "QA-Only-Password-42";
 const copy = {
