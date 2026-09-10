@@ -18,6 +18,8 @@ const eslintConfig = defineConfig([
   globalIgnores([
     // Default ignores of eslint-config-next:
     ".next/**",
+    "qa/users-hydration/.next/**",
+    "qa/users-hydration/next-env.d.ts",
     "qa/session-read/.next/**",
     "qa/session-read/next-env.d.ts",
     "qa/password-reset-form/.next/**",

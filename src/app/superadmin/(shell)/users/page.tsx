@@ -2,6 +2,7 @@ import { requireSuperadminPage } from "@/shared/superadmin/requireSuperadminPage
 export const dynamic = "force-dynamic";
 
 import { loadAllUsers } from "@/shared/superadmin/superadminActions";
+import { presentUserList } from "@/shared/superadmin/userListPresentation";
 import { UserListTable } from "@/components/superadmin/UserListTable";
 
 export default async function SuperadminUsersPage() {
@@ -52,7 +53,7 @@ export default async function SuperadminUsersPage() {
         <StatCard label="New this week" value={weekCount} accent="blue" />
       </div>
 
-      <UserListTable users={users} />
+      <UserListTable users={presentUserList(users, now)} />
     </div>
   );
 }

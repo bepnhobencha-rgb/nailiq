@@ -173,3 +173,27 @@ jobs:
           path: test-results/booking-country-phone/
           if-no-files-found: error
           retention-days: 14
+
+  users-hydration:
+    name: Superadmin users hydration browser
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-node@v6
+        with:
+          node-version: '20'
+          cache: 'npm'
+      - run: npm ci
+      - run: npx playwright install --with-deps chromium webkit
+      - name: Build isolated users page (no Auth or database)
+        run: npx next build qa/users-hydration --webpack
+        env:
+          NEXT_TELEMETRY_DISABLED: '1'
+      - name: Test clock and timezone hydration boundaries
+        run: npx playwright test -c qa/users-hydration/playwright.config.ts
+      - uses: actions/upload-artifact@v7
+        if: always()
+        with:
+          name: users-hydration-results
+          path: test-results/
+          retention-days: 14

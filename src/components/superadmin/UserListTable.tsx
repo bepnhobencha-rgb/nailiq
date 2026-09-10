@@ -3,40 +3,18 @@
 import { useState, useMemo } from "react";
 import Link from "next/link";
 import { cn } from "@/shared/lib/cn";
-import type { SuperAdminUserRow } from "@/shared/superadmin/superadminTypes";
+import type { UserListRow } from "@/shared/superadmin/userListPresentation";
 
 type SortKey = "lastSignIn" | "createdAt" | "email";
 
-function formatRelative(iso: string | null): string {
-  if (!iso) return "Never";
-  const diff = Date.now() - new Date(iso).getTime();
-  const mins = Math.floor(diff / 60_000);
-  if (mins < 1) return "Just now";
-  if (mins < 60) return `${mins}m ago`;
-  const hrs = Math.floor(mins / 60);
-  if (hrs < 24) return `${hrs}h ago`;
-  const days = Math.floor(hrs / 24);
-  if (days < 30) return `${days}d ago`;
-  return new Date(iso).toLocaleDateString("en-CA");
-}
-
-function liveStatus(lastSignInAt: string | null): "live" | "today" | "week" | "dormant" {
-  if (!lastSignInAt) return "dormant";
-  const diff = Date.now() - new Date(lastSignInAt).getTime();
-  if (diff < 15 * 60 * 1000) return "live";
-  if (diff < 24 * 60 * 60 * 1000) return "today";
-  if (diff < 7 * 24 * 60 * 60 * 1000) return "week";
-  return "dormant";
-}
-
-const STATUS_DOT: Record<ReturnType<typeof liveStatus>, string> = {
+const STATUS_DOT: Record<UserListRow["activityStatus"], string> = {
   live: "bg-emerald-400 shadow-[0_0_6px_2px_rgba(52,211,153,0.5)]",
   today: "bg-amber-400",
   week: "bg-sky-400",
   dormant: "bg-nq-border",
 };
 
-const STATUS_LABEL: Record<ReturnType<typeof liveStatus>, string> = {
+const STATUS_LABEL: Record<UserListRow["activityStatus"], string> = {
   live: "Live",
   today: "Today",
   week: "This week",
@@ -78,7 +56,7 @@ function SortButton({
   );
 }
 
-export function UserListTable({ users }: { users: SuperAdminUserRow[] }) {
+export function UserListTable({ users }: { users: UserListRow[] }) {
   const [query, setQuery] = useState("");
   const [sort, setSort] = useState<SortKey>("lastSignIn");
 
@@ -177,7 +155,7 @@ export function UserListTable({ users }: { users: SuperAdminUserRow[] }) {
               </tr>
             ) : (
               filtered.map((user) => {
-                const status = liveStatus(user.lastSignInAt);
+                const status = user.activityStatus;
                 return (
                   <tr
                     key={user.id}
@@ -238,14 +216,12 @@ export function UserListTable({ users }: { users: SuperAdminUserRow[] }) {
 
                     {/* Last active */}
                     <td className="px-4 py-3 tabular-nums text-xs text-nq-muted">
-                      {formatRelative(user.lastSignInAt)}
+                      {user.activityLabel}
                     </td>
 
                     {/* Joined */}
                     <td className="px-4 py-3 tabular-nums text-xs text-nq-muted">
-                      {user.createdAt
-                        ? new Date(user.createdAt).toLocaleDateString("en-CA")
-                        : "—"}
+                      {user.joinedLabel}
                     </td>
                   </tr>
                 );
