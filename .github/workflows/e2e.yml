@@ -218,7 +218,7 @@ jobs:
               e2e/register-success-auth-guard.spec.ts
               e2e/register.spec.ts
               e2e/setup-ai-prefill.spec.ts
-              e2e/superadmin
+              e2e/superadmin/
           # Receptionist specs remain serial inside each browser job because
           # they share a fixture slug. The browser jobs themselves are safe to
           # parallelize: each runner owns a separate throwaway Supabase stack.

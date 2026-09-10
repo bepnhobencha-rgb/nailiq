@@ -1,6 +1,6 @@
 # SuperAdmin password recovery — bằng chứng Auth QA thật
 
-**Local QA PASS. Chưa commit/push/CI/Preview hoặc phát hành thay đổi của lô này.**
+**Mốc kiểm chứng trước khi mở PR: Local QA PASS. Kết quả CI/Preview được theo dõi riêng trong PR #1385.**
 
 ## Phạm vi
 
@@ -42,7 +42,7 @@ Sau test: **0 auth users, 0 auth sessions, 0 superadmins, 0 salons, 0 bookings, 
 
 ## Thay đổi workflow
 
-Spec chỉ thêm vào shard 4 đang dùng Auth thật. Shard này dùng canonical HTTPS local, cho phép redirect vào proxy TLS và sinh khóa ký recovery ngẫu nhiên mỗi run. Các shard khác giữ origin hiện tại. Không thay biến Vercel Production hoặc secret hosted.
+Spec chỉ thêm vào shard 4 đang dùng Auth thật. Shard này dùng canonical HTTPS local, cho phép redirect vào proxy TLS và sinh khóa ký recovery ngẫu nhiên mỗi run. Các shard khác giữ origin hiện tại. Bộ lọc thư mục SuperAdmin của shard 1 dùng dấu gạch chéo cuối để không bắt nhầm spec recovery ở thư mục cha; đã tái hiện lỗi chọn nhầm bằng Playwright --list trước khi sửa. Sau sửa, discovery cả bốn shard PASS: 176/112/112/214 ca được liệt kê; 18 ca recovery chỉ có trong shard 4. Đây là kiểm tra chọn ca, không phải chạy lại các ca đó. Không thay biến Vercel Production hoặc secret hosted.
 
 ## Giới hạn
 
