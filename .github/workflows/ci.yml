@@ -219,5 +219,6 @@ jobs:
         if: always()
         with:
           name: booking-error-results
-          path: test-results/
+          path: test-results/booking-error/
+          if-no-files-found: error
           retention-days: 14
