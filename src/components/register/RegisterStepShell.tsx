@@ -53,6 +53,9 @@ export function RegisterStepShell({
       <div className="flex items-center justify-between gap-4">
         <Link
           href="/"
+          // Reloading a registration step can interrupt this unrelated RSC
+          // prefetch in WebKit. Fetch the home page only when it is requested.
+          prefetch={false}
           className="text-sm text-nq-muted transition-colors duration-200 hover:text-nq-foreground/90"
         >
           {t.backHome}
