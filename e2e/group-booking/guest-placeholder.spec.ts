@@ -29,11 +29,14 @@ const supabase = createClient(
 const SLUG = "e2e-group-placeholder";
 let salon: GroupTestSalon;
 
-test.beforeAll(async () => {
+// Every case needs a NEW customer. Deleting client_profiles alone is insufficient:
+// customer lookup also recognizes previous bookings in this salon. A shared
+// beforeAll salon let the successful booking case contaminate the next case.
+test.beforeEach(async () => {
   salon = await seedGroupTestSalon(SLUG);
 });
 
-test.afterAll(async () => {
+test.afterEach(async () => {
   await cleanupTestSalon(SLUG);
 });
 
