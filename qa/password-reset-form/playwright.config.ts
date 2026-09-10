@@ -4,7 +4,7 @@ import path from "node:path";
 const resultsRoot = path.resolve(__dirname, "../../test-results/password-reset-form");
 export default defineConfig({
   testDir: ".",
-  testMatch: "form.spec.ts",
+  testMatch: ["form.spec.ts", "readiness.spec.ts"],
   fullyParallel: false,
   workers: 1,
   retries: 0,
