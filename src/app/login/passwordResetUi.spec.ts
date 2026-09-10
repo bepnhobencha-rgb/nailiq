@@ -43,6 +43,13 @@ describe("password reset user-facing states", () => {
     expect(vietnamese).toContain("Link đặt lại này đã hết hạn");
   });
 
+  it.each(["en", "vi"] as const)("uses a remembered-password prompt in %s", (language) => {
+    mocks.language = language;
+    const html = renderToStaticMarkup(createElement(ForgotPasswordClient));
+    expect(html).toContain(language === "en" ? "Remember your password?" : "Bạn đã nhớ mật khẩu?");
+    expect(html).not.toContain(language === "en" ? "Email address?" : "Địa chỉ email?");
+  });
+
   it("shows localized committed-success truth even when sign-in is disabled", () => {
     mocks.language = "vi";
     const html = renderToStaticMarkup(
@@ -68,6 +75,7 @@ describe("password reset user-facing states", () => {
     expect(salon.match(/max[Ll]ength="72"/g)).toHaveLength(2);
     expect(superadmin.match(/min[Ll]ength="8"/g)).toHaveLength(2);
     expect(superadmin.match(/max[Ll]ength="72"/g)).toHaveLength(2);
-    expect(superadmin).toContain("Mật khẩu mới");
+    expect(superadmin).toContain("New password");
+    expect(superadmin).not.toContain("Mật khẩu mới");
   });
 });

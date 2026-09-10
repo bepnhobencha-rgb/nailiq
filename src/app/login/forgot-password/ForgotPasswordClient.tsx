@@ -144,7 +144,7 @@ export function ForgotPasswordClient({
       ) : null}
 
       <p className="text-sm text-nq-muted">
-        {`${t.emailLabel}? `}
+        {t.forgotPasswordRemembered}{" "}
         <Link
           href="/login"
           className="font-medium text-nq-accent underline-offset-4 hover:underline"

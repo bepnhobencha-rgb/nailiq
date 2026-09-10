@@ -563,8 +563,10 @@ export type UserMessages = {
     forgotPasswordSentTitle: string;
     forgotPasswordSentBody: string;
     forgotPasswordBackToSignIn: string;
+    forgotPasswordRemembered: string;
     /** Reset password page. */
     resetPasswordPageTitle: string;
+    resetPasswordPageSubtitle: string;
     resetPasswordNewPassword: string;
     resetPasswordConfirmPassword: string;
     resetPasswordSubmit: string;
@@ -3349,7 +3351,9 @@ export const userEn: UserMessages = {
     forgotPasswordSentBody:
       "If an account exists with that email, we've sent a password reset link. Links expire in one hour.",
     forgotPasswordBackToSignIn: "Back to sign in",
+    forgotPasswordRemembered: "Remember your password?",
     resetPasswordPageTitle: "Create a new password",
+    resetPasswordPageSubtitle: "Choose a strong password (8+ characters with uppercase and numbers recommended). You'll be signed out and asked to sign in fresh with the new password.",
     resetPasswordNewPassword: "New password",
     resetPasswordConfirmPassword: "Confirm password",
     resetPasswordSubmit: "Set new password",

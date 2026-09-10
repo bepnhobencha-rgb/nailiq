@@ -2,7 +2,7 @@ import type { Metadata } from "next";
 import { redirect } from "next/navigation";
 import { createClient } from "@/shared/lib/supabase/server";
 import { requireActivePasswordRecoverySession } from "@/shared/auth/requireActivePasswordRecoverySession";
-import { SalonOwnerResetPasswordForm } from "./SalonOwnerResetPasswordForm";
+import { SalonOwnerResetPasswordForm, SalonOwnerResetPasswordHeader } from "./SalonOwnerResetPasswordForm";
 
 export const dynamic = "force-dynamic";
 
@@ -55,18 +55,7 @@ export default async function SalonOwnerResetPasswordPage() {
 
   return (
     <main className="mx-auto flex w-full max-w-md flex-col gap-8 px-5 py-16 md:px-8">
-      <header className="flex flex-col gap-2">
-        <p className="text-xs font-medium uppercase tracking-[0.18em] text-nq-muted">
-          NailIQ
-        </p>
-        <h1 className="text-2xl font-semibold tracking-tight text-nq-foreground">
-          Set a new password
-        </h1>
-        <p className="text-sm text-nq-muted">
-          Choose a strong password (8+ characters with uppercase and numbers recommended). You&apos;ll be
-          signed out and asked to sign in fresh with the new password.
-        </p>
-      </header>
+      <SalonOwnerResetPasswordHeader />
 
       <SalonOwnerResetPasswordForm />
     </main>

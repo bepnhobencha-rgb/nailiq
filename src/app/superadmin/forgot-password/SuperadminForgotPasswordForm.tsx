@@ -1,6 +1,8 @@
 "use client";
 
 import Link from "next/link";
+import { useUserLanguage } from "@/shared/lib/useUserLanguage";
+import { getSuperadminAuthMessages } from "@/shared/i18n/superadmin/auth";
 import { useState, useTransition } from "react";
 import { Button } from "@/components/ui/Button";
 import { Input } from "@/components/ui/Input";
@@ -15,6 +17,8 @@ import { requestSuperadminPasswordReset } from "@/shared/superadmin/superadminAu
  * `server_error` is the only branch that surfaces a distinct message.
  */
 export function SuperadminForgotPasswordForm() {
+  const { language } = useUserLanguage();
+  const t = getSuperadminAuthMessages(language);
   const [email, setEmail] = useState("");
   const [status, setStatus] = useState<"idle" | "sent" | "error">("idle");
   const [pending, startTransition] = useTransition();
@@ -36,17 +40,16 @@ export function SuperadminForgotPasswordForm() {
         role="status"
       >
         <p className="text-sm font-medium text-nq-foreground">
-          Check your inbox / Kiểm tra hộp thư
+          {t.forgotSentTitle}
         </p>
         <p className="text-sm text-nq-muted">
-          If the account is eligible, a password-reset link is on its way. /
-          Nếu tài khoản đủ điều kiện, link đặt lại mật khẩu đang được gửi.
+          {t.forgotSentBody}
         </p>
         <Link
           href="/superadmin/login"
           className="text-sm font-medium text-nq-accent underline-offset-4 hover:underline"
         >
-          Back to sign-in / Quay lại đăng nhập
+          {t.backToSignIn}
         </Link>
       </div>
     );
@@ -60,7 +63,7 @@ export function SuperadminForgotPasswordForm() {
       data-testid="superadmin-forgot-password-form"
     >
       <label className="flex flex-col gap-2">
-        <span className="text-sm font-medium text-nq-foreground">Email</span>
+        <span className="text-sm font-medium text-nq-foreground">{t.email}</span>
         <Input
           type="email"
           inputMode="email"
@@ -87,24 +90,55 @@ export function SuperadminForgotPasswordForm() {
         fullWidth
         loading={pending}
       >
-        Send reset link / Gửi link đặt lại
+        {t.forgotSubmit}
       </Button>
 
       {status === "error" ? (
         <p className="text-sm text-nq-error" role="alert">
-          Something went wrong. Try again. / Có lỗi xảy ra. Vui lòng thử lại.
+          {t.serverError}
         </p>
       ) : null}
 
       <p className="text-sm text-nq-muted">
-        Remembered it? / Đã nhớ mật khẩu?{" "}
+        {t.rememberedPassword}{" "}
         <Link
           href="/superadmin/login"
           className="font-medium text-nq-accent underline-offset-4 hover:underline"
         >
-          Back to sign-in / Quay lại đăng nhập
+          {t.backToSignIn}
         </Link>
       </p>
     </form>
+  );
+}
+
+export function SuperadminForgotPasswordIntro({ invalidOrExpired = false, temporarilyUnavailable = false }: { invalidOrExpired?: boolean; temporarilyUnavailable?: boolean }) {
+  const { language } = useUserLanguage();
+  const t = getSuperadminAuthMessages(language);
+  return (
+    <>
+      <header className="flex flex-col gap-2">
+        <p className="text-xs font-medium uppercase tracking-[0.18em] text-nq-muted">
+          NailIQ
+        </p>
+        <h1 className="text-2xl font-semibold tracking-tight text-nq-foreground">
+          {t.forgotTitle}
+        </h1>
+        <p className="text-sm text-nq-muted">
+          {t.forgotSubtitle}
+        </p>
+      </header>
+
+      {invalidOrExpired ? (
+        <p className="text-sm text-nq-error" role="alert">
+          {t.invalidLink}
+        </p>
+      ) : null}
+      {temporarilyUnavailable ? (
+        <p className="text-sm text-nq-error" role="alert">
+          {t.recoveryUnavailable}
+        </p>
+      ) : null}
+    </>
   );
 }
