@@ -248,6 +248,7 @@ jobs:
               e2e/auth-keyboard-submit.spec.ts
               e2e/google-auth-recovery.spec.ts
               e2e/forgot-password-request-recovery.spec.ts
+              e2e/superadmin-password-recovery.spec.ts
     env:
       # ── NO PRODUCTION SECRETS. NONE. ────────────────────────────────────────
       #
@@ -266,7 +267,7 @@ jobs:
       #
       # e2e/helpers/guardProduction.ts is still the second lock: it aborts the run
       # if the Supabase URL ever resolves to the production project ref.
-      NEXT_PUBLIC_SITE_URL: http://localhost:3000
+      NEXT_PUBLIC_SITE_URL: ${{ matrix.shard == 4 && 'https://localhost:3443' || 'http://localhost:3000' }}
       BASE_URL: http://localhost:3000
       PLAYWRIGHT_BASE_URL: http://localhost:3000
       NEXT_PUBLIC_DEMO_OTP: ${{ matrix.shard == 4 && 'false' || 'true' }}
@@ -360,7 +361,7 @@ jobs:
         uses: supabase/setup-cli@v2
         with:
           version: 2.109.1
-      - name: Require email confirmation in the real-auth fixture
+      - name: Configure confirmation and HTTPS recovery in the real-auth fixture
         if: steps.preflight.outputs.configured == 'true' && matrix.shard == 4
         # Only this disposable stack exercises new, unconfirmed signups.
         # Existing admin-seeded, confirmed users remain valid.
@@ -374,7 +375,14 @@ jobs:
           assert section, "Missing auth.email fixture configuration"
           email, count = re.subn(r"(?m)^enable_confirmations = false$", "enable_confirmations = true", section.group())
           assert count == 1, "Unexpected confirmation fixture configuration"
-          path.write_text(config[:section.start()] + email + config[section.end():])
+          config = config[:section.start()] + email + config[section.end():]
+          config, count = re.subn(
+              r'(?m)^additional_redirect_urls = \["http://localhost:3000"\]$',
+              'additional_redirect_urls = ["http://localhost:3000", "https://localhost:3443/**"]',
+              config,
+          )
+          assert count == 1, "Unexpected local Auth redirect configuration"
+          path.write_text(config)
           PYCONFIG
       - name: Start Supabase (local, throwaway)
         if: steps.preflight.outputs.configured == 'true'
@@ -427,6 +435,13 @@ jobs:
           # executor. Give this throwaway app/database pair a per-run cron
           # credential so the test exercises the real authenticated route.
           echo "CRON_SECRET=${INTERNAL_SECRET}" >> "$GITHUB_ENV"
+          # A distinct throwaway signing key lets the real recovery callback
+          # issue a capability bound to the local user's Auth session.
+          if [ "${{ matrix.shard }}" = "4" ]; then
+            RECOVERY_SECRET="$(openssl rand -hex 32)"
+            echo "::add-mask::${RECOVERY_SECRET}"
+            echo "PASSWORD_RECOVERY_SIGNING_SECRET=${RECOVERY_SECRET}" >> "$GITHUB_ENV"
+          fi
 
           echo "→ target: ${API_URL}"
           NEXT_PUBLIC_SUPABASE_URL="${API_URL}" \
