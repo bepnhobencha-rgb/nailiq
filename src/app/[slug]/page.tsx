@@ -334,6 +334,7 @@ async function PublicBookingRouteBody({
               {t.pageSubtitle}
             </p>
             <BookingFlowErrorBoundary
+              messages={t.errorBoundary}
               shopSlug={normalizedSlug}
               salon={load.salon}
             >

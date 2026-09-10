@@ -197,3 +197,27 @@ jobs:
           name: users-hydration-results
           path: test-results/
           retention-days: 14
+
+  booking-error:
+    name: Booking error recovery browser
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-node@v6
+        with:
+          node-version: '20'
+          cache: 'npm'
+      - run: npm ci
+      - run: npx playwright install --with-deps chromium webkit
+      - name: Build isolated booking error fixture
+        run: npx next build qa/booking-error --webpack
+        env:
+          NEXT_TELEMETRY_DISABLED: '1'
+      - name: Test localized recovery and light/dark contrast
+        run: npx playwright test -c qa/booking-error/playwright.config.ts
+      - uses: actions/upload-artifact@v7
+        if: always()
+        with:
+          name: booking-error-results
+          path: test-results/
+          retention-days: 14

@@ -5,6 +5,11 @@
 import { PHONE_INPUT_PLACEHOLDER_NANP } from "@/shared/lib/phoneFormat";
 
 export const bookingEn = {
+  errorBoundary: {
+    title: "We could not display the booking page.",
+    detail: "If you just submitted a booking, check your confirmation or contact the salon before booking again.",
+    retry: "Reload booking form",
+  },
   pageTitle: "Book this salon",
   pageSubtitle:
     "Choose service, staff, date, and time — then your details and review.",
