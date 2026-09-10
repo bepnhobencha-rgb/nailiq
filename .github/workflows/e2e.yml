@@ -943,45 +943,9 @@ jobs:
           REPO: ${{ github.repository }}
         run: |
           set -u
-          # Walk every shard's results.json (each artifact lands in
-          # playwright-reports/playwright-report-shard-N/) and aggregate
-          # failures across the matrix.
-          FAILURES=$(node -e "
-            const fs = require('fs');
-            const path = require('path');
-            function walk(suites, out) {
-              if (!Array.isArray(suites)) return;
-              for (const s of suites) {
-                for (const spec of s.specs || []) {
-                  for (const t of spec.tests || []) {
-                    const last = t.results?.[t.results.length-1];
-                    if (last && (last.status === 'failed' || last.status === 'timedOut')) {
-                      const err = last.error?.message || last.errors?.[0]?.message || 'no message';
-                      out.push(spec.title + ' :: ' + String(err).slice(0, 300));
-                    }
-                  }
-                }
-                walk(s.suites, out);
-              }
-            }
-            const root = 'playwright-reports';
-            const fails = [];
-            try {
-              for (const dir of fs.readdirSync(root)) {
-                const p = path.join(root, dir, 'results.json');
-                if (!fs.existsSync(p)) continue;
-                try {
-                  const r = JSON.parse(fs.readFileSync(p, 'utf8'));
-                  walk(r.suites, fails);
-                } catch (e) {
-                  // Skip malformed shard reports; keep going.
-                }
-              }
-              console.log(fails.slice(0, 10).join('\n') || 'No failed tests in any shard report.');
-            } catch (e) {
-              console.log('Could not read shard reports: ' + e.message);
-            }
-          " 2>/dev/null || echo "Report unavailable")
+          # Include primary and supplemental JSON reports, retry history and
+          # runner/report errors. This reader does not call external services.
+          FAILURES=$(node scripts/playwright-triage.js playwright-reports 2>/dev/null || echo "Report unavailable; inspect workflow logs")
 
           echo "----- captured failures -----"
           echo "$FAILURES"
@@ -989,7 +953,7 @@ jobs:
 
           # Build request body via jq so quotes/newlines in $FAILURES
           # cannot break the JSON payload.
-          PROMPT="NailIQ is a Next.js 16 + Supabase nail salon app. These Playwright E2E tests failed in CI:
+          PROMPT="NailIQ is a Next.js 16 + Supabase nail salon app. This CI workflow failed. The collected Playwright evidence follows; it may contain failures, flaky tests or incomplete reports:
 
           $FAILURES
 
@@ -1014,7 +978,7 @@ jobs:
 
           # Post comment to PR (only on pull_request events).
           if [ -n "${PR_NUMBER:-}" ]; then
-            BODY=$(printf '## 🤖 AI Triage\n\n**Failed tests (first 10):**\n```\n%s\n```\n\n**Claude analysis:**\n\n%s\n' "$FAILURES" "$ANALYSIS")
+            BODY=$(printf '## 🤖 AI Triage\n\n**Playwright evidence (up to 10 entries per category):**\n```\n%s\n```\n\n**Claude analysis:**\n\n%s\n' "$FAILURES" "$ANALYSIS")
             COMMENT_BODY=$(jq -n --arg b "$BODY" '{body: $b}')
             curl -sS -X POST \
               "https://api.github.com/repos/$REPO/issues/$PR_NUMBER/comments" \
