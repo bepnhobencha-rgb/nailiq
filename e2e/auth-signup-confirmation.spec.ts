@@ -133,12 +133,33 @@ async function cleanup(email: string) {
 }
 
 for (const lang of ["en", "vi"] as const) {
+  test(`${lang}: the registration home link still navigates after reload`, async ({ page }) => {
+    const errors: string[] = [];
+    page.on("pageerror", (error) => errors.push(error.message));
+    await page.addInitScript(
+      (language) => localStorage.setItem("nailiq-user-lang", language),
+      lang,
+    );
+    await page.goto("/register");
+    await expect(page.getByTestId("social-auth-controls")).toHaveAttribute("data-hydrated", "true");
+    await page.reload();
+    await expect(page.getByTestId("social-auth-controls")).toHaveAttribute("data-hydrated", "true");
+    await page.getByRole("link", {
+      name: lang === "vi" ? "← Trang chủ" : "← Home",
+      exact: true,
+    }).click();
+    await expect(page).toHaveURL(localAuthHttpsOrigin + "/");
+    await expect(page.locator("main")).toBeVisible();
+    expect(errors).toEqual([]);
+  });
+
   test(`${lang}: a new email signup confirms and creates a private 14-day salon`, async ({
     page,
   }) => {
     const email = `e2e-signup-${randomUUID()}@example.com`;
     const password = `Aa1!${randomBytes(24).toString("base64url")}`;
     const errors: string[] = [];
+    const setupHomePrefetches: string[] = [];
     const startedAt = Date.now();
     const browserDiagnostics: Array<{
       elapsedMs: number;
@@ -154,6 +175,16 @@ for (const lang of ["en", "vi"] as const) {
       return { origin: url.origin, path: url.pathname };
     };
     const observe = (observed: Page, tab: "signup" | "confirmation") => {
+      observed.on("request", (request) => {
+        if (
+          tab === "confirmation" &&
+          new URL(observed.url()).pathname === "/register/setup" &&
+          new URL(request.url()).pathname === "/" &&
+          request.headers()["next-router-prefetch"] === "1"
+        ) {
+          setupHomePrefetches.push(new URL(request.url()).pathname);
+        }
+      });
       observed.on("pageerror", (error) => {
         errors.push(error.message);
         browserDiagnostics.push({
@@ -201,7 +232,6 @@ for (const lang of ["en", "vi"] as const) {
 
       const link = await confirmationLink(page, email);
       // Mail opens a new tab in the same browser, preserving the PKCE cookie.
-      // Keep the source page alive so its prefetch is not cancelled by the test.
       page = await page.context().newPage();
       observe(page, "confirmation");
       await page.goto(link);
@@ -278,6 +308,7 @@ for (const lang of ["en", "vi"] as const) {
       );
       await expect(page.locator("main")).toBeVisible();
       expect(errors).toEqual([]);
+      expect(setupHomePrefetches).toEqual([]);
     }, async () => {
       await test.info().attach("auth-browser-diagnostics", {
         body: JSON.stringify(browserDiagnostics),
