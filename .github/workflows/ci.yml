@@ -234,11 +234,11 @@ jobs:
           cache: 'npm'
       - run: npm ci
       - run: npx playwright install --with-deps chromium webkit
-      - name: Build isolated MFA status fixture (no Auth or database)
+      - name: Build isolated MFA recovery fixture (no Auth or database)
         run: npx next build qa/mfa-status --webpack
         env:
           NEXT_TELEMETRY_DISABLED: '1'
-      - name: Test MFA status and challenge recovery
+      - name: Test MFA status, challenge and enrollment recovery
         run: npx playwright test -c qa/mfa-status/playwright.config.ts
         env:
           PLAYWRIGHT_JSON_OUTPUT_NAME: ${{ github.workspace }}/test-results/mfa-status-results.json

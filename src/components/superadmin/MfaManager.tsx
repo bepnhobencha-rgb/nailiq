@@ -1,6 +1,7 @@
 "use client";
 
-import { useCallback, useEffect, useState, useTransition } from "react";
+import { useCallback, useEffect, useRef, useState, useTransition } from "react";
+import Link from "next/link";
 import { Button } from "@/components/ui/Button";
 import {
   getMfaStatus,
@@ -30,69 +31,84 @@ export function MfaManager() {
   const [loadingStatus, setLoadingStatus] = useState(true);
   const [pending, start] = useTransition();
 
+  const busy = useRef(false);
+
+  const readStatus = useCallback(async () => {
+    setEnrolled(null);
+    setFactorId(null);
+    setStatusError(null);
+    setLoadingStatus(true);
+    try {
+      const s = await getMfaStatus();
+      if (s.ok) {
+        setEnrolled(s.enrolled);
+        setFactorId(s.factorId);
+        if (s.enrolled) { setEnroll(null); setCode(""); }
+        return s;
+      }
+      setStatusError(s.error === "unauthorized"
+        ? "Session expired — sign in again."
+        : "Could not load two-factor status. Please try again.");
+    } catch {
+      setStatusError("Could not load two-factor status. Please try again.");
+    } finally {
+      setLoadingStatus(false);
+    }
+    // An unknown state must not expose a possibly completed enrollment for retry.
+    setEnroll(null);
+    setCode("");
+    return null;
+  }, []);
+
   const refresh = useCallback(() => {
+    if (busy.current) return;
+    busy.current = true;
     start(async () => {
-      setEnrolled(null);
-      setFactorId(null);
-      setStatusError(null);
-      setLoadingStatus(true);
+      setErr(null); setMsg(null);
+      try { await readStatus(); } finally { busy.current = false; }
+    });
+  }, [readStatus]);
+
+  useEffect(() => { refresh(); }, [refresh]);
+
+  const mutate = (operation: "begin" | "confirm" | "disable") => {
+    if (busy.current || pending || loadingStatus) return;
+    if (operation === "confirm" && (!enroll || !/^\d{6}$/.test(code))) return;
+    if (operation === "disable" && !factorId) return;
+    busy.current = true;
+    start(async () => {
+      setErr(null); setMsg(null);
       try {
-        const s = await getMfaStatus();
-        if (s.ok) {
-          setEnrolled(s.enrolled);
-          setFactorId(s.factorId);
-        } else {
-          setStatusError(s.error === "unauthorized"
-            ? "Session expired — sign in again."
-            : "Could not load two-factor status. Please try again.");
+        // A rejected transport can still have completed the provider mutation.
+        // Reconcile with a read below; never automatically replay a mutation.
+        const r = await (operation === "begin" ? startMfaEnroll()
+          : operation === "confirm" ? verifyMfaEnroll(enroll!.factorId, code)
+          : unenrollMfa(factorId!)).catch(() => null);
+        if (r && !r.ok && r.error === "unauthorized") {
+          setEnrolled(null); setFactorId(null); setEnroll(null); setCode("");
+          setStatusError("Session expired — sign in again.");
+          return;
         }
-      } catch {
-        setStatusError("Could not load two-factor status. Please try again.");
-      } finally {
-        setLoadingStatus(false);
-      }
+        if (operation === "begin" && r?.ok && "qrSvg" in r) {
+          setEnroll({ factorId: r.factorId, qrSvg: r.qrSvg, secret: r.secret });
+          return;
+        }
+        if (operation === "confirm" && r && !r.ok && r.error === "invalid_code") {
+          setErr("Invalid code. Try again."); setCode("");
+          return;
+        }
+        const status = await readStatus();
+        if (!status) return;
+        if (operation === "confirm" && status.enrolled) {
+          setMsg("Two-factor is now ON.");
+        } else if (operation === "disable" && !status.enrolled) {
+          setMsg("Two-factor disabled.");
+        } else {
+          setErr(`Could not confirm ${operation === "begin" ? "enrollment" : operation === "confirm" ? "verification" : "disabling two-factor"}. Please try again.`);
+        }
+      } finally { busy.current = false; }
     });
-  }, [start]);
-
-  useEffect(() => {
-    refresh();
-  }, [refresh]);
-
-  const beginEnroll = () =>
-    start(async () => {
-      setErr(null);
-      setMsg(null);
-      const r = await startMfaEnroll();
-      if (r.ok) setEnroll({ factorId: r.factorId, qrSvg: r.qrSvg, secret: r.secret });
-      else setErr("Could not start enrollment.");
-    });
-
-  const confirmEnroll = () =>
-    start(async () => {
-      if (!enroll) return;
-      setErr(null);
-      const r = await verifyMfaEnroll(enroll.factorId, code);
-      if (r.ok) {
-        setEnroll(null);
-        setCode("");
-        setMsg("Two-factor is now ON.");
-        refresh();
-      } else {
-        setErr("Invalid code. Try again.");
-        setCode("");
-      }
-    });
-
-  const disable = () =>
-    start(async () => {
-      if (!factorId) return;
-      setErr(null);
-      const r = await unenrollMfa(factorId);
-      if (r.ok) {
-        setMsg("Two-factor disabled.");
-        refresh();
-      } else setErr("Could not disable.");
-    });
+  };
 
   return (
     <div className="rounded-2xl border border-nq-border/50 bg-nq-surface/50 p-5">
@@ -120,6 +136,9 @@ export function MfaManager() {
       </div>
 
       {statusError ? <p role="alert" className="mt-3 text-sm text-nq-error">{statusError}</p> : null}
+      {statusError === "Session expired — sign in again." ? (
+        <Link href="/superadmin/login" prefetch={false} className="mt-2 inline-flex min-h-11 items-center text-sm text-nq-primary underline">Sign in again</Link>
+      ) : null}
       {statusError || loadingStatus ? (
         <Button variant="secondary" size="lg" className="mt-4" onClick={refresh} disabled={pending || loadingStatus}>
           {loadingStatus ? "Checking…" : "Try again"}
@@ -135,26 +154,16 @@ export function MfaManager() {
 
       {/* Enrolled → offer disable */}
       {enrolled === true && !loadingStatus && !enroll ? (
-        <button
-          type="button"
-          onClick={disable}
-          disabled={pending}
-          className="mt-4 rounded-xl border border-nq-error/40 bg-nq-error/10 px-4 py-2 text-sm font-semibold text-nq-error disabled:opacity-50"
-        >
+        <Button variant="danger" size="lg" className="mt-4" onClick={() => mutate("disable")} disabled={pending}>
           Disable 2FA
-        </button>
+        </Button>
       ) : null}
 
       {/* Not enrolled, not mid-enroll → start */}
       {enrolled === false && !loadingStatus && !enroll ? (
-        <button
-          type="button"
-          onClick={beginEnroll}
-          disabled={pending}
-          className="mt-4 rounded-xl bg-nq-primary px-4 py-2 text-sm font-semibold text-nq-bg disabled:opacity-50"
-        >
+        <Button size="lg" className="mt-4" onClick={() => mutate("begin")} disabled={pending}>
           Enable 2FA
-        </button>
+        </Button>
       ) : null}
 
       {/* Mid-enroll → QR + secret + code */}
@@ -175,37 +184,33 @@ export function MfaManager() {
               {enroll.secret}
             </code>
           </p>
-          <p className="text-sm text-nq-foreground">2. Enter the 6-digit code:</p>
-          <input
-            inputMode="numeric"
-            maxLength={6}
-            value={code}
-            onChange={(e) =>
-              setCode(e.target.value.replace(/\D/g, "").slice(0, 6))
-            }
-            placeholder="000000"
-            className="h-11 w-40 rounded-xl border border-nq-border bg-nq-bg text-center text-xl tracking-[0.3em] tabular-nums text-nq-foreground focus:outline-none focus:ring-2 focus:ring-nq-primary/40"
-          />
-          <div className="flex gap-2">
-            <button
-              type="button"
-              onClick={confirmEnroll}
-              disabled={pending || code.length !== 6}
-              className="rounded-xl bg-nq-primary px-4 py-2 text-sm font-semibold text-nq-bg disabled:opacity-50"
-            >
-              {pending ? "Verifying…" : "Confirm"}
-            </button>
-            <button
-              type="button"
-              onClick={() => {
-                setEnroll(null);
-                setCode("");
-              }}
-              className="rounded-xl border border-nq-border px-4 py-2 text-sm text-nq-muted"
-            >
-              Cancel
-            </button>
-          </div>
+          <form className="space-y-3" onSubmit={(e) => { e.preventDefault(); mutate("confirm"); }}>
+            <label htmlFor="mfa-enrollment-code" className="block text-sm text-nq-foreground">2. Enter the 6-digit code:</label>
+            <input
+              id="mfa-enrollment-code"
+              autoComplete="one-time-code"
+              disabled={pending}
+              inputMode="numeric"
+              maxLength={6}
+              value={code}
+              onChange={(e) =>
+                setCode(e.target.value.replace(/\D/g, "").slice(0, 6))
+              }
+              placeholder="000000"
+              className="h-11 w-40 rounded-xl border border-nq-border bg-nq-bg text-center text-xl tracking-[0.3em] tabular-nums text-nq-foreground focus:outline-none focus:ring-2 focus:ring-nq-primary/40"
+            />
+            <div className="flex flex-wrap gap-2">
+              <Button type="submit" size="lg" disabled={pending || code.length !== 6}>
+                {pending ? "Verifying…" : "Confirm"}
+              </Button>
+              <Button variant="secondary" size="lg" disabled={pending} onClick={() => {
+                if (busy.current) return;
+                setEnroll(null); setCode(""); setErr(null);
+              }}>
+                Cancel
+              </Button>
+            </div>
+          </form>
         </div>
       ) : null}
     </div>
