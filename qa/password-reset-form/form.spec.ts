@@ -247,3 +247,40 @@ test.describe("SuperAdmin bilingual form", () => {
     } finally { release(); }
   });
 });
+
+// Hold application chunks so the user-visible server HTML is tested before
+// React attaches handlers. Never forward a password action to the fixture.
+test("SuperAdmin waits for hydration before accepting password input", async ({ page, context }) => {
+  const state = await intercept(context, "abort");
+  let release!: () => void;
+  const scriptsReady = new Promise<void>(resolve => { release = resolve; });
+  await context.route("**/*", async route => {
+    if (route.request().resourceType() === "script") await scriptsReady;
+    return route.fallback();
+  });
+  const errors: string[] = [];
+  page.on("pageerror", error => errors.push(error.message));
+  try {
+    await page.goto("/superadmin", { waitUntil: "commit" });
+    const form = page.getByTestId("superadmin-reset-password-form");
+    const fields = form.locator("input");
+    await expect(fields).toHaveCount(2);
+    await expect(fields.first()).toBeDisabled();
+    await expect(fields.last()).toBeDisabled();
+    await expect(form.getByRole("button")).toBeDisabled();
+    expect(state.calls).toBe(0);
+    release();
+    await expect(fields.first()).toBeEnabled();
+    await expect(fields.last()).toBeEnabled();
+    await fields.first().fill(password);
+    await fields.last().fill(password);
+    await expect(fields.first()).toHaveValue(password);
+    await expect(fields.last()).toHaveValue(password);
+    await form.getByRole("button").click();
+    await expect(form.getByRole("alert")).toHaveText(superadminCopy.unconfirmed);
+    expect(state.calls).toBe(1);
+    await expect(fields.first()).toHaveValue(password);
+    await expect(fields.last()).toHaveValue(password);
+    expect(errors).toEqual([]);
+  } finally { release(); }
+});

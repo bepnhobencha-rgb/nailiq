@@ -2,12 +2,14 @@
 
 import Link from "next/link";
 import { useRouter } from "next/navigation";
-import { useState, useTransition } from "react";
+import { useState, useSyncExternalStore, useTransition } from "react";
 import { Button } from "@/components/ui/Button";
 import { Input } from "@/components/ui/Input";
 import { completeSuperadminPasswordReset } from "@/shared/superadmin/superadminAuth";
 
 type ErrorCode = "weak_password" | "mismatch" | "no_session" | "no_role" | "server_error" | "unconfirmed";
+
+const noopSubscribe = () => () => {};
 
 const ERROR_COPY: Record<ErrorCode, string> = {
   weak_password: "Password must be 8–72 characters. / Mật khẩu phải có 8–72 ký tự.",
@@ -23,6 +25,9 @@ const ERROR_COPY: Record<ErrorCode, string> = {
 
 export function SuperadminResetPasswordForm() {
   const router = useRouter();
+  // A value typed into server HTML before onChange exists is lost on the
+  // next controlled render. Accept input only after handlers are attached.
+  const isHydrated = useSyncExternalStore(noopSubscribe, () => true, () => false);
   const [password, setPassword] = useState("");
   const [confirm, setConfirm] = useState("");
   const [error, setError] = useState<ErrorCode | null>(null);
@@ -72,6 +77,7 @@ export function SuperadminResetPasswordForm() {
         </span>
         <Input
           type="password"
+          disabled={!isHydrated}
           autoComplete="new-password"
           required
           minLength={8}
@@ -93,6 +99,7 @@ export function SuperadminResetPasswordForm() {
         </span>
         <Input
           type="password"
+          disabled={!isHydrated}
           autoComplete="new-password"
           required
           minLength={8}
@@ -113,6 +120,7 @@ export function SuperadminResetPasswordForm() {
         size="lg"
         fullWidth
         loading={pending}
+        disabled={!isHydrated || pending}
       >
         Set new password / Đặt mật khẩu mới
       </Button>
