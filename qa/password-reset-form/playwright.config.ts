@@ -1,4 +1,7 @@
 import { defineConfig, devices } from "@playwright/test";
+import path from "node:path";
+
+const resultsRoot = path.resolve(__dirname, "../../test-results/password-reset-form");
 export default defineConfig({
   testDir: ".",
   testMatch: "form.spec.ts",
@@ -6,8 +9,9 @@ export default defineConfig({
   workers: 1,
   retries: 0,
   timeout: 30000,
-  reporter: [["list"], ["json", { outputFile: process.env.PLAYWRIGHT_JSON_OUTPUT_NAME || "test-results/results.json" }]],
-  use: { baseURL: "http://127.0.0.1:3113", screenshot: "only-on-failure" },
+  outputDir: path.join(resultsRoot, "artifacts"),
+  reporter: [["list"], ["json", { outputFile: process.env.PLAYWRIGHT_JSON_OUTPUT_NAME || path.join(resultsRoot, "results.json") }]],
+  use: { baseURL: "http://127.0.0.1:3113", screenshot: "only-on-failure", trace: "retain-on-failure" },
   projects: [
     { name: "chromium", use: { ...devices["Desktop Chrome"] } },
     { name: "webkit", use: { ...devices["iPhone 13"], defaultBrowserType: "webkit" } },
