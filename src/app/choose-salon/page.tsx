@@ -35,7 +35,7 @@ export default async function ChooseSalonPage() {
 
   if (memErr) {
     console.error("[choose-salon] salon_members", memErr);
-    redirect("/login");
+    return <ChooseSalonClient cards={[]} unavailable />;
   }
 
   const valid = (memRows ?? []).filter((r) => Boolean(r?.salon_id));
@@ -51,7 +51,7 @@ export default async function ChooseSalonPage() {
 
   if (salErr) {
     console.error("[choose-salon] salons", salErr);
-    redirect("/login");
+    return <ChooseSalonClient cards={[]} unavailable />;
   }
 
   const salonById = new Map(

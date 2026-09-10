@@ -833,6 +833,8 @@ export const userVi: UserMessages = {
     openInBrowser: "Mở trong trình duyệt",
   },
   chooseSalon: {
+    unavailable: "Chưa tải được danh sách tiệm. Vui lòng thử lại.",
+    retry: "Thử lại",
     title: "Chọn tiệm của bạn",
     subtitle: "Chọn tiệm bạn muốn quản lý",
     signOut: "Đăng xuất",
