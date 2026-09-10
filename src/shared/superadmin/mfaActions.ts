@@ -45,58 +45,80 @@ export type StartEnrollResult =
  * leftover UNVERIFIED factors first so re-enrolling stays tidy.
  */
 export async function startMfaEnroll(): Promise<StartEnrollResult> {
-  const supabase = await requireSuperadmin();
-  if (!supabase) return { ok: false, error: "unauthorized" };
-
-  const { data: list } = await supabase.auth.mfa.listFactors();
-  for (const f of list?.totp ?? []) {
-    if (f.status !== "verified") {
-      await supabase.auth.mfa.unenroll({ factorId: f.id }).catch(() => {});
+  try {
+    const access = await requireActiveSuperAdminSession();
+    if (!access.ok) return {
+      ok: false, error: access.code === "auth_unavailable" ? "enroll_failed" : "unauthorized",
+    };
+    const { supabase } = access;
+    const { data: list, error: listError } = await supabase.auth.mfa.listFactors();
+    if (listError || !list) return { ok: false, error: "enroll_failed" };
+    for (const f of list.totp) {
+      if (f.status !== "verified") {
+        const { data, error } = await supabase.auth.mfa.unenroll({ factorId: f.id });
+        // Do not create another secret after an unconfirmed cleanup.
+        if (error || !data) return { ok: false, error: "enroll_failed" };
+      }
     }
+    const { data, error } = await supabase.auth.mfa.enroll({
+      factorType: "totp",
+      friendlyName: `superadmin-${Date.now()}`,
+    });
+    if (error || !data) return { ok: false, error: "enroll_failed" };
+    return { ok: true, factorId: data.id, qrSvg: data.totp.qr_code, secret: data.totp.secret };
+  } catch {
+    return { ok: false, error: "enroll_failed" };
   }
-
-  const { data, error } = await supabase.auth.mfa.enroll({
-    factorType: "totp",
-    friendlyName: `superadmin-${Date.now()}`,
-  });
-  if (error || !data) return { ok: false, error: "enroll_failed" };
-  return {
-    ok: true,
-    factorId: data.id,
-    qrSvg: data.totp.qr_code,
-    secret: data.totp.secret,
-  };
 }
 
 export type VerifyResult =
   | { ok: true }
   | { ok: false; error: "unauthorized" | "invalid_code" };
 
+type EnrollmentVerifyResult = VerifyResult | { ok: false; error: "verification_unavailable" };
+
 /** Confirm the enrollment by verifying a code from the authenticator app. */
 export async function verifyMfaEnroll(
   factorId: string,
   code: string,
-): Promise<VerifyResult> {
-  const supabase = await requireSuperadmin();
-  if (!supabase) return { ok: false, error: "unauthorized" };
-  const { data: ch, error: chErr } = await supabase.auth.mfa.challenge({
-    factorId,
-  });
-  if (chErr || !ch) return { ok: false, error: "invalid_code" };
-  const { error } = await supabase.auth.mfa.verify({
-    factorId,
-    challengeId: ch.id,
-    code: code.trim(),
-  });
-  return error ? { ok: false, error: "invalid_code" } : { ok: true };
+): Promise<EnrollmentVerifyResult> {
+  try {
+    const access = await requireActiveSuperAdminSession();
+    if (!access.ok) return {
+      ok: false, error: access.code === "auth_unavailable" ? "verification_unavailable" : "unauthorized",
+    };
+    const normalized = code.trim();
+    if (!factorId || !/^\d{6}$/.test(normalized)) return { ok: false, error: "invalid_code" };
+    const { supabase } = access;
+    const { data: ch, error: chErr } = await supabase.auth.mfa.challenge({ factorId });
+    if (chErr || !ch) return { ok: false, error: "verification_unavailable" };
+    const { data, error } = await supabase.auth.mfa.verify({ factorId, challengeId: ch.id, code: normalized });
+    if (error) return {
+      ok: false,
+      error: error.code === "mfa_verification_failed" || error.code === "mfa_challenge_expired"
+        ? "invalid_code" : "verification_unavailable",
+    };
+    return data ? { ok: true } : { ok: false, error: "verification_unavailable" };
+  } catch {
+    return { ok: false, error: "verification_unavailable" };
+  }
 }
 
-/** Remove the factor (turn 2FA off). */
-export async function unenrollMfa(factorId: string): Promise<VerifyResult> {
-  const supabase = await requireSuperadmin();
-  if (!supabase) return { ok: false, error: "unauthorized" };
-  const { error } = await supabase.auth.mfa.unenroll({ factorId });
-  return error ? { ok: false, error: "invalid_code" } : { ok: true };
+/** Remove the factor (turn 2FA off). An unavailable result requires a status read. */
+export async function unenrollMfa(factorId: string): Promise<
+  { ok: true } | { ok: false; error: "unauthorized" | "unenroll_failed" }
+> {
+  try {
+    const access = await requireActiveSuperAdminSession();
+    if (!access.ok) return {
+      ok: false, error: access.code === "auth_unavailable" ? "unenroll_failed" : "unauthorized",
+    };
+    if (!factorId) return { ok: false, error: "unenroll_failed" };
+    const { data, error } = await access.supabase.auth.mfa.unenroll({ factorId });
+    return error || !data ? { ok: false, error: "unenroll_failed" } : { ok: true };
+  } catch {
+    return { ok: false, error: "unenroll_failed" };
+  }
 }
 
 /**
