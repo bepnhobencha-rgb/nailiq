@@ -4,52 +4,64 @@ import { heuristicAutoMapping, sanitizeAutoMapping } from "../autoMapping";
 const services = [
   { id: "gel", name: "Gel Manicure", isAddon: false },
   { id: "acrylic", name: "Acrylic Full Set", isAddon: false },
+  { id: "shellac", name: "Manicure Shellac French", isAddon: false },
   { id: "chrome", name: "Chrome Add-on", isAddon: true },
   { id: "length", name: "Extra Length", isAddon: true },
 ];
 
 describe("sanitizeAutoMapping", () => {
-  it("drops hallucinated and wrong-role service ids", () => {
+  it("drops hallucinated IDs and caps alternatives at two", () => {
     expect(sanitizeAutoMapping({
-      serviceIds: ["gel", "chrome", "fake", "gel"],
+      bestServiceId: "gel",
+      alternativeServiceIds: ["acrylic", "shellac", "fake", "gel"],
       addonServiceIds: ["chrome", "acrylic", "fake"],
-      defaultServiceId: "fake",
-      confidence: 2,
-      reason: "Salon menu match",
+      baseServiceKnown: true,
+      visualConfidence: 1,
+      serviceConfidence: 0.95,
+      reason: "Exact menu match",
       attributes: ["chrome", "chrome"],
     }, services)).toMatchObject({
-      serviceIds: ["gel"],
+      serviceIds: ["gel", "acrylic", "shellac"],
       addonServiceIds: ["chrome"],
       defaultServiceId: "gel",
-      confidence: 1,
       attributes: ["chrome"],
       status: "ai_suggested",
     });
   });
 
-  it("requires review when confidence is low", () => {
+  it("never auto-approves or exceeds 74% when the base is unknown", () => {
     expect(sanitizeAutoMapping({
-      serviceIds: ["gel"], addonServiceIds: [], defaultServiceId: "gel",
-      confidence: 0.5, reason: "uncertain",
-    }, services).status).toBe("needs_review");
+      bestServiceId: "gel", alternativeServiceIds: [], addonServiceIds: [],
+      baseServiceKnown: false, visualConfidence: 0.98, serviceConfidence: 0.99,
+      reason: "Visible red nails", requiredQuestion: null,
+    }, services)).toMatchObject({
+      serviceConfidence: 0.74,
+      confidence: 0.74,
+      status: "needs_review",
+      requiredQuestion: "Do you want this look on natural nails, or with added length?",
+    });
+  });
+
+  it("does not accept a default service outside the salon menu", () => {
+    expect(sanitizeAutoMapping({
+      bestServiceId: "fake", alternativeServiceIds: [], addonServiceIds: [],
+      baseServiceKnown: true, visualConfidence: 1, serviceConfidence: 1, reason: "bad id",
+    }, services)).toMatchObject({ serviceIds: [], defaultServiceId: null, status: "needs_review" });
   });
 });
 
 describe("heuristicAutoMapping", () => {
-  it("matches a product family and visible add-ons", () => {
+  it("maps an explicitly named base system and visible add-ons", () => {
     expect(heuristicAutoMapping("XXL acrylic chrome nails", services)).toMatchObject({
-      serviceIds: ["acrylic"],
-      addonServiceIds: ["chrome", "length"],
-      defaultServiceId: "acrylic",
-      status: "ai_suggested",
+      serviceIds: ["acrylic"], addonServiceIds: ["chrome", "length"],
+      defaultServiceId: "acrylic", baseServiceKnown: true, status: "needs_review",
     });
   });
 
-  it("falls back safely and requests review", () => {
-    expect(heuristicAutoMapping("Classic cherry", services)).toMatchObject({
-      serviceIds: ["gel"],
-      confidence: 0.45,
-      status: "needs_review",
+  it("abstains instead of inventing a base service for a color-only design", () => {
+    expect(heuristicAutoMapping("Classic cherry glossy red", services)).toMatchObject({
+      serviceIds: [], defaultServiceId: null, baseServiceKnown: false,
+      serviceConfidence: 0.4, status: "needs_review",
     });
   });
 });
