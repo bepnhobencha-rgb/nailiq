@@ -53,8 +53,10 @@ export async function startMfaEnroll(): Promise<StartEnrollResult> {
     const { supabase } = access;
     const { data: list, error: listError } = await supabase.auth.mfa.listFactors();
     if (listError || !list) return { ok: false, error: "enroll_failed" };
-    for (const f of list.totp) {
-      if (f.status !== "verified") {
+    // The SDK's type-specific lists contain VERIFIED factors only. Pending
+    // enrollments live in `all`; leave other factor types and verified TOTP intact.
+    for (const f of list.all) {
+      if (f.factor_type === "totp" && f.status === "unverified") {
         const { data, error } = await supabase.auth.mfa.unenroll({ factorId: f.id });
         // Do not create another secret after an unconfirmed cleanup.
         if (error || !data) return { ok: false, error: "enroll_failed" };
