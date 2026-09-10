@@ -1,5 +1,6 @@
 "use server";
 
+import type { SignOutResult } from "@/shared/auth/signOutResponse";
 import { createHash } from "node:crypto";
 import { cookies } from "next/headers";
 import { cache } from "react";
@@ -863,16 +864,37 @@ export async function loadOwnerSalons(
  * so `signOut()` is a no-op for them — but the dashboard hides the button
  * in demo mode anyway (see `SalonOwnerDashboardMain`).
  *
- * `redirect()` throws a Next.js redirect signal; the explicit `return` after
- * it is unreachable but pleases the type checker.
+ * Failed requests return a recoverable result. Only successful sign-out is
+ * audited and redirected; the Next.js redirect signal stays outside catches.
  */
-export async function signOutAction(): Promise<never> {
-  const supabase = await createClient();
-  // Audit BEFORE signOut, while the session (and getUser) is still live.
-  await (await import("@/shared/dashboard/recordAuthEvent")).recordAuthEvent({
-    event: "logout",
-  });
-  await supabase.auth.signOut();
+export async function signOutAction(): Promise<SignOutResult> {
+  let userId: string | null = null;
+  try {
+    const supabase = await createClient();
+    // Capture the actor before clearing the session; audit lookup is best-effort.
+    try {
+      const { data } = await supabase.auth.getUser();
+      userId = data.user?.id ?? null;
+    } catch {
+      // An audit lookup must not prevent the user from signing out.
+    }
+    const { error } = await supabase.auth.signOut();
+    if (error) return { ok: false, error: "server_error" };
+  } catch {
+    return { ok: false, error: "server_error" };
+  }
+
+  if (userId) {
+    try {
+      await (await import("@/shared/dashboard/recordAuthEvent")).recordAuthEvent({
+        event: "logout",
+        userId,
+      });
+    } catch {
+      // Logout has succeeded; an audit failure must not misreport it as failed.
+      console.error("[signOutAction] logout audit unavailable");
+    }
+  }
   redirect("/login");
 }
 

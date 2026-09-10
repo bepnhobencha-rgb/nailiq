@@ -1,0 +1,25 @@
+{
+  "extends": "../../tsconfig.json",
+  "compilerOptions": {
+    "paths": {
+      "@/*": [
+        "../../src/*"
+      ],
+      "@/shared/dashboard/salonOwnerActions": [
+        "./action.ts"
+      ],
+      "@/shared/superadmin/superadminAuth": [
+        "./superadmin-action.ts"
+      ]
+    }
+  },
+  "include": [
+    "next-env.d.ts",
+    "**/*.ts",
+    "**/*.tsx",
+    ".next/types/**/*.ts"
+  ],
+  "exclude": [
+    "node_modules"
+  ]
+}
