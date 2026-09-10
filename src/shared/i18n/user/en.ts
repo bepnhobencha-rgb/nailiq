@@ -589,6 +589,8 @@ export type UserMessages = {
   /** Multi-salon picker (`/choose-salon`). Shown when an authenticated user
    * has more than one `salon_members` row. Single-salon users skip it. */
   chooseSalon: {
+    unavailable: string;
+    retry: string;
     title: string;
     subtitle: string;
     signOut: string;
@@ -3368,6 +3370,8 @@ export const userEn: UserMessages = {
     openInBrowser: "Open in browser",
   },
   chooseSalon: {
+    unavailable: "We couldn’t load your salons. Please try again.",
+    retry: "Try again",
     title: "Choose your salon",
     subtitle: "Select which salon to manage",
     signOut: "Sign out",
