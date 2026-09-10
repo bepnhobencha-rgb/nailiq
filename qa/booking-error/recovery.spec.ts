@@ -1,7 +1,7 @@
 import {expect,test,type Locator,type Page} from '@playwright/test';
 const copy = {
-  en: {title:'We could not display the booking page.',detail:'If you just submitted a booking, check your confirmation or contact the salon before booking again.',retry:'Reload booking form'},
-  vi: {title:'Không thể hiển thị trang đặt lịch.',detail:'Nếu bạn vừa gửi yêu cầu đặt lịch, hãy kiểm tra xác nhận hoặc liên hệ tiệm trước khi đặt lại.',retry:'Tải lại biểu mẫu đặt lịch'},
+  en: {title:'We could not display the booking page.',detail:'If you just submitted a booking, check your confirmation or contact the salon before booking again.',retry:'Reload form'},
+  vi: {title:'Không thể hiển thị trang đặt lịch.',detail:'Nếu bạn vừa gửi yêu cầu đặt lịch, hãy kiểm tra xác nhận hoặc liên hệ tiệm trước khi đặt lại.',retry:'Tải lại biểu mẫu'},
 };
 function luminance(rgb:number[]) {
   return rgb.map(v=>v/255).map(v=>v<=0.04045?v/12.92:((v+0.055)/1.055)**2.4).reduce((s,v,i)=>s+v*[0.2126,0.7152,0.0722][i],0);
@@ -46,6 +46,8 @@ for(const width of [320,1024]) for(const theme of ['light','dark']) for(const la
     expect.soft(bodyContrast).toBeGreaterThanOrEqual(4.5);
     const retry=alert.getByRole('button');
     await expect.soft(retry).toHaveText(copy[language].retry);
+    const retryLabel = retry.getByText(copy[language].retry, { exact: true });
+    expect(await retryLabel.evaluate(el => el.scrollWidth <= el.clientWidth)).toBe(true);
     expect.soft(await retry.evaluate(el=>el.getBoundingClientRect().height)).toBeGreaterThanOrEqual(44);
     expect(await page.evaluate(()=>document.documentElement.scrollWidth>innerWidth)).toBe(false);
     await testInfo.attach('fallback',{body:await alert.screenshot(),contentType:'image/png'});

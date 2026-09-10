@@ -8,7 +8,7 @@ export const bookingEn = {
   errorBoundary: {
     title: "We could not display the booking page.",
     detail: "If you just submitted a booking, check your confirmation or contact the salon before booking again.",
-    retry: "Reload booking form",
+    retry: "Reload form",
   },
   pageTitle: "Book this salon",
   pageSubtitle:

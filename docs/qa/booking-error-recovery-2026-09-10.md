@@ -1,6 +1,6 @@
 # Booking error recovery — 2026-09-10
 
-**PASS_LOCAL. Chưa commit, push, CI/Preview hoặc phát hành.**
+**PASS_LOCAL — checkpoint trước xuất bản. Kết quả CI/Preview được ghi riêng trong PR #1383. Chưa phát hành Production.**
 
 Mục 145 trong danh sách 784: error boundary của booking flow. Phạm vi ưu tiên P1
 trong Master Plan: khách đọc được thông báo trên iPhone và không được hướng dẫn
@@ -26,7 +26,7 @@ nội dung 2.35:1. Nguyên nhân là dùng màu global thay vì booking theme va
 - Thông báo lỗi hiển thị không khẳng định booking thất bại hay thành công; nếu vừa
   gửi yêu cầu, người dùng được nhắc kiểm tra xác nhận hoặc liên hệ tiệm trước khi đặt lại.
 - Card, chữ và nút dùng palette booking đang có; không thêm màu hoặc primitive.
-- Nút “Tải lại biểu mẫu đặt lịch” giữ reset boundary; không thêm submit, server
+- Nút “Tải lại biểu mẫu” giữ reset boundary; không thêm submit, server
   action, Auth, schema, provider hay thay đổi chính sách booking.
 - ErrorReporter và thông tin chẩn đoán của sản phẩm được giữ nguyên.
 
@@ -60,3 +60,13 @@ bị ghi dữ liệu hay đổi cấu hình. Dependencies dùng lại đúng loc
 Artifacts: /Users/huytran/nailiq-audit-results-20260907/booking-error-recovery/
 (before-verified.json/log, after.json/log, ảnh before/after, build/typecheck/lint/
 unit/theme-unit/i18n logs). Các lần thất bại được giữ nguyên.
+
+## Bổ sung khi kiểm tra CI/Preview
+
+- CI head743c đạt 16/16 nhưng artifact không được upload vì outputFile tương đối
+  nằm dưới configDir. Đã sửa output và upload về root test-results/booking-error,
+  đồng thời bật if-no-files-found:error; head1b70 đã lưu được JSON và ảnh đầy đủ.
+- Ảnh WebKit Linux head1b70 ở 320px/VI bộc lộ label nút bị cắt bởi span.truncate
+  của Button. Đã rút gọn “Tải lại biểu mẫu” / “Reload form”, không sửa primitive,
+  và thêm kiểm tra label không tràn bên trong nút. Không lấy nội dung text đầy đủ
+  trong DOM hay page không tràn ngang để kết luận label hiển thị trọn vẹn.

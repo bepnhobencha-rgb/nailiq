@@ -16,7 +16,7 @@ export const bookingVi: BookingMessages = {
   errorBoundary: {
     title: "Không thể hiển thị trang đặt lịch.",
     detail: "Nếu bạn vừa gửi yêu cầu đặt lịch, hãy kiểm tra xác nhận hoặc liên hệ tiệm trước khi đặt lại.",
-    retry: "Tải lại biểu mẫu đặt lịch",
+    retry: "Tải lại biểu mẫu",
   },
   pageTitle: "Đặt lịch tại tiệm",
   pageSubtitle:
