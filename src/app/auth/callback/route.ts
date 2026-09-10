@@ -1,4 +1,5 @@
 import { createServerClient } from "@supabase/ssr";
+import { authCookieOptions } from "@/shared/lib/supabase/authCookieOptions";
 import { NextResponse, type NextRequest } from "next/server";
 import { dashboardPathForRole } from "@/shared/lib/salonMemberRole";
 import { resolveRoleAndSlugForUser } from "@/shared/lib/salonMembership";
@@ -55,11 +56,15 @@ export async function GET(request: NextRequest) {
     value: string;
     options?: Record<string, unknown>;
   }> = [];
+  const cookieOptions = authCookieOptions(
+    url.protocol === "https:" || request.headers.get("x-forwarded-proto") === "https",
+  );
 
   const supabase = createServerClient(
     process.env.NEXT_PUBLIC_SUPABASE_URL!,
     process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
     {
+      cookieOptions,
       cookies: {
         getAll() {
           return request.cookies.getAll();
@@ -155,9 +160,8 @@ export async function GET(request: NextRequest) {
   }
 
   const response = NextResponse.redirect(dest);
-  const secure = process.env.NODE_ENV === "production";
   for (const { name, value, options } of pendingCookies) {
-    response.cookies.set(name, value, { ...options, secure });
+    response.cookies.set(name, value, { ...options, ...cookieOptions });
   }
   return response;
 }

@@ -254,7 +254,7 @@ jobs:
             name: "SuperAdmin recovery — real auth HTTPS"
             project: "settings"
             browser: "chromium webkit"
-            testpath: "e2e/superadmin-password-recovery.spec.ts e2e/superadmin-mfa-real-auth.spec.ts"
+            testpath: "e2e/superadmin-password-recovery.spec.ts e2e/superadmin-mfa-real-auth.spec.ts e2e/auth-cookie-security.spec.ts"
     env:
       # ── NO PRODUCTION SECRETS. NONE. ────────────────────────────────────────
       #

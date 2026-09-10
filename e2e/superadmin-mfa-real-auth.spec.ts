@@ -114,6 +114,7 @@ async function assurance(context: BrowserContext, account: SeededSuperAdmin) {
   const cookies = (await context.cookies()).filter(c => /^sb-.+-auth-token(?:\.\d+)?$/.test(c.name))
     .sort((a, b) => a.name.localeCompare(b.name, undefined, { numeric: true }));
   expect(cookies.length > 0).toBe(true);
+  expect(cookies.every(cookie => cookie.secure), "Every HTTPS Auth cookie chunk must remain Secure").toBe(true);
   await test.info().attach("session-cookie-attributes", { body: JSON.stringify(cookies.map(({ name, secure, httpOnly, sameSite }) => ({ name, secure, httpOnly, sameSite }))), contentType: "application/json" });
   const packed = cookies.map(c => c.value).join("");
   const session = JSON.parse(Buffer.from(packed.slice("base64-".length), "base64url").toString());

@@ -1,5 +1,6 @@
 import { NextResponse, type NextRequest } from "next/server";
 import { createClient } from "@/shared/lib/supabase/server";
+import { authCookieOptions } from "@/shared/lib/supabase/authCookieOptions";
 import { clearSuperAdminCache, getSuperAdminRole } from "@/shared/lib/superadmin";
 import { requireActiveAuthSession } from "@/shared/auth/requireActiveAuthSession";
 import {
@@ -160,7 +161,7 @@ export async function GET(request: NextRequest) {
     const response = NextResponse.redirect(destination);
     response.cookies.set(PASSWORD_RECOVERY_COOKIE, capability, {
       httpOnly: true,
-      secure: process.env.NODE_ENV === "production",
+      ...authCookieOptions(url.protocol === "https:" || request.headers.get("x-forwarded-proto") === "https"),
       sameSite: "lax",
       path: "/",
       maxAge: PASSWORD_RECOVERY_MAX_AGE_SECONDS,

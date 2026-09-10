@@ -107,6 +107,9 @@ async function openRecovery(page: Page, link: string) {
   const form = page.getByTestId("superadmin-reset-password-form");
   await expect(form.locator('input[type="password"]').first()).toBeEnabled();
   const cookies = await page.context().cookies();
+  const authCookies = cookies.filter(cookie => /^sb-.+-auth-token(?:\.\d+)?$/.test(cookie.name));
+  expect(authCookies.length).toBeGreaterThan(0);
+  expect(authCookies.every(cookie => cookie.secure)).toBe(true);
   const capability = cookies.find((cookie) => cookie.name === "nq-password-recovery");
   expect(Boolean(capability), "A real recovery capability must be issued").toBe(true);
   expect(capability?.httpOnly).toBe(true);

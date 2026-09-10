@@ -1,13 +1,16 @@
 import { createServerClient } from "@supabase/ssr";
-import { cookies } from "next/headers";
+import { cookies, headers } from "next/headers";
+import { authCookieOptions } from "@/shared/lib/supabase/authCookieOptions";
 import { resolveSupabaseServerUrl } from "@/shared/lib/supabase/serverUrl";
 
 export async function createClient() {
   const cookieStore = await cookies();
+  const requestHeaders = await headers();
   return createServerClient(
     resolveSupabaseServerUrl()!,
     process.env.NEXT_PUBLIC_SUPABASE_ANON_KEY!,
     {
+      cookieOptions: authCookieOptions(requestHeaders.get("x-forwarded-proto") === "https"),
       cookies: {
         getAll() {
           return cookieStore.getAll();
