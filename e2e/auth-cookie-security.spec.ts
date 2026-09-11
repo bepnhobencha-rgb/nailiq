@@ -105,7 +105,13 @@ for (const language of ["en", "vi"] as const) {
   });
 }
 
-test("automatic browser refresh preserves cookie flags after returning to the front desk", async ({ page, context }) => {
+// This loopback HTTPS bridge requires Playwright to intercept the Auth request.
+// Once the PWA worker controls the page, WebKit can bypass that route and try
+// TLS against the HTTP-only GoTrue listener. Isolate this transport test from
+// service workers so refresh still reaches real local Auth through the bridge.
+const routedRefreshTest = test.extend({ serviceWorkers: "block" });
+
+routedRefreshTest("automatic browser refresh preserves cookie flags after returning to the front desk", async ({ page, context }) => {
   const salon = await seedTestSalon();
   let user: Awaited<ReturnType<typeof seedTestSalonMember>> | undefined;
   await withLocalAuthCleanup(async () => {
