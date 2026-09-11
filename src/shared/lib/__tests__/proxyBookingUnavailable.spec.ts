@@ -21,4 +21,11 @@ describe("booking API failure before route dispatch", () => {
     expect(console.warn).toHaveBeenCalledExactlyOnceWith(JSON.stringify({ event: "booking_proxy_unavailable", stage: "public_api_metering", status: 503, code }));
     expect(auth).not.toHaveBeenCalled();
   });
+  it("preserves the existing fail-closed response for other public APIs", async () => {
+    const response = await proxy(new NextRequest("https://www.nailiq.ca/api/booking/card-capability"));
+    expect(response.status).toBe(503);
+    expect(await response.text()).toBe("Temporarily unavailable. Please try again shortly.");
+    expect(response.headers.get("retry-after")).toBe("30");
+    expect(auth).not.toHaveBeenCalled();
+  });
 });
