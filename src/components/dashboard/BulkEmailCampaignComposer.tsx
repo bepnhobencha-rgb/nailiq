@@ -22,19 +22,24 @@ import {
 } from "@/app/dashboard/[slug]/marketing/actions";
 import { useUserLanguage } from "@/shared/lib/useUserLanguage";
 import type { DeliveryMode } from "@/shared/marketing/bulkEmailCampaignDelivery";
+import {
+  shouldShowCampaignDispatchStage,
+  type BulkEmailCampaignDispatchStage,
+  type BulkEmailCampaignPresentationStatus,
+} from "@/shared/marketing/bulkEmailCampaignPresentation";
 
 type Campaign = {
   id: string;
   name: string;
   subject: string;
-  status: "draft" | "prepared" | "approved" | "sending" | "completed" | "cancelled";
+  status: BulkEmailCampaignPresentationStatus;
   audienceCount: number;
   excludedNoConsent: number;
   excludedInvalidEmail: number;
   excludedOptout: number;
   excludedProviderSuppression: number;
   excludedDuplicate: number;
-  dispatchStage: "locked" | "canary" | "canary_complete" | "bulk" | "paused" | "completed";
+  dispatchStage: BulkEmailCampaignDispatchStage;
   canarySize: number;
   canaryClaimedCount: number;
   batchSize: number;
@@ -331,7 +336,7 @@ export function BulkEmailCampaignComposer({
                   </div>
                   <span className="rounded-full bg-nq-surface px-2.5 py-1 text-xs text-nq-muted">{statusLabel[campaign.status]}</span>
                 </div>
-                {campaign.status !== "draft" && campaign.status !== "prepared" ? (
+                {shouldShowCampaignDispatchStage(campaign.status, campaign.dispatchStage) ? (
                   <div className="mt-2 flex flex-wrap items-center gap-2 text-xs">
                     <span className="rounded-full border border-nq-primary/25 bg-nq-primary/10 px-2.5 py-1 font-medium text-nq-foreground">
                       {stageLabel[campaign.dispatchStage]}
