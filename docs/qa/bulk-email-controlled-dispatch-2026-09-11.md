@@ -64,13 +64,25 @@ Synthetic customer rows and recipient rows were removed after verification.
 The two immutable, PII-free QA campaign/event evidence sets remain by design. The
 synthetic salon's temporary email and dispatch switches were restored OFF.
 
+## Vercel Preview verification
+
+- Draft PR: `#1400`; source commit: `61bcc49d`.
+- Preview deployment `dpl_2GuuexGbWW6HovNYzjMBejCysGKA` reached `Ready` at
+  `https://nailiq-fwajnlnjo-bepnhobencha-2588s-projects.vercel.app`.
+- The branch-specific encrypted configuration resolves to Supabase QA disposable
+  `osdqutwunokiielbairj`; email, SMS, call, payment, and provider switches remain
+  OFF. Bulk email provider mode is `mock` with simulation enabled.
+- A temporary synthetic QA Owner opened the Marketing route successfully. The
+  page rendered the campaign creation flow, consent review, Owner approval step,
+  and the explicit QA simulation truth banner.
+- The temporary Owner, salon, and browser session were removed after the UI
+  check. No customer, provider, notification, or Production data was used.
+
 ## Not proven in this phase
 
-- No Vercel Preview has been created because commit/push/PR was not authorized
-  in this phase.
 - No real provider acceptance, delivery, bounce, complaint, unsubscribe, or
   inbox rendering was tested.
 - Nothing here authorizes Production migration, merge, deployment, live-salon
   activation, or customer email.
 
-Result for the approved local/QA phase: **PASS**.
+Result for the approved local/QA/Preview phase: **PASS**.
