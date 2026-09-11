@@ -143,7 +143,6 @@ describe("public group pricing route boundaries", () => {
       { stage: "phone_metering", outcome: "quote_unavailable", rates: [true, null] },
       { stage: "authorization", outcome: "booking_unavailable", rates: [true, true] },
       { stage: "quote_resolution", outcome: "quote_unavailable", rates: [true, true] },
-      { stage: "quote_resolution", outcome: "slot_conflict", rates: [true, true] },
       { stage: "quote_resolution", outcome: "pricing_invalid", rates: [true, true] },
     ] as const;
 
@@ -193,9 +192,7 @@ describe("public group pricing route boundaries", () => {
       mocks.quote.mockResolvedValueOnce({ ok: false, code });
       const response = await quotePost(request("group-quote", validBody));
       expect(response.status).toBe(503);
-      // Preserve the existing response contract even for an unexpected result;
-      // only diagnostic metadata is normalized to a fixed vocabulary.
-      await expect(response.json()).resolves.toEqual({ ok: false, code });
+      await expect(response.json()).resolves.toEqual({ ok: false, code: "quote_unavailable" });
       expect(console.warn).toHaveBeenCalledExactlyOnceWith(JSON.stringify({
         event: "group_quote_unavailable",
         status: 503,
@@ -221,6 +218,8 @@ describe("public group pricing route boundaries", () => {
       { label: "phone quota exhausted", status: 429 },
       { label: "resolver invalid request", status: 400 },
       { label: "invalid voucher", status: 422 },
+      { label: "slot conflict", status: 409 },
+      { label: "stale selection", status: 409 },
     ])("does not emit a 503 diagnostic for $label", async ({ label, status }) => {
       const req = request("group-quote", label === "invalid schema" ? {} : validBody);
       if (label === "forbidden origin") req.headers.delete("origin");
@@ -236,6 +235,8 @@ describe("public group pricing route boundaries", () => {
       if (label === "invalid voucher") {
         mocks.quote.mockResolvedValueOnce({ ok: false, code: "voucher_invalid" });
       }
+      if (label === "slot conflict") mocks.quote.mockResolvedValueOnce({ ok: false, code: "slot_conflict" });
+      if (label === "stale selection") mocks.quote.mockResolvedValueOnce({ ok: false, code: "selection_invalid" });
       const response = await quotePost(req);
       expect(response.status).toBe(status);
       expect(response.headers.get("cache-control")).toBe("no-store");

@@ -103,7 +103,16 @@ function rateLimitedResponse(message: string): NextResponse {
   });
 }
 
-function limiterUnavailableResponse(): NextResponse {
+function limiterUnavailableResponse(code?: "quote_unavailable" | "management_unavailable"): NextResponse {
+  if (code) {
+    try {
+      console.warn(JSON.stringify({ event: "booking_proxy_unavailable", stage: "public_api_metering", status: 503, code }));
+    } catch { /* Logging must not bypass the durable guard. */ }
+    return NextResponse.json({ ok: false, code }, {
+      status: 503,
+      headers: { "Cache-Control": "private, no-store", "Retry-After": "30", "Referrer-Policy": "no-referrer" },
+    });
+  }
   return new NextResponse("Temporarily unavailable. Please try again shortly.", {
     status: 503,
     headers: {
@@ -477,7 +486,10 @@ export async function proxy(request: NextRequest) {
     if (durableLimit === "limited") {
       return rateLimitedResponse("Too many requests. Please try again in a minute.");
     }
-    if (durableLimit === "unavailable") return limiterUnavailableResponse();
+    if (durableLimit === "unavailable") return limiterUnavailableResponse(
+      pathnameEarly === "/api/booking/group-quote" ? "quote_unavailable"
+        : pathnameEarly === "/api/booking/save-card-context" ? "management_unavailable" : undefined,
+    );
   }
 
   let supabaseResponse = NextResponse.next({ request });

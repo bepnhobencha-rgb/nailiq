@@ -5,7 +5,7 @@ import { resolveSupabaseServerUrl } from "@/shared/lib/supabase/serverUrl";
  * Privileged Supabase client for server-only mutations that bypass RLS
  * (registration OTP rows, salon seeding, etc.). Requires `SUPABASE_SERVICE_ROLE_KEY`.
  */
-export function createServiceRoleClient() {
+export function createServiceRoleClient(options?: { timeoutMs?: number }) {
   const url = resolveSupabaseServerUrl();
   const key = process.env.SUPABASE_SERVICE_ROLE_KEY;
   if (!url || !key) {
@@ -23,6 +23,19 @@ export function createServiceRoleClient() {
     );
   }
   return createClient(url, key, {
+    ...(options?.timeoutMs ? { global: { fetch: async (input: RequestInfo | URL, init?: RequestInit) => {
+      const timeout = AbortSignal.timeout(options.timeoutMs!);
+      const signal = init?.signal ?? (input instanceof Request ? input.signal : undefined);
+      const boundedSignal = signal ? AbortSignal.any([signal, timeout]) : timeout;
+      try {
+        return await fetch(input, { ...init, signal: boundedSignal });
+      } catch (error) {
+        // PostgREST retries GET network errors, including TimeoutError. Use its
+        // recognized cancellation class so a deadline never restarts itself.
+        if (boundedSignal.aborted) throw new DOMException("Dependency request aborted", "AbortError");
+        throw error;
+      }
+    } } } : {}),
     auth: {
       autoRefreshToken: false,
       persistSession: false,

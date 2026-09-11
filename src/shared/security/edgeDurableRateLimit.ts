@@ -5,6 +5,14 @@ import { resolveSupabaseServerUrl } from "@/shared/lib/supabase/serverUrl";
 
 export type EdgeRateLimitResult = "allowed" | "limited" | "unavailable";
 
+function logUnavailable(reason: "configuration" | "queue_full" | "queue_timeout" | "preparation" | "transport" | "timeout" | "http_error" | "invalid_receipt", status?: number) {
+  try {
+    console.warn(JSON.stringify({ event: "edge_rate_limit_unavailable", reason,
+      ...(Number.isInteger(status) && status! >= 100 && status! <= 599 ? { upstreamStatus: status } : {}),
+    }));
+  } catch { /* Keep failing closed if the diagnostic sink fails. */ }
+}
+
 type EdgeBucket = {
   name: string;
   limit: number;
@@ -148,9 +156,12 @@ async function executeDurableRpcBatch(batch: readonly DurableRpcRequest[]) {
   if (!target) return;
 
   const controller = new AbortController();
+  let reason: "transport" | "timeout" | "http_error" | "invalid_receipt" = "transport";
+  let upstreamStatus: number | undefined;
   let fetchTimeout: ReturnType<typeof setTimeout> | undefined;
   const timeoutPromise = new Promise<never>((_resolve, reject) => {
     fetchTimeout = setTimeout(() => {
+      reason = "timeout";
       controller.abort();
       reject(new Error("durable rate-limit RPC timed out"));
     }, DURABLE_RPC_FETCH_MS);
@@ -176,8 +187,11 @@ async function executeDurableRpcBatch(batch: readonly DurableRpcRequest[]) {
           },
         );
         if (!response.ok) {
+          reason = "http_error";
+          upstreamStatus = response.status;
           throw new Error("durable rate-limit RPC failed");
         }
+        reason = "invalid_receipt";
         return response.json() as Promise<unknown>;
       })(),
       timeoutPromise,
@@ -188,6 +202,7 @@ async function executeDurableRpcBatch(batch: readonly DurableRpcRequest[]) {
       allowed.length !== batch.length ||
       allowed.some((value) => typeof value !== "boolean")
     ) {
+      logUnavailable("invalid_receipt");
       failBatch(batch);
       return;
     }
@@ -199,6 +214,7 @@ async function executeDurableRpcBatch(batch: readonly DurableRpcRequest[]) {
       );
     });
   } catch {
+    logUnavailable(reason, upstreamStatus);
     failBatch(batch);
   } finally {
     if (fetchTimeout !== undefined) clearTimeout(fetchTimeout);
@@ -294,9 +310,13 @@ export async function consumeEdgeDurableRateLimits(input: {
         bucket.windowSeconds > 2_147_483_647,
     )
   ) {
+    logUnavailable("configuration");
     return "unavailable";
   }
-  if (durableRpcQueue.length >= MAX_DURABLE_RPC_QUEUE) return "unavailable";
+  if (durableRpcQueue.length >= MAX_DURABLE_RPC_QUEUE) {
+    logUnavailable("queue_full");
+    return "unavailable";
+  }
 
   const target = resolveDurableRpcTarget(url, serviceKey);
   return new Promise<EdgeRateLimitResult>((resolve) => {
@@ -315,6 +335,7 @@ export async function consumeEdgeDurableRateLimits(input: {
     durableRpcQueue.push(request as DurableRpcRequest);
     request.queueTimeout = setTimeout(() => {
       if (request.state !== "queued") return;
+      logUnavailable("queue_timeout");
       removeQueuedRequest(request as DurableRpcRequest);
       settleDurableRpcRequest(request as DurableRpcRequest, "unavailable");
       if (durableRpcQueue.length > 0) scheduleDurableRpcDrain(0);
@@ -325,6 +346,7 @@ export async function consumeEdgeDurableRateLimits(input: {
         if (request.state !== "queued") return;
         const keys = new Set(persistedBuckets.map((bucket) => bucket.p_key));
         if (keys.size !== persistedBuckets.length) {
+          logUnavailable("preparation");
           removeQueuedRequest(request as DurableRpcRequest);
           settleDurableRpcRequest(request as DurableRpcRequest, "unavailable");
           if (durableRpcQueue.length > 0) scheduleDurableRpcDrain(0);
@@ -337,6 +359,7 @@ export async function consumeEdgeDurableRateLimits(input: {
       })
       .catch(() => {
         if (request.state !== "queued") return;
+        logUnavailable("preparation");
         removeQueuedRequest(request as DurableRpcRequest);
         settleDurableRpcRequest(request as DurableRpcRequest, "unavailable");
         if (durableRpcQueue.length > 0) scheduleDurableRpcDrain(0);
