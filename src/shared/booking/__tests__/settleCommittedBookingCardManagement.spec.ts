@@ -128,7 +128,7 @@ describe("committed booking card-only continuation", () => {
     );
 
     expect(result).toEqual({
-      cardManagementToken: null,
+      cardManagementToken: "44444444-4444-4444-8444-444444444444",
       cardManagementPending: false,
     });
     expect(fetcher).toHaveBeenCalledTimes(2);
@@ -164,7 +164,7 @@ describe("committed booking card-only continuation", () => {
     expect(fetcher).toHaveBeenCalledTimes(1);
   });
 
-  it("does not redispatch or expose a possibly consumed token after an ambiguous save", async () => {
+  it("does not redispatch and preserves an expiring read/recovery token after an ambiguous save", async () => {
     const fetcher = vi.fn(async (url: RequestInfo | URL, init?: RequestInit) => {
       void init;
       return String(url).endsWith("card-capability")
@@ -182,7 +182,7 @@ describe("committed booking card-only continuation", () => {
     );
 
     expect(result).toEqual({
-      cardManagementToken: null,
+      cardManagementToken: "44444444-4444-4444-8444-444444444444",
       cardManagementPending: true,
     });
     expect(fetcher).toHaveBeenCalledTimes(2);
@@ -229,10 +229,21 @@ describe("committed booking card-only continuation", () => {
     );
 
     expect(result).toEqual({
-      cardManagementToken: null,
+      cardManagementToken: "44444444-4444-4444-8444-444444444444",
       cardManagementPending: true,
     });
     expect(reuseSavedCard).toHaveBeenCalledTimes(1);
     expect(fetcher).toHaveBeenCalledTimes(1);
+  });
+
+  it("keeps the expiring receipt link after verified saved-card reuse without sending a source", async () => {
+    const reuseSavedCard = vi.fn(async () => ({ ok: true }));
+    const fetcher = vi.fn(async () => jsonResponse({ ok: true, token: "44444444-4444-4444-8444-444444444444" }));
+    await expect(settleCommittedBookingCardManagement({ ...baseInput, reuseSavedCard }, fetcher)).resolves.toEqual({
+      cardManagementToken: "44444444-4444-4444-8444-444444444444",
+      cardManagementPending: false,
+    });
+    expect(fetcher).toHaveBeenCalledTimes(1);
+    expect(reuseSavedCard).toHaveBeenCalledTimes(1);
   });
 });

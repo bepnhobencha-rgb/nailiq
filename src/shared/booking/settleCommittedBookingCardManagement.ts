@@ -133,13 +133,13 @@ export async function settleCommittedBookingCardManagement(
         return { response: saveResponse, value: saveValue };
       });
       if (response.ok && value?.ok === true) {
-        return { cardManagementToken: null, cardManagementPending: false };
+        return { cardManagementToken, cardManagementPending: false };
       }
     } catch {
       // The provider outcome may be unknown. Never issue a second save here.
     }
 
-    return { cardManagementToken: null, cardManagementPending: true };
+    return { cardManagementToken, cardManagementPending: true };
   }
 
   const reuseSavedCard = input.reuseSavedCard;
@@ -147,12 +147,12 @@ export async function settleCommittedBookingCardManagement(
     try {
       const reused = await withinCardManagementDeadline(() => reuseSavedCard());
       if (reused.ok) {
-        return { cardManagementToken: null, cardManagementPending: false };
+        return { cardManagementToken, cardManagementPending: false };
       }
     } catch {
       // Reuse is best-effort after commit; the booking result remains final.
     }
-    return { cardManagementToken: null, cardManagementPending: true };
+    return { cardManagementToken, cardManagementPending: true };
   }
 
   return {

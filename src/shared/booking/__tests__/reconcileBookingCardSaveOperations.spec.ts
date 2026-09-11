@@ -86,7 +86,7 @@ describe("booking card save reconciliation", () => {
 
     const result = await reconcileBookingCardSaveOperations();
     expect(result).toMatchObject({ processed: 1, reconciled: 0, unresolved: 1 });
-    expect(mocks.rpc.mock.calls[1][1]).toMatchObject({ p_outcome: "manual_review" });
+    expect(mocks.rpc.mock.calls[1][1]).toMatchObject({ p_outcome: "multiple_matches" });
   });
 
   it("records an exact no-match without creating another card", async () => {
@@ -99,4 +99,34 @@ describe("booking card save reconciliation", () => {
     expect(result).toMatchObject({ processed: 1, reconciled: 0, unresolved: 1 });
     expect(mocks.rpc.mock.calls[1][1]).toMatchObject({ p_outcome: "not_found" });
   });
+
+  it("closes one fully bound disabled card without creating or disabling another card", async () => {
+    mocks.getConfig.mockResolvedValue({ merchantId:"merchant-1",environment:"sandbox" });
+    mocks.rpc.mockResolvedValueOnce({ data:[{ ...due(),expected_customer_id:"customer-1",
+      expected_merchant_id:"merchant-1",expected_environment:"sandbox" }],error:null })
+      .mockResolvedValueOnce({ data:{ ok:true,code:"retry_required" },error:null });
+    mocks.listByReference.mockResolvedValue([{ cardId:"card-1",customerId:"customer-1",brand:"VISA",last4:"4242",
+      enabled:false,referenceId:REFERENCE,merchantId:"merchant-1" }]);
+
+    await expect(reconcileBookingCardSaveOperations()).resolves.toMatchObject({ processed:1,reconciled:0,unresolved:1 });
+    expect(mocks.listByReference).toHaveBeenCalledTimes(1);
+    expect(mocks.rpc.mock.calls[1][1]).toMatchObject({ p_outcome:"disabled_card",p_card_id:"card-1",p_customer_id:"customer-1" });
+  });
+
+  it.each(["missing_customer_binding","wrong_customer","missing_last4","wrong_merchant"])(
+    "never releases a disabled card with %s", async (failure) => {
+      mocks.getConfig.mockResolvedValue({ merchantId:"merchant-1",environment:"sandbox" });
+      mocks.rpc.mockResolvedValueOnce({ data:[{ ...due(),
+        expected_customer_id:failure === "missing_customer_binding" ? null : "customer-1",
+        expected_merchant_id:"merchant-1",expected_environment:"sandbox" }],error:null })
+        .mockResolvedValueOnce({ data:{ ok:true,code:"manual_review_required" },error:null });
+      mocks.listByReference.mockResolvedValue([{ cardId:"card-1",
+        customerId:failure === "wrong_customer" ? "customer-other" : "customer-1",brand:"VISA",
+        last4:failure === "missing_last4" ? "" : "4242",enabled:false,referenceId:REFERENCE,
+        merchantId:failure === "wrong_merchant" ? "merchant-other" : "merchant-1" }]);
+
+      await reconcileBookingCardSaveOperations();
+      expect(mocks.rpc.mock.calls[1][1]).toMatchObject({ p_outcome:"invalid_card" });
+    },
+  );
 });

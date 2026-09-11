@@ -76,6 +76,7 @@ export async function resolvePaymentProvider(
       const cfg = await getSquareConfig(db, salonId);
       return new SquareProvider(cfg);
     } catch {
+      if (options?.strict) throw new Error("square_config_unavailable");
       return null; // not connected / missing token
     }
   }

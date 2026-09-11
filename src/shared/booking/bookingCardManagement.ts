@@ -1,6 +1,9 @@
 import "server-only";
 
 import { createHash } from "node:crypto";
+import { cardFailure, safeCardFailure, type CardFailure } from "@/shared/integrations/payments/cardDeliveryFailure";
+import { buildNoShowConsentPolicy } from "@/shared/noshow/noShowConsentPolicy";
+import type { StoredPolicy } from "@/shared/lib/cancellationPolicy";
 
 import { resolvePaymentProvider, type PaymentProvider } from "@/shared/integrations/payments";
 import { getStripeClient } from "@/shared/lib/stripe";
@@ -21,6 +24,7 @@ type ClaimedOperation = {
   operationId: string;
   attemptToken: string;
   providerIdempotencyKey: string;
+  customerIdempotencyKey: string;
   attemptReplay: boolean;
   bookingId: string;
   salonId: string;
@@ -33,7 +37,8 @@ type ClaimedOperation = {
     feeCents: number;
     currency: string;
     salonName: string;
-    cancellationPolicy: string | null;
+    cancellationPolicy: StoredPolicy;
+    scope: "booking_member" | "whole_party";
   };
 };
 
@@ -119,6 +124,7 @@ function parseClaim(value: unknown): ClaimedOperation | CardOperationResult {
     operationId,
     attemptToken,
     providerIdempotencyKey,
+    customerIdempotencyKey: cleanString(material.customer_idempotency_key) ?? `sqcust:${bookingId}`,
     attemptReplay,
     bookingId,
     salonId,
@@ -131,7 +137,8 @@ function parseClaim(value: unknown): ClaimedOperation | CardOperationResult {
       feeCents,
       currency: currency.toUpperCase(),
       salonName,
-      cancellationPolicy: cleanString(material.cancellation_policy),
+      cancellationPolicy: material.cancellation_policy as StoredPolicy,
+      scope: material.group_id && material.whole_party !== false ? "whole_party" : "booking_member",
     },
   };
 }
@@ -216,6 +223,19 @@ export async function removeCardWithManagementCapability(input: {
   }
 }
 
+async function recordFailure(operationId: string, attemptToken: string, failure: CardFailure): Promise<void> {
+  try {
+    await createServiceRoleClient().rpc("record_booking_card_delivery_failure" as never, {
+      p_operation_id: operationId, p_attempt_token: attemptToken,
+      p_stage: failure.stage, p_code: failure.code, p_http_status: failure.httpStatus,
+      p_square_codes: failure.squareCodes, p_square_categories: failure.squareCategories,
+      p_retryability: failure.retryability,
+    } as never);
+  } catch {
+    // No raw error logging. A missing DB acknowledgment never authorizes redispatch.
+  }
+}
+
 async function completeSave(input: {
   operationId: string;
   attemptToken: string;
@@ -229,7 +249,8 @@ async function completeSave(input: {
   consentMeta?: Record<string, unknown> | null;
   errorCode?: string | null;
 }): Promise<CardOperationResult> {
-  const { data, error } = await createServiceRoleClient().rpc(
+  try {
+    const { data, error } = await createServiceRoleClient().rpc(
     "complete_booking_card_save_operation" as never,
     {
       p_operation_id: input.operationId,
@@ -245,7 +266,11 @@ async function completeSave(input: {
       p_error_code: input.errorCode ?? null,
     } as never,
   );
-  return error ? { ok: false, code: "completion_write_uncertain" } : parseResult(data);
+    if (!error) return parseResult(data);
+  } catch { /* Response loss includes a committed database transaction. */ }
+  await recordFailure(input.operationId, input.attemptToken,
+    safeCardFailure(null, "database_completion"));
+  return { ok: false, code: "database_completion_uncertain" };
 }
 
 async function claimSave(input: {
@@ -304,6 +329,7 @@ export async function saveCardWithManagementCapability(input: {
   sourceToken: string;
   verificationToken?: string;
 }): Promise<CardOperationResult> {
+  if (process.env.NAILIQ_CARD_SAVE_DISPATCH_DISABLED === "true") return { ok:false,code:"card_capture_paused" };
   if (!UUID_RE.test(input.tokenId) || !UUID_RE.test(input.requestId) ||
       !input.sourceToken.trim() || input.sourceToken.length > 2048) return { ok: false, code: "invalid_request" };
   const claim = await claimSave({
@@ -329,84 +355,96 @@ export async function saveCardWithManagementCapability(input: {
       salonId: claim.salonId,
     };
   }
+  const claimed = claim;
+  async function fail(failure: CardFailure): Promise<CardOperationResult> {
+    await recordFailure(claimed.operationId, claimed.attemptToken, failure);
+    return completeSave({ operationId: claimed.operationId, attemptToken: claimed.attemptToken,
+      outcome: failure.retryability === "safe_retry" || failure.retryability === "new_card" ? "failed" : "unknown",
+      errorCode: failure.code });
+  }
   let provider: PaymentProvider | null;
   try {
     provider = await resolvePaymentProvider(claim.salonId, { strict: true, purpose: "card_on_file" });
-  } catch {
-    return completeSave({
-      operationId: claim.operationId,
-      attemptToken: claim.attemptToken,
-      outcome: "failed",
-      errorCode: "provider_configuration_unavailable",
-    });
-  }
-  if (!provider || provider.kind !== input.provider) {
-    return completeSave({
-      operationId: claim.operationId, attemptToken: claim.attemptToken,
-      outcome: "failed", errorCode: "provider_configuration_invalid",
-    });
+    if (!provider || provider.kind !== input.provider) throw cardFailure("configuration", "square_config_unavailable", "safe_retry");
+  } catch (error) {
+    return fail(safeCardFailure(error, "configuration"));
   }
   const consentAt = new Date().toISOString();
+  const policy = buildNoShowConsentPolicy({ storedPolicy: claim.providerMaterial.cancellationPolicy,
+    salonName: claim.providerMaterial.salonName, feeCents: claim.providerMaterial.feeCents,
+    currency: claim.providerMaterial.currency, scope: claim.providerMaterial.scope });
+  if (!policy.ready || !policy.version) {
+    return fail(cardFailure("dispatch_preparation", "consent_policy_unavailable", "safe_retry").failure);
+  }
   const consentMeta = {
-    v: 1,
-    source: "booking_card_manage",
-    fee_cents: claim.providerMaterial.feeCents,
-    currency: claim.providerMaterial.currency,
-    cancellation_policy: claim.providerMaterial.cancellationPolicy,
+    v: 2, source: "booking_card_manage", policyVersion: policy.version,
+    feeCents: policy.feeCents, currency: policy.currency, scope: policy.scope,
+    policyEn: policy.policyEn, policyVi: policy.policyVi,
   };
-  const prepared = await prepareSaveDispatch({
-    operationId: claim.operationId,
-    attemptToken: claim.attemptToken,
-    consentAt,
-    consentMeta,
-  });
-  if (!prepared.ok || !prepared.providerReferenceKey) {
-    // No provider request occurred. A retry may safely resume preparation.
-    return { ok: false, code: prepared.code };
-  }
+  let prepared: Awaited<ReturnType<typeof prepareSaveDispatch>>;
   try {
-    const saved = await provider.saveCardOnFile({
-      customer: {
-        name: claim.providerMaterial.clientName,
-        phone: claim.providerMaterial.clientPhone,
-        email: claim.providerMaterial.clientEmail,
-        referenceId: `booking:${claim.bookingId}`,
-      },
-      sourceToken: input.sourceToken.trim(),
-      verificationToken: input.verificationToken,
-      idempotencyKey: claim.providerIdempotencyKey,
-      cardReferenceId: prepared.providerReferenceKey,
-    });
-    if (!saved.cardId.trim() || !saved.last4.match(/^\d{4}$/) || !saved.brand.trim()) {
-      return completeSave({
-        operationId: claim.operationId, attemptToken: claim.attemptToken,
-        outcome: "unknown", errorCode: "invalid_provider_receipt",
-      });
-    }
-    return completeSave({
-      operationId: claim.operationId,
-      attemptToken: claim.attemptToken,
-      outcome: "succeeded",
-      providerReference: saved.cardId,
-      cardId: saved.cardId,
-      customerId: saved.customerId,
-      cardBrand: saved.brand,
-      cardLast4: saved.last4,
-      consentAt,
-      consentMeta,
-    });
+    prepared = await prepareSaveDispatch({ operationId: claim.operationId,
+      attemptToken: claim.attemptToken, consentAt, consentMeta });
   } catch {
-    return completeSave({
-      operationId: claim.operationId, attemptToken: claim.attemptToken,
-      outcome: "unknown", errorCode: "provider_exception",
-    });
+    prepared = { ok: false, code: "dispatch_prepare_uncertain" };
   }
+  if (!prepared.ok || !prepared.providerReferenceKey) {
+    // This request has not called the provider. Closing it is safe even if
+    // the preparation acknowledgment was lost; no other request owns dispatch.
+    return fail(cardFailure("dispatch_preparation", "dispatch_prepare_uncertain", "safe_retry").failure);
+  }
+  let saved: Awaited<ReturnType<PaymentProvider["saveCardOnFile"]>>;
+  try {
+    saved = await provider.saveCardOnFile({
+      customer: { name: claim.providerMaterial.clientName, phone: claim.providerMaterial.clientPhone,
+        email: claim.providerMaterial.clientEmail, referenceId: `booking:${claim.bookingId}` },
+      sourceToken: input.sourceToken.trim(), verificationToken: input.verificationToken,
+      idempotencyKey: claim.providerIdempotencyKey,
+      customerIdempotencyKey: claim.customerIdempotencyKey,
+      customerOperation: { operationId:claim.operationId,attemptToken:claim.attemptToken },
+      beforeCustomerWork: async (identity) => {
+        try {
+          const { data, error } = await createServiceRoleClient().rpc("bind_booking_card_provider_identity" as never, {
+            p_operation_id: claim.operationId, p_attempt_token: claim.attemptToken,
+            p_merchant_id: identity.merchantId, p_environment: identity.environment,
+          } as never);
+          if (error || row(data)?.ok !== true) throw new Error("identity_unacknowledged");
+        } catch { throw cardFailure("configuration", "square_config_unavailable", "safe_retry"); }
+      },
+      cardReferenceId: prepared.providerReferenceKey,
+      beforeCardDispatch: async (binding) => {
+        try {
+          const { data, error } = await createServiceRoleClient().rpc("bind_booking_card_save_dispatch" as never, {
+            p_operation_id: claim.operationId, p_attempt_token: claim.attemptToken,
+            p_customer_id: binding.customerId, p_merchant_id: binding.merchantId,
+            p_environment: binding.environment,
+          } as never);
+          if (error || row(data)?.ok !== true) throw new Error("binding_unacknowledged");
+        } catch {
+          throw cardFailure("dispatch_preparation", "dispatch_binding_uncertain", "safe_retry");
+        }
+      },
+    });
+  } catch (error) {
+    return fail(safeCardFailure(error, "card_create"));
+  }
+  if (!cleanString(saved.cardId) || !cleanString(saved.customerId) ||
+      typeof saved.last4 !== "string" || !/^\d{4}$/.test(saved.last4) || !cleanString(saved.brand)) {
+    return fail(cardFailure("receipt_validation", "square_invalid_card_receipt", "reconcile_first").failure);
+  }
+  // Database failure is outside the provider catch: never reinterpret it as a
+  // rejected card and never call CreateCard again after a provider receipt.
+  return completeSave({ operationId: claim.operationId, attemptToken: claim.attemptToken,
+    outcome: "succeeded", providerReference: saved.cardId, cardId: saved.cardId,
+    customerId: saved.customerId, cardBrand: saved.brand.toUpperCase(), cardLast4: saved.last4,
+    consentAt, consentMeta });
 }
 
 export async function createStripeSetupWithManagementCapability(input: {
   tokenId: string;
   requestId: string;
 }): Promise<CardOperationResult & { clientSecret?: string }> {
+  if (process.env.NAILIQ_CARD_SAVE_DISPATCH_DISABLED === "true") return { ok:false,code:"card_capture_paused" };
   const claim = await claimSave({
     tokenId: input.tokenId,
     requestId: input.requestId,

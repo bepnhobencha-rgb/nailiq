@@ -124,13 +124,6 @@ async function depositsEnabled(db: Db, salonId: string, strict = false): Promise
   return (data as { deposit_enabled?: boolean } | null)?.deposit_enabled === true;
 }
 
-async function supersedeDepositWithCard(db: Db, bookingId: string): Promise<void> {
-  await db
-    .from("bookings")
-    .update({ deposit_required: false, deposit_status: "not_required" } as never)
-    .eq("id", bookingId)
-    .eq("deposit_status", "required");
-}
 
 /** Whether this booking should be asked to leave a card (risk-gated). The
  *  public booking page calls this to decide whether to render the card step. */
@@ -147,13 +140,13 @@ export async function noShowCardDecision(
   const db = looseServiceClient();
   const { data, error } = await db
     .from("bookings")
-    .select("salon_id, price_cents, no_show_risk_score, noshow_card_id, noshow_card_required, client_phone, group_id")
+    .select("salon_id, price_cents, no_show_risk_score, noshow_card_id, card_protection_status, noshow_card_required, client_phone, group_id")
     .eq("id", bookingId)
     .maybeSingle();
   if (options?.strict && (error || !data)) throw new Error("noshow_booking_unavailable");
   const b = data as Row | null;
   if (!b) return { required: false, feeCents: 0, reason: "booking not found" };
-  if (b.noshow_card_id) return { required: false, feeCents: 0, reason: "card already saved" };
+  if (b.card_protection_status === "saved") return { required: false, feeCents: 0, reason: "card protection active" };
 
   const policy = await loadPolicy(db, str(b.salon_id), options?.strict === true);
   if (!policy.enabled) {
@@ -164,9 +157,7 @@ export async function noShowCardDecision(
     strict: options?.strict === true,
     purpose: "card_on_file",
   });
-  if (!provider) {
-    return { required: false, feeCents: 0, reason: "no payment provider connected" };
-  }
+  if (!provider && options?.strict) throw new Error("square_config_unavailable");
 
   // Gate: a NEW customer (no prior non-cancelled booking at this salon) always
   // leaves a card; returning customers only when their no-show risk is high.
@@ -190,7 +181,7 @@ export async function noShowCardDecision(
   // A guarded live AI decision is persisted on the booking. Honour that
   // server-authored requirement even when the legacy history/risk gate would
   // not ask, while still deriving the amount solely from salon policy.
-  if (b.noshow_card_required === true) {
+  if (b.noshow_card_required === true || b.card_protection_status === "manual_review") {
     const { baseCents, partySize } = await noShowBaseCents(
       db,
       b,
@@ -281,100 +272,10 @@ export async function saveNoShowCardForBooking(
   consent: boolean,
   verificationToken?: string,
 ): Promise<{ ok: boolean; reason: string; last4?: string }> {
-  if (!consent) return { ok: false, reason: "consent required" };
-  const db = looseServiceClient();
-  const { data } = await db
-    .from("bookings")
-    .select("id, salon_id, client_name, client_phone, client_email, price_cents, noshow_card_id")
-    .eq("id", bookingId)
-    .maybeSingle();
-  const b = data as Row | null;
-  if (!b) return { ok: false, reason: "booking not found" };
-  if (b.noshow_card_id) return { ok: true, reason: "already saved" }; // idempotent
-
-  const decision = await noShowCardDecision(bookingId);
-  if (!decision.required) return { ok: false, reason: decision.reason };
-
-  const { data: salonRow } = await db
-    .from("salons")
-    .select("currency_code, name, cancellation_policy")
-    .eq("id", str(b.salon_id))
-    .maybeSingle();
-  const sr = salonRow as Row | null;
-  const consentPolicy = buildNoShowConsentPolicy({
-    storedPolicy: sr?.cancellation_policy as { en?: string; vi?: string } | null,
-    salonName: String(sr?.name || ""),
-    feeCents: decision.feeCents,
-    currency: String(sr?.currency_code || "USD"),
-    scope: decision.scope ?? "booking_member",
-  });
-  if (!consentPolicy.ready || !consentPolicy.version) {
-    return { ok: false, reason: "no-show policy not ready" };
-  }
-
-  const provider = await resolvePaymentProvider(str(b.salon_id), { purpose: "card_on_file" });
-  if (!provider) return { ok: false, reason: "payment provider not configured" };
-  const saved = await provider.saveCardOnFile({
-    customer: {
-      name: str(b.client_name) || null,
-      phone: str(b.client_phone) || null,
-      email: str(b.client_email) || null,
-      referenceId: `booking:${bookingId}`,
-    },
-    sourceToken: sourceId,
-    verificationToken,
-    // Legacy server-only callers retain stable provider dedupe while public
-    // card capture migrates to the durable card_manage operation contract.
-    idempotencyKey: `legacy-card-save:${bookingId}`,
-    cardReferenceId: `legacy-card:${bookingId}`,
-  });
-
-  // Server-authored consent evidence: the exact terms the customer agreed to,
-  // captured at save time (amount + currency + plain-English policy). Stored as
-  // proof for a chargeback dispute — never trust the client to supply this.
-  const currency = consentPolicy.currency;
-  const feeStr = `${(decision.feeCents / 100).toFixed(2)} ${currency}`;
-  // When the organizer's card covers a whole party, say so explicitly in the
-  // consent — the fee is for the group, not one person (chargeback evidence).
-  const partyClause =
-    (decision.partySize ?? 1) > 1
-      ? ` for their party of ${decision.partySize}`
-      : "";
-  const { policyEvidence } = await import("@/shared/lib/cancellationPolicy");
-  const consentMeta = {
-    policyText: `Cardholder authorized this salon to keep this card on file and to charge a no-show fee of ${feeStr}${partyClause} only if they do not show up for this appointment. No charge is made at booking. The cardholder may remove the card at any time.`,
-    feeCents: decision.feeCents,
-    currency,
-    scope: consentPolicy.scope,
-    policyVersion: consentPolicy.version,
-    cardBrand: saved.brand,
-    cardLast4: saved.last4,
-    // Snapshot of the salon's full cancellation policy the customer agreed to —
-    // strongest chargeback/consent evidence.
-    cancellationPolicy: policyEvidence(
-      sr?.cancellation_policy as { en?: string; vi?: string } | null,
-      String(sr?.name || ""),
-    ),
-    capturedAt: new Date().toISOString(),
-  };
-
-  await db
-    .from("bookings")
-    .update({
-      noshow_card_id: saved.cardId,
-      noshow_customer_id: saved.customerId,
-      noshow_card_last4: saved.last4,
-      noshow_card_brand: saved.brand,
-      noshow_fee_cents: decision.feeCents,
-      noshow_charge_status: "saved",
-      noshow_consent_at: new Date().toISOString(),
-      noshow_consent_meta: consentMeta,
-    } as never)
-    .eq("id", bookingId);
-
-  await supersedeDepositWithCard(db, bookingId);
-
-  return { ok: true, reason: "saved", last4: saved.last4 };
+  // Retired direct-write entry point. Public capture must supply a scoped
+  // capability to saveCardWithManagementCapability; booking ID alone is not authority.
+  void bookingId; void sourceId; void consent; void verificationToken;
+  return { ok: false, reason: "management_capability_required" };
 }
 
 /** Attach a returning customer's EXISTING saved card to this booking — no new
@@ -393,12 +294,12 @@ export async function reuseNoShowCardForBooking(
   const db = looseServiceClient();
   const { data } = await db
     .from("bookings")
-    .select("id, salon_id, client_phone, noshow_card_id")
+    .select("id, salon_id, client_phone, noshow_card_id, card_protection_status")
     .eq("id", bookingId)
     .maybeSingle();
   const b = data as Row | null;
   if (!b) return { ok: false, reason: "booking not found" };
-  if (b.noshow_card_id) return { ok: true, reason: "already saved" }; // idempotent
+  if (b.card_protection_status === "saved") return { ok: true, reason: "already saved" }; // idempotent
 
   const decision = await noShowCardDecision(bookingId);
   if (!decision.required) return { ok: false, reason: decision.reason };
@@ -446,40 +347,10 @@ export async function reuseNoShowCardForBooking(
   if (!provider) return { ok: false, reason: "payment provider not configured" };
   const card = await provider.findSavedCardByPhone(sessionPhone);
   if (!card || !card.cardId) return { ok: false, reason: "no saved card" };
-  const customerId = card.customerId;
-
-  // Server-authored consent evidence (mirrors the save path) + a reused flag.
-  const currency = consentPolicy.currency;
-  const feeStr = `${(decision.feeCents / 100).toFixed(2)} ${currency}`;
-  const consentMeta = {
-    policyText: `Cardholder authorized this salon to charge a no-show fee of ${feeStr} to their card on file (${card.brand} ending ${card.last4}) only if they do not show up for this appointment. No charge is made at booking. The cardholder may remove the card at any time.`,
-    feeCents: decision.feeCents,
-    currency,
-    scope: consentPolicy.scope,
-    policyVersion: consentPolicy.version,
-    cardBrand: card.brand,
-    cardLast4: card.last4,
-    reused: true,
-    capturedAt: new Date().toISOString(),
-  };
-
-  await db
-    .from("bookings")
-    .update({
-      noshow_card_id: card.cardId,
-      noshow_customer_id: customerId,
-      noshow_card_last4: card.last4,
-      noshow_card_brand: card.brand,
-      noshow_fee_cents: decision.feeCents,
-      noshow_charge_status: "saved",
-      noshow_consent_at: new Date().toISOString(),
-      noshow_consent_meta: consentMeta,
-    } as never)
-    .eq("id", bookingId);
-
-  await supersedeDepositWithCard(db, bookingId);
-
-  return { ok: true, reason: "reused", last4: card.last4 };
+  const { persistExistingSquareCardReceipt } = await import("@/shared/booking/persistExistingSquareCardReceipt");
+  const saved = await persistExistingSquareCardReceipt({ bookingId, salonId:str(b.salon_id), provider:provider.kind,
+    card, policy:consentPolicy, source:"explicit_reuse" });
+  return saved ? { ok:true,reason:"reused",last4:card.last4 } : { ok:false,reason:"card_recovery_required" };
 }
 
 /**
@@ -513,12 +384,12 @@ export async function autoAttachReturningCard(
     const db = looseServiceClient();
     const { data } = await db
       .from("bookings")
-      .select("id, salon_id, price_cents, client_phone, noshow_card_id, group_id, deposit_required, deposit_status")
+      .select("id, salon_id, price_cents, client_phone, noshow_card_id, card_protection_status, group_id, deposit_required, deposit_status")
       .eq("id", bookingId)
       .maybeSingle();
     const b = data as Row | null;
     if (!b) return { attached: false, reason: "booking not found" };
-    if (b.noshow_card_id) {
+    if (b.card_protection_status === "saved") {
       await db
         .from("bookings")
         .update({ noshow_card_required: false } as never)
@@ -570,6 +441,7 @@ export async function autoAttachReturningCard(
     const { data: priorConsentRows } = await db
       .from("bookings")
       .select("noshow_consent_meta")
+      .eq("card_protection_status", "saved")
       .eq("salon_id", str(b.salon_id))
       .eq("client_phone", str(b.client_phone))
       .not("id", "eq", bookingId)
@@ -592,46 +464,11 @@ export async function autoAttachReturningCard(
     const card = await provider.findSavedCardByPhone(phone);
     if (!card || !card.cardId) return { attached: false, reason: "no saved card on file" };
 
-    const currency = consentPolicy.currency;
-    const feeStr = `${(feeCents / 100).toFixed(2)} ${currency}`;
-    const { policyEvidence } = await import("@/shared/lib/cancellationPolicy");
-    const consentMeta = {
-      policyText: `Cardholder previously authorized this salon to keep this card (${card.brand} ending ${card.last4}) on file for their visits, and to charge a no-show fee of ${feeStr} only if they do not show up. The card on file is carried forward to this appointment. No charge is made at booking. The cardholder may remove the card at any time.`,
-      feeCents,
-      currency,
-      scope: consentPolicy.scope,
-      policyVersion: consentPolicy.version,
-      cardBrand: card.brand,
-      cardLast4: card.last4,
-      reused: true,
-      carriedForward: true,
-      capturedAt: new Date().toISOString(),
-      cancellationPolicy: policyEvidence(
-        sr?.cancellation_policy as { en?: string; vi?: string } | null,
-        String(sr?.name || ""),
-      ),
-    };
-
-    await db
-      .from("bookings")
-      .update({
-        noshow_card_id: card.cardId,
-        noshow_customer_id: card.customerId,
-        noshow_card_last4: card.last4,
-        noshow_card_brand: card.brand,
-        noshow_fee_cents: feeCents,
-        noshow_charge_status: "saved",
-        noshow_consent_at: new Date().toISOString(),
-        noshow_consent_meta: consentMeta,
-        noshow_card_required: false,
-      } as never)
-      .eq("id", bookingId);
-
-    await supersedeDepositWithCard(db, bookingId);
-
-    return { attached: true, reason: "carried forward", last4: card.last4 };
-  } catch (e) {
-    console.error("[autoAttachReturningCard]", e);
+    const { persistExistingSquareCardReceipt } = await import("@/shared/booking/persistExistingSquareCardReceipt");
+    const saved = await persistExistingSquareCardReceipt({ bookingId, salonId:str(b.salon_id), provider:provider.kind,
+      card, policy:consentPolicy, source:"prior_matching_consent" });
+    return saved ? { attached:true,reason:"carried forward",last4:card.last4 } : { attached:false,reason:"fresh consent required" };
+  } catch {
     return { attached: false, reason: "error" };
   }
 }

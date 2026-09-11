@@ -6,11 +6,16 @@
  * hardcoded — mirrors the Wix integration's `client.ts` posture.
  */
 
+import {
+  CardDeliveryError, cardFailure, squareFailureStage, stageFailureCode,
+  SQUARE_SAFE_ERROR_CODES, SQUARE_SAFE_ERROR_CATEGORIES,
+} from "@/shared/integrations/payments/cardDeliveryFailure";
 import { validateGuestPhone } from "@/shared/booking/validateGuestPhone";
 
 const SQUARE_API = "https://connect.squareup.com/v2";
 const SQUARE_SANDBOX_API = "https://connect.squareupsandbox.com/v2";
 const SQUARE_VERSION = "2024-12-18";
+const responseHttpStatus = new WeakMap<object, number>();
 
 export type SquareEnvironment = "production" | "sandbox";
 
@@ -87,28 +92,36 @@ export interface SquareBooking {
   }[];
 }
 
-class SquareHttpError extends Error {
+class SquareHttpError extends CardDeliveryError {
   readonly status: number;
   readonly codes: string[];
-
-  constructor(message: string, status: number, codes: string[]) {
-    super(message);
+  constructor(status: number, errors: unknown, stage: ReturnType<typeof squareFailureStage>) {
+    const entries = Array.isArray(errors) ? errors : [];
+    // Unknown/malformed/mixed codes must not become a definitive rejection.
+    const codes = entries.map((value: unknown) => {
+      const code = value && typeof value === "object" ? (value as { code?: unknown }).code : null;
+      return typeof code === "string" && (SQUARE_SAFE_ERROR_CODES as readonly string[]).includes(code)
+        ? code : "UNCLASSIFIED";
+    });
+    const categories = entries.flatMap((value: unknown) => {
+      const category = value && typeof value === "object" ? (value as { category?: unknown }).category : null;
+      return typeof category === "string" && (SQUARE_SAFE_ERROR_CATEGORIES as readonly string[]).includes(category)
+        ? [category] : [];
+    });
+    const declined = ["CARD_DECLINED", "GENERIC_DECLINE", "CARD_NOT_SUPPORTED", "CARD_EXPIRED",
+      "INVALID_CARD_DATA", "VERIFY_CVV_FAILURE", "VERIFY_AVS_FAILURE", "CARD_DECLINED_VERIFICATION_REQUIRED",
+      "SOURCE_EXPIRED", "SOURCE_USED", "CARD_TOKEN_EXPIRED", "CARD_TOKEN_USED"];
+    const definitiveDecline = status >= 400 && status < 500 && codes.length > 0 &&
+      codes.every((code) => declined.includes(code));
+    super({ stage: stage ?? "configuration", code: stage ? stageFailureCode(stage) : "square_request_failed",
+      httpStatus: status, squareCodes: [...new Set(codes.filter((code) => code !== "UNCLASSIFIED"))],
+      squareCategories: [...new Set(categories)], retryability: stage === "card_create"
+        ? definitiveDecline ? "new_card" : "reconcile_first"
+        : stage === "reconciliation" || stage === "customer_create" ? "reconcile_first" : "safe_retry" });
     this.name = "SquareHttpError";
     this.status = status;
     this.codes = codes;
   }
-}
-
-function squareErrorCodes(value: unknown): string[] {
-  if (!Array.isArray(value)) return [];
-  const codes: string[] = [];
-  for (const item of value) {
-    if (!item || typeof item !== "object") return [];
-    const code = (item as { code?: unknown }).code;
-    if (typeof code !== "string" || code.length === 0) return [];
-    codes.push(code);
-  }
-  return codes;
 }
 
 function isDefinitiveInvalidPhoneError(error: unknown): boolean {
@@ -142,7 +155,7 @@ export async function getSquareConfig(db: Db, salonId: string): Promise<SquareCo
     .select("salon_id, merchant_id, location_id, access_token, application_id, environment, sync_pull_create, sync_pull_update, sync_pull_cancel, sync_push_create, sync_push_update, sync_push_cancel")
     .eq("salon_id", salonId)
     .maybeSingle();
-  if (error) throw new Error(`square_integrations load failed: ${JSON.stringify(error)}`);
+  if (error) throw cardFailure("configuration", "square_config_unavailable", "safe_retry");
   const row = data as {
     salon_id: string;
     merchant_id: string;
@@ -208,25 +221,38 @@ async function squareReq(
   body?: unknown,
   apiVersion = SQUARE_VERSION,
 ): Promise<Record<string, unknown>> {
-  const res = await fetch(`${apiBase(cfg)}${path}`, {
-    method,
-    headers: {
-      Authorization: `Bearer ${cfg.accessToken}`,
-      "Square-Version": apiVersion,
-      "Content-Type": "application/json",
-    },
-    body: body ? JSON.stringify(body) : undefined,
-  });
-  const json = (await res.json()) as Record<string, unknown>;
-  if (!res.ok) {
-    const errors = json.errors;
-    throw new SquareHttpError(
-      `Square ${method} ${path} -> ${res.status}: ${JSON.stringify(errors ?? json)}`,
-      res.status,
-      squareErrorCodes(errors),
-    );
+  const stage = squareFailureStage(method, path);
+  let res: Response | undefined;
+  let json: unknown;
+  try {
+    // No automatic transport retry: POST delivery may already have happened.
+    res = await fetch(`${apiBase(cfg)}${path}`, {
+      method,
+      headers: { Authorization: `Bearer ${cfg.accessToken}`, "Square-Version": apiVersion,
+        "Content-Type": "application/json" },
+      body: body ? JSON.stringify(body) : undefined,
+      signal: stage ? AbortSignal.timeout(12_000) : undefined,
+    });
+    json = await res.json();
+  } catch {
+    throw cardFailure(stage ?? "configuration", stage === "card_create" ? "provider_response_lost"
+      : stage ? stageFailureCode(stage) : "square_request_failed",
+      stage === "card_create" || stage === "reconciliation" || stage === "customer_create" ? "reconcile_first" : "safe_retry", res?.status ?? null);
   }
-  return json;
+  if (!res.ok) {
+    throw new SquareHttpError(res.status,
+      json && typeof json === "object" ? (json as Record<string, unknown>).errors : null, stage);
+  }
+  if (!json || typeof json !== "object" || Array.isArray(json) ||
+      ((json as Record<string, unknown>).errors !== undefined &&
+        (!Array.isArray((json as Record<string, unknown>).errors) ||
+          ((json as Record<string, unknown>).errors as unknown[]).length > 0))) {
+    throw cardFailure(stage === "card_create" ? "receipt_validation" : stage ?? "configuration",
+      stage === "card_create" ? "square_invalid_card_receipt" : stage ? stageFailureCode(stage) : "square_invalid_response",
+      stage === "card_create" || stage === "reconciliation" || stage === "customer_create" ? "reconcile_first" : "safe_retry", res.status);
+  }
+  responseHttpStatus.set(json, res.status);
+  return json as Record<string, unknown>;
 }
 
 /**
@@ -388,7 +414,7 @@ export async function findSquareCustomerByPhone(
     // duplicate CreateCustomer mutation under a fresh idempotency key.
     const found = await squareReq(cfg, "POST", "/customers/search", {
       query: { filter: { phone_number: { exact: candidate } } },
-      limit: 1,
+      limit: 2,
     });
     // Square documents a successful search with no matches as an empty JSON
     // object (`{}`), so an omitted `customers` field is a definitive empty
@@ -400,18 +426,18 @@ export async function findSquareCustomerByPhone(
       (responseErrors !== undefined
         && (!Array.isArray(responseErrors) || responseErrors.length > 0))
       || !Array.isArray(customers)
+      || customers.length > 1
       || customers.some((customer) => (
         !customer
         || typeof customer !== "object"
         || typeof (customer as { id?: unknown }).id !== "string"
         || !(customer as { id: string }).id.trim()
       ))
-      || (customers.length === 0
-        && found.cursor !== undefined
+      || (found.cursor !== undefined
         && found.cursor !== null
         && found.cursor !== "")
     ) {
-      throw new Error("Square SearchCustomers returned an invalid response");
+      throw cardFailure("customer_search", "square_customer_search_failed", "safe_retry", responseHttpStatus.get(found) ?? null);
     }
     const hit = customers[0] as { id: string } | undefined;
     if (hit) return hit.id;
@@ -419,16 +445,50 @@ export async function findSquareCustomerByPhone(
   return null;
 }
 
+/** Exact reference read only. A malformed/multiple receipt is never absence. */
+export async function findSquareCustomerByReference(cfg: SquareConfig, referenceId: string): Promise<string | null> {
+  const found = await squareReq(cfg, "POST", "/customers/search", {
+    query: { filter: { reference_id: { exact: referenceId } } }, limit: 2,
+  });
+  const matches = found.customers === undefined ? [] : found.customers;
+  if (!Array.isArray(matches) || matches.length > 1 || found.cursor || matches.some((entry) =>
+    !entry || typeof entry !== "object" || typeof entry.id !== "string" || !/^[A-Za-z0-9:_-]{1,255}$/.test(entry.id) || entry.reference_id !== referenceId)) {
+    throw cardFailure("customer_search", "square_customer_search_failed", "manual_review", responseHttpStatus.get(found) ?? null);
+  }
+  return matches.length === 1 ? matches[0].id : null;
+}
+
 /** Find-or-create a Square customer for this booking's contact. */
 export async function ensureSquareCustomer(
   cfg: SquareConfig,
-  opts: { name?: string | null; phone?: string | null; email?: string | null; referenceId: string; idempotencyKey: string },
+  opts: { name?: string | null; phone?: string | null; email?: string | null; referenceId: string; idempotencyKey: string; reconcileReference?: boolean; matchEmailFallback?: boolean; beforeCreate?: () => Promise<void> },
 ): Promise<string> {
   // Match on phone first (the salon's primary key for a guest). An unsuccessful
   // provider response must propagate: only a successful empty search proves it
   // is safe to attempt CreateCustomer.
   if (opts.phone) {
     const existing = await findSquareCustomerByPhone(cfg, opts.phone);
+    if (existing) return existing;
+  }
+  if (opts.email?.trim() && (!opts.phone || opts.matchEmailFallback)) {
+    // A prior INVALID_PHONE fallback can have stored this email without a
+    // phone. Match that exact profile, never a profile with a different phone.
+    // Square documents exact email matching as case-insensitive.
+    const email = opts.email.trim().toLowerCase();
+    const found = await squareReq(cfg,"POST","/customers/search",{query:{filter:{email_address:{exact:email}}},limit:2});
+    const matches = found.customers === undefined ? [] : found.customers;
+    if (!Array.isArray(matches) || matches.length>1 || found.cursor || matches.some(entry =>
+      !entry || typeof entry!=="object" || typeof entry.id!=="string" || !/^[A-Za-z0-9:_-]{1,255}$/.test(entry.id) ||
+      typeof entry.email_address!=="string" || entry.email_address.trim().toLowerCase()!==email ||
+      (opts.phone && entry.phone_number != null && entry.phone_number !== "" &&
+        (typeof entry.phone_number!=="string" || !phoneSearchCandidates(entry.phone_number)[0] ||
+          phoneSearchCandidates(entry.phone_number)[0] !== phoneSearchCandidates(opts.phone)[0])))) {
+      throw cardFailure("customer_search","square_customer_search_failed","manual_review",responseHttpStatus.get(found)??null);
+    }
+    if (matches.length===1) return matches[0].id;
+  }
+  if (opts.reconcileReference) {
+    const existing = await findSquareCustomerByReference(cfg, opts.referenceId);
     if (existing) return existing;
   }
   const parts = (opts.name ?? "").trim().split(/\s+/);
@@ -438,14 +498,16 @@ export async function ensureSquareCustomer(
     email_address: opts.email || undefined,
     reference_id: opts.referenceId,
   };
+  await opts.beforeCreate?.();
   try {
     const json = await squareReq(cfg, "POST", "/customers", {
       idempotency_key: opts.idempotencyKey,
-      phone_number: opts.phone || undefined,
+      phone_number: opts.phone ? phoneSearchCandidates(opts.phone)[0] ?? opts.phone : undefined,
       ...base,
     });
     const id = (json.customer as { id?: unknown } | undefined)?.id;
     if (typeof id === "string" && id.trim()) return id;
+    throw cardFailure("customer_create", "square_customer_create_failed", "reconcile_first", responseHttpStatus.get(json) ?? null);
   } catch (e) {
     // A second idempotency key is safe only when Square definitively rejected
     // this exact request because of the phone. Transport failures, 5xxs and
@@ -461,9 +523,8 @@ export async function ensureSquareCustomer(
     });
     const id = (json.customer as { id?: unknown } | undefined)?.id;
     if (typeof id === "string" && id.trim()) return id;
-    throw e;
+    throw cardFailure("customer_create", "square_customer_create_failed", "reconcile_first", responseHttpStatus.get(json) ?? null);
   }
-  throw new Error("Square CreateCustomer returned no id");
 }
 
 /** Save a tokenized card (Web Payments SDK sourceId) on file for later charging. */
@@ -488,10 +549,12 @@ export async function saveCardOnFile(
       : {}),
     card: { customer_id: opts.customerId, reference_id: opts.referenceId },
   });
-  const card = (json.card as Record<string, unknown>) ?? {};
-  const cardId = String(card.id ?? "");
-  if (!cardId) throw new Error("Square CreateCard returned no id");
-  return { cardId, last4: String(card.last_4 ?? ""), brand: String(card.card_brand ?? "") };
+  const card = parseSquareCard(json.card);
+  if (!card || !card.enabled || card.customerId !== opts.customerId ||
+      card.referenceId !== opts.referenceId || card.merchantId !== cfg.merchantId) {
+    throw cardFailure("receipt_validation", "square_invalid_card_receipt", "reconcile_first", responseHttpStatus.get(json) ?? null);
+  }
+  return { cardId: card.cardId, last4: card.last4, brand: card.brand };
 }
 
 /** Charge a saved card-on-file (used to collect the no-show fee). */
@@ -555,44 +618,97 @@ export async function listCards(
   cfg: SquareConfig,
   customerId: string,
 ): Promise<Array<{ cardId: string; last4: string; brand: string; expMonth?: number; expYear?: number }>> {
-  const json = await squareReq(cfg, "GET", `/cards?customer_id=${encodeURIComponent(customerId)}`);
-  const cards = (json.cards as Record<string, unknown>[] | undefined) ?? [];
-  return cards.map((c) => ({
-    cardId: String(c.id ?? ""),
-    last4: String(c.last_4 ?? ""),
-    brand: String(c.card_brand ?? ""),
-    expMonth: typeof c.exp_month === "number" ? c.exp_month : undefined,
-    expYear: typeof c.exp_year === "number" ? c.exp_year : undefined,
-  }));
+  const result: Array<{ cardId: string; last4: string; brand: string }> = [];
+  const cursors = new Set<string>();
+  let cursor: string | undefined;
+  do {
+    const json = await squareReq(cfg, "GET", `/cards?customer_id=${encodeURIComponent(customerId)}` +
+      (cursor ? `&cursor=${encodeURIComponent(cursor)}` : ""));
+    const page = json.cards ?? [];
+    if (!Array.isArray(page)) throw cardFailure("receipt_validation", "square_invalid_card_receipt", "safe_retry");
+    for (const raw of page) {
+      // Existing cards can predate operation references, but ownership, enabled
+      // state and complete display receipt must still be proved by Square.
+      const candidate = raw && typeof raw === "object" ? { ...raw, reference_id: raw.reference_id ?? "" } : raw;
+      const card = parseSquareCard(candidate);
+      if (!card || !card.enabled || card.customerId !== customerId || card.merchantId !== cfg.merchantId) {
+        throw cardFailure("receipt_validation", "square_invalid_card_receipt", "safe_retry");
+      }
+      result.push({ cardId: card.cardId, last4: card.last4, brand: card.brand });
+    }
+    if (json.cursor != null && typeof json.cursor !== "string") throw cardFailure("receipt_validation", "square_invalid_card_receipt", "safe_retry");
+    cursor = typeof json.cursor === "string" && json.cursor ? json.cursor : undefined;
+    if (cursor && (cursors.has(cursor) || cursors.size >= 100)) throw cardFailure("receipt_validation", "square_invalid_card_receipt", "safe_retry");
+    if (cursor) cursors.add(cursor);
+  } while (cursor);
+  return result;
 }
 
 /** Read-only response-loss recovery. The reference is unique per durable
  * operation, so callers never need to re-submit the source token. */
-export async function listCardsByReferenceId(
-  cfg: SquareConfig,
-  referenceId: string,
-): Promise<Array<{
-  cardId: string;
-  customerId: string;
-  last4: string;
-  brand: string;
-  enabled: boolean;
-  referenceId: string;
-}>> {
-  const json = await squareReq(
-    cfg,
-    "GET",
-    `/cards?reference_id=${encodeURIComponent(referenceId)}&include_disabled=true`,
-  );
-  const cards = (json.cards as Record<string, unknown>[] | undefined) ?? [];
-  return cards.map((card) => ({
-    cardId: String(card.id ?? "").trim(),
-    customerId: String(card.customer_id ?? "").trim(),
-    last4: String(card.last_4 ?? "").trim(),
-    brand: String(card.card_brand ?? "").trim(),
-    enabled: card.enabled !== false,
-    referenceId: String(card.reference_id ?? "").trim(),
-  }));
+export type SquareCardReceipt = {
+  cardId: string; customerId: string; last4: string; brand: string;
+  enabled: boolean; referenceId: string; merchantId: string;
+};
+
+const squareId = (value: unknown): value is string =>
+  typeof value === "string" && /^[A-Za-z0-9:_-]{1,255}$/.test(value);
+const squareBrands = new Set(["VISA", "MASTERCARD", "AMERICAN_EXPRESS", "DISCOVER", "DISCOVER_DINERS",
+  "DINERS_CLUB", "JCB", "UNIONPAY", "CHINA_UNIONPAY", "EFTPOS", "INTERAC", "OTHER_BRAND"]);
+
+export function parseSquareCard(value: unknown): SquareCardReceipt | null {
+  if (!value || typeof value !== "object" || Array.isArray(value)) return null;
+  const card = value as Record<string, unknown>;
+  if (!squareId(card.id) || !squareId(card.customer_id) || !squareId(card.merchant_id) ||
+      typeof card.reference_id !== "string" || typeof card.enabled !== "boolean" ||
+      typeof card.last_4 !== "string" || !/^\d{4}$/.test(card.last_4) ||
+      typeof card.card_brand !== "string" || !squareBrands.has(card.card_brand)) return null;
+  return { cardId: card.id, customerId: card.customer_id, last4: card.last_4, brand: card.card_brand,
+    enabled: card.enabled, referenceId: card.reference_id, merchantId: card.merchant_id };
+}
+
+export async function listCardsByReferenceId(cfg: SquareConfig, referenceId: string): Promise<SquareCardReceipt[]> {
+  if (!/^nq-card:[0-9a-f-]{36}$/i.test(referenceId)) {
+    throw cardFailure("reconciliation", "reconciliation_invalid_card", "manual_review");
+  }
+  const cards: SquareCardReceipt[] = [];
+  const cursors = new Set<string>();
+  let cursor: string | undefined;
+  do {
+    const json = await squareReq(cfg, "GET",
+      `/cards?reference_id=${encodeURIComponent(referenceId)}&include_disabled=true` +
+      (cursor ? `&cursor=${encodeURIComponent(cursor)}` : ""));
+    const page = json.cards === undefined ? [] : json.cards;
+    if (!Array.isArray(page)) throw cardFailure("reconciliation", "reconciliation_invalid_card", "manual_review");
+    for (const raw of page) {
+      const card = parseSquareCard(raw);
+      // A malformed/mismatched receipt is never an empty successful search.
+      if (!card || card.referenceId !== referenceId || card.merchantId !== cfg.merchantId) {
+        throw cardFailure("reconciliation", "reconciliation_invalid_card", "manual_review");
+      }
+      cards.push(card);
+    }
+    if (json.cursor != null && json.cursor !== "" && typeof json.cursor !== "string") {
+      throw cardFailure("reconciliation", "reconciliation_invalid_card", "manual_review");
+    }
+    cursor = typeof json.cursor === "string" && json.cursor ? json.cursor : undefined;
+    if (cursor) {
+      if (cursors.has(cursor) || cursors.size >= 100) {
+        throw cardFailure("reconciliation", "reconciliation_read_incomplete", "reconcile_first");
+      }
+      cursors.add(cursor);
+    }
+  } while (cursor);
+  // Identical pagination overlap is harmless; conflicting copies of one ID are not.
+  const unique = new Map<string, SquareCardReceipt>();
+  for (const card of cards) {
+    const existing = unique.get(card.cardId);
+    if (existing && JSON.stringify(existing) !== JSON.stringify(card)) {
+      throw cardFailure("reconciliation", "reconciliation_invalid_card", "manual_review");
+    }
+    unique.set(card.cardId, card);
+  }
+  return [...unique.values()];
 }
 
 /** Disable (remove) a saved card on file. Square has no hard delete — a

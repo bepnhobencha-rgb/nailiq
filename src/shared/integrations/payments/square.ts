@@ -2,7 +2,6 @@ import "server-only";
 import { createHash } from "node:crypto";
 import {
   type SquareConfig,
-  ensureSquareCustomer,
   saveCardOnFile as sqSaveCard,
   chargeSavedCard as sqCharge,
   refundPayment as sqRefund,
@@ -10,8 +9,10 @@ import {
   findSquareCustomerByPhone,
   listCards as sqListCards,
 } from "@/shared/integrations/square/client";
-import type { PaymentProvider } from "./types";
+import type { PaymentProvider, CardDispatchBinding } from "./types";
 import { toProviderMinorAmount } from "@/shared/payments/providerMinorUnits";
+import { resolveSquareCardCustomer, type CardCustomerOperation } from "@/shared/integrations/square/cardCustomerClaim";
+import { cardFailure } from "./cardDeliveryFailure";
 
 /** Square implementation of PaymentProvider — thin wrapper over the existing
  *  Square REST helpers (behaviour identical to the previous direct calls). */
@@ -59,14 +60,16 @@ export class SquareProvider implements PaymentProvider {
     verificationToken?: string;
     idempotencyKey: string;
     cardReferenceId: string;
+    customerIdempotencyKey?: string;
+    customerOperation?: CardCustomerOperation;
+    beforeCardDispatch?: (binding: CardDispatchBinding) => Promise<void>;
+    beforeCustomerWork?: (identity: Omit<CardDispatchBinding, "customerId">) => Promise<void>;
   }) {
-    const customerId = await ensureSquareCustomer(this.cfg, {
-      name: input.customer.name ?? null,
-      phone: input.customer.phone ?? null,
-      email: input.customer.email ?? null,
-      referenceId: input.customer.referenceId,
-      idempotencyKey: `${input.idempotencyKey}:customer`,
-    });
+    await input.beforeCustomerWork?.({ merchantId: this.cfg.merchantId, environment: this.cfg.environment });
+    if (!input.customerOperation) throw cardFailure("customer_search","square_customer_search_failed","safe_retry");
+    const customerId = await resolveSquareCardCustomer(this.cfg,input.customerOperation);
+    await input.beforeCardDispatch?.({ customerId, merchantId: this.cfg.merchantId,
+      environment: this.cfg.environment });
     const card = await sqSaveCard(this.cfg, {
       customerId,
       sourceId: input.sourceToken,
@@ -137,8 +140,9 @@ export class SquareProvider implements PaymentProvider {
     const customerId = await findSquareCustomerByPhone(this.cfg, phone);
     if (!customerId) return null;
     const cards = await sqListCards(this.cfg, customerId);
-    const card = cards[0];
-    if (!card || !card.cardId) return null;
-    return { customerId, cardId: card.cardId, last4: card.last4, brand: card.brand };
+    const card = cards.length === 1 ? cards[0] : null;
+    if (!card) return null;
+    return { customerId, cardId: card.cardId, last4: card.last4, brand: card.brand,
+      binding: { customerId, merchantId: this.cfg.merchantId, environment: this.cfg.environment } };
   }
 }

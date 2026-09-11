@@ -526,10 +526,10 @@ export async function sendBookingConfirmationEmail(
     // (reminders_enabled) is off.
     const { data: cardRow } = await supabase
       .from("bookings")
-      .select("noshow_card_id, noshow_card_last4, noshow_card_brand, noshow_fee_cents, end_time_utc")
+      .select("noshow_card_id, card_protection_status, noshow_card_last4, noshow_card_brand, noshow_fee_cents, end_time_utc")
       .eq("id", input.bookingId)
       .maybeSingle();
-    const hasCard = Boolean((cardRow as { noshow_card_id?: string | null } | null)?.noshow_card_id);
+    const hasCard = (cardRow as { card_protection_status?: string } | null)?.card_protection_status === "saved";
     const bookingEndUtc =
       typeof (cardRow as { end_time_utc?: string | null } | null)?.end_time_utc === "string"
         ? String((cardRow as { end_time_utc: string }).end_time_utc)

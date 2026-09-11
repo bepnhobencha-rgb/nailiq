@@ -1,4 +1,9 @@
 {
+  "git": {
+    "deploymentEnabled": {
+      "fix/square-card-delivery-truth-20260911": false
+    }
+  },
   "crons": [
     {
       "path": "/api/cron/campaign-scheduler",

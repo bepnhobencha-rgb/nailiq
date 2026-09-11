@@ -3,6 +3,7 @@ export type LateCancellationBookingPolicy = {
   startTimeUtc: string;
   noShowFeeCents: number | null;
   noShowCardId: string | null;
+  cardProtectionStatus?: import("@/shared/booking/cardProtection").CardProtectionStatus;
   noShowConsentAt: string | null;
   noShowChargeStatus: string | null;
   selfCancelFeeLockedAt?: string | null;
@@ -125,6 +126,7 @@ export function evaluateLateCancellationPolicy(input: {
       : calculateLateCancellationFeeCents(booking.noShowFeeCents, salon);
 
   const hasChargeableCard =
+    booking.cardProtectionStatus === "saved" &&
     Boolean(booking.noShowCardId) &&
     Boolean(booking.noShowConsentAt) &&
     feeCents > 0 &&
