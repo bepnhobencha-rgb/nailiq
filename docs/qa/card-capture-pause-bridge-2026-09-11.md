@@ -6,6 +6,8 @@ Setting `NAILIQ_CARD_SAVE_DISPATCH_DISABLED=true` in a newly deployed bridge pro
 
 The secure save-card page also reads the pause from its authorized context response. During a pause it keeps the reservation visible, distinguishes an unsaved card from existing card details, renders no capture component, and asks the guest to reopen the link later. Cancelled or expired links keep their existing error handling. This uses only existing booking columns and leaves the active capture behavior unchanged. The capture pause does not extend a capability's expiry.
 
+An additional real-time Preview check let a synthetic capability expire naturally. The API correctly returned `expired_or_revoked`, but the old page recognized only `expired_token`/`invalid_token` and displayed a generic error. The page now also maps the actual expiry/revocation code to its existing expired-link instruction. No capability expiry, authorization, or revocation behavior changed.
+
 Validation: 14 focused tests prove zero database/provider calls when paused; webpack Next build, subsequent standalone typecheck and touched-file lint passed. The complete clean-environment unit suite now passes 4749 tests with one opt-in skip and zero failed tests or suites. Four Square client suites mock only the server marker. One old source-boundary assertion depended on a 9000-character distance; it now verifies claim replay mapping and the early reconciliation return within the save function, backed by the existing executable no-redispatch test. No safety assertion or provider guard was removed. These are local results. A deployed pause has not been verified.
 
 Before any Production schema migration, the release operator must establish all of the following under a separate explicit approval:

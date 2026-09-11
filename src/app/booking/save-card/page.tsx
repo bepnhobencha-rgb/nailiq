@@ -188,7 +188,7 @@ function SaveCardManager() {
             <p className="text-sm font-medium text-amber-800">
               {state.code === "cancelled"
                 ? "This appointment was cancelled. / Lịch hẹn này đã bị huỷ."
-                : state.code === "expired_token" || state.code === "invalid_token"
+                : state.code === "expired_token" || state.code === "expired_or_revoked" || state.code === "invalid_token"
                   ? "This link has expired. Please contact the salon. / Liên kết đã hết hạn, vui lòng liên hệ salon."
                   : "Something went wrong. Please try again. / Có lỗi xảy ra, vui lòng thử lại."}
             </p>
