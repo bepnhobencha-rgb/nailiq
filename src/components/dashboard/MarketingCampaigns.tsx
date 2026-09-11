@@ -18,6 +18,7 @@ import { useUserLanguage } from "@/shared/lib/useUserLanguage";
 import { cn } from "@/shared/lib/cn";
 import { BulkEmailCampaignComposer } from "@/components/dashboard/BulkEmailCampaignComposer";
 import type { DeliveryMode } from "@/shared/marketing/bulkEmailCampaignDelivery";
+import type { BulkEmailCampaignList } from "@/shared/marketing/bulkEmailCampaignStore";
 import {
   sendReoptinTestAction,
   sendReoptinCampaignAction,
@@ -68,27 +69,7 @@ export function MarketingCampaigns({
   stats: Stats;
   schedules: Schedule[];
   bulkDeliveryMode: DeliveryMode;
-  bulkCampaigns: {
-    available: boolean;
-    campaigns: Array<{
-      id: string;
-      name: string;
-      subject: string;
-      status: "draft" | "prepared" | "approved" | "sending" | "completed" | "cancelled";
-      audienceCount: number;
-      excludedNoConsent: number;
-      excludedInvalidEmail: number;
-      excludedOptout: number;
-      excludedProviderSuppression: number;
-      excludedDuplicate: number;
-      dispatchStage: "locked" | "canary" | "canary_complete" | "bulk" | "paused" | "completed";
-      canarySize: number;
-      canaryClaimedCount: number;
-      batchSize: number;
-      bulkReleaseApprovedAt: string | null;
-      createdAt: string;
-    }>;
-  };
+  bulkCampaigns: BulkEmailCampaignList;
 }) {
   const { language } = useUserLanguage();
   const vi = language === "vi";

@@ -19,6 +19,10 @@ const expiredLeaseMigration = readFileSync(
   join(root, "supabase/migrations/20260911191812_recover_bulk_email_expired_leases.sql"),
   "utf8",
 );
+const ownerReportMigration = readFileSync(
+  join(root, "supabase/migrations/20260911213924_add_bulk_email_owner_reporting.sql"),
+  "utf8",
+);
 const delivery = readFileSync(join(root, "src/shared/marketing/bulkEmailCampaignDelivery.ts"), "utf8");
 const registry = readFileSync(join(root, "src/shared/lib/emailExperienceRegistry.ts"), "utf8");
 const webhook = readFileSync(join(root, "src/app/api/webhooks/resend/route.ts"), "utf8");
@@ -104,5 +108,21 @@ describe("bulk email campaign safety acceptance", () => {
     expect(expiredLeaseMigration).toMatch(
       /REVOKE ALL ON FUNCTION public\.claim_marketing_email_campaign_recipients[\s\S]*?FROM PUBLIC, anon, authenticated/,
     );
+  });
+
+  it("makes owner reporting aggregate-only and repairs cross-campaign suppressions", () => {
+    expect(ownerReportMigration).toContain("get_marketing_email_campaign_report");
+    expect(ownerReportMigration).toContain("member.role IN ('owner', 'admin')");
+    expect(ownerReportMigration).toContain("customer_email_delivery_suppressions");
+    expect(ownerReportMigration).toContain("ON CONFLICT (salon_id, recipient_fingerprint) DO UPDATE");
+    expect(ownerReportMigration).toMatch(
+      /REVOKE ALL ON FUNCTION public\.get_marketing_email_campaign_report\(uuid, uuid\)[\s\S]*?FROM PUBLIC, anon, authenticated/,
+    );
+    expect(ownerReportMigration).toMatch(
+      /GRANT EXECUTE ON FUNCTION public\.get_marketing_email_campaign_report\(uuid, uuid\)[\s\S]*?TO service_role/,
+    );
+    const reportBody = ownerReportMigration
+      .split("CREATE OR REPLACE FUNCTION public.get_marketing_email_campaign_report")[1] ?? "";
+    expect(reportBody).not.toMatch(/destination_email|client_name|client_profile_id/);
   });
 });

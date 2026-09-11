@@ -196,6 +196,8 @@ import { execFileSync } from "node:child_process";
  * enables no salon, and cannot call an email provider by itself.
  * The 20260911191812 expired-lease recovery hotfix replaces the claim function
  * in place, so it changes behavior but does not change these shape counts.
+ * The 20260911213924 owner-reporting migration adds one service-role-only
+ * aggregate report function and replaces the delivery-event recorder in place.
  * The 20260911040747 card-delivery-truth migration adds two service-only
  * event/customer-claim tables, 50 columns, 22 functions (including preserved
  * legacy wrappers), six triggers and five indexes. These are the rehearsed
@@ -350,7 +352,8 @@ const PRODUCTION = {
   // +9 bulk email role, immutable-event, draft/audience/approval, claim,
   // completion, final-material, and signed-receipt functions.
   // +5 controlled canary/pause/resume/release and completion-trigger functions.
-  functions: 559,
+  // +1 service-role-only aggregate campaign delivery report function.
+  functions: 560,
   // +4 pending-receipt correlation triggers across notification/staff INSERT
   // and provider-SID transitions.
   // +1 V1 terminal-booking policy trigger.
