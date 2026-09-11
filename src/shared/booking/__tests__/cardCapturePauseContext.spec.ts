@@ -33,9 +33,34 @@ beforeEach(() => {
   } });
   mocks.consent.mockResolvedValue({ version: "synthetic-policy-v2", policyEn: "Synthetic policy", policyVi: "Chính sách thử nghiệm" });
 });
-afterEach(() => vi.unstubAllEnvs());
+afterEach(() => { vi.unstubAllEnvs(); vi.restoreAllMocks(); });
 
 describe("paused card-management context", () => {
+  it.each(["rate_metering", "capability_inspection", "client_configuration"])("retains safe diagnostics for %s without exposing a management token", async stage => {
+    vi.spyOn(console, "warn").mockImplementation(() => {});
+    if (stage === "rate_metering") mocks.rate.mockResolvedValue("unavailable");
+    if (stage === "capability_inspection") mocks.inspect.mockResolvedValue({ ok: false, code: "management_unavailable" });
+    if (stage === "client_configuration") mocks.db.mockImplementation(() => { throw new Error("private key=secret"); });
+    const response = await GET(request());
+    expect(response.status).toBe(503);
+    expect(await response.json()).toEqual({ ok: false, code: "management_unavailable" });
+    expect(console.warn).toHaveBeenCalledExactlyOnceWith(JSON.stringify({ event: "card_context_unavailable", status: 503, stage, code: "unclassified" }));
+  });
+
+  it.each(["bookings", "salons"])("identifies a failed %s read and never emits partial protected metadata", async table => {
+    vi.spyOn(console, "warn").mockImplementation(() => {});
+    mocks.db.mockReturnValue({ from: (name: string) => {
+      const builder = { select: () => builder, eq: () => builder, maybeSingle: async () => name === table
+        ? { data: null, error: { code: "57014", message: "private database detail" } }
+        : { data: name === "bookings" ? booking : { name: "Synthetic QA" }, error: null } };
+      return builder;
+    } });
+    const response = await GET(request());
+    expect(response.status).toBe(503);
+    expect(await response.json()).toEqual({ ok: false, code: "management_unavailable" });
+    expect(console.warn).toHaveBeenCalledExactlyOnceWith(JSON.stringify({ event: "card_context_unavailable", status: 503, stage: table === "bookings" ? "booking_read" : "salon_read", code: "57014" }));
+  });
+
   it.each(["not_required", "awaiting_card", "saving", "saved", "reconciliation_pending", "retry_required", "manual_review"])("preserves durable %s truth while disabling capture actions", async status => {
     recovery.protectionStatus = status;
     recovery.canRefreshConsent = true;

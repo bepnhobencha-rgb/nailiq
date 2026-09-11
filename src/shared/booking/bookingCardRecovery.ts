@@ -12,7 +12,7 @@ export async function inspectCardRecovery(token: string): Promise<
 > {
   if (!UUID.test(token)) return { ok: false, code: "expired_or_revoked" };
   try {
-    const { data, error } = await createServiceRoleClient().rpc("inspect_booking_card_recovery" as never, { p_token_id: token } as never);
+    const { data, error } = await createServiceRoleClient({ timeoutMs: 4_000 }).rpc("inspect_booking_card_recovery" as never, { p_token_id: token } as never);
     const value = data as Record<string, unknown> | null;
     if (error) return { ok: false, code: "management_unavailable" };
     if (value?.ok !== true) return { ok: false, code: "expired_or_revoked" };
@@ -30,7 +30,7 @@ export async function inspectCardRecovery(token: string): Promise<
 }
 
 export async function loadCardRecoveryConsent(context: CardRecoveryContext) {
-  const db = createServiceRoleClient();
+  const db = createServiceRoleClient({ timeoutMs: 4_000 });
   const [{ data: booking, error: bookingError }, { data: salon, error: salonError }] = await Promise.all([
     db.from("bookings" as never).select("noshow_fee_cents,group_id").eq("id",context.bookingId).eq("salon_id",context.salonId).maybeSingle(),
     db.from("salons" as never).select("name,currency_code,cancellation_policy,noshow_group_whole_party").eq("id",context.salonId).maybeSingle(),

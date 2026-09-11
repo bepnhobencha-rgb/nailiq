@@ -2,6 +2,7 @@ import "server-only";
 
 import type { NextRequest } from "next/server";
 import { createServiceRoleClient } from "@/shared/lib/supabase/serviceRole";
+import { logGroupBookingFailure } from "@/shared/booking/groupBookingDiagnostics";
 
 /** Browser-only capability boundary. Missing Origin is denied deliberately. */
 export function isAllowedGroupBookingOrigin(request: NextRequest): boolean {
@@ -30,13 +31,17 @@ export async function groupBookingRateLimitAllowed(
   windowSeconds: number,
 ): Promise<boolean | null> {
   try {
-    const { data, error } = await createServiceRoleClient().rpc(
+    const { data, error } = await createServiceRoleClient({ timeoutMs: 4_000 }).rpc(
       "rate_limit_hit",
       { p_key: key, p_limit: limit, p_window_seconds: windowSeconds },
     );
-    if (error || typeof data !== "boolean") return null;
+    if (error || typeof data !== "boolean") {
+      logGroupBookingFailure("rate_metering", error ? "dependency_error" : "invalid_receipt", error?.code);
+      return null;
+    }
     return data;
   } catch {
+    logGroupBookingFailure("rate_metering", "dependency_exception");
     return null;
   }
 }

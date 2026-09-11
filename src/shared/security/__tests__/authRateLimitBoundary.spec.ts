@@ -47,8 +47,10 @@ describe("public auth rate-limit boundary", () => {
 
     expect(authBoundary).toContain('durableLimit === "unavailable"');
     expect(authBoundary).toContain("console.warn");
-    expect(authBoundary).not.toContain("return limiterUnavailableResponse()");
-    expect(publicApiBoundary).toContain("return limiterUnavailableResponse()");
+    // Response formatting may take an endpoint-specific code; the boundary
+    // must still return immediately for public APIs, never for auth outages.
+    expect(authBoundary).not.toContain("return limiterUnavailableResponse(");
+    expect(publicApiBoundary).toContain("return limiterUnavailableResponse(");
   });
 
   it("places a durable ceiling before every explicitly public API namespace", () => {

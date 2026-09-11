@@ -23,7 +23,7 @@ export async function consumeBookingManagementRateLimit(input: {
     input.phase,
   );
   try {
-    const { data, error } = await createServiceRoleClient().rpc("rate_limit_hit", {
+    const { data, error } = await createServiceRoleClient(input.action === "card_manage" && input.phase === "inspect" ? { timeoutMs: 4_000 } : undefined).rpc("rate_limit_hit", {
       p_key: key,
       p_limit: limit,
       p_window_seconds: windowSeconds,
