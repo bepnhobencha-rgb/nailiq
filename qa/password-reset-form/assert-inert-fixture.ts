@@ -9,8 +9,10 @@ export function assertInertFixture() {
     "email-password-action.ts:resendSignupConfirmationEmail",
     "magic-link-action.ts:sendEmailMagicLink",
     "superadmin-action.ts:completeSuperadminPasswordReset",
+    "superadmin-action.ts:loginSuperadmin",
+    "superadmin-action.ts:requestSuperadminPasswordReset",
   ];
   if (JSON.stringify(actions.map(action => `${action.filename}:${action.exportedName}`).sort()) !== JSON.stringify(expectedActions)) {
-    throw new Error("Fixture must contain only its five inert actions; refusing to test an Auth-backed build");
+    throw new Error("Fixture must contain only its seven inert actions; refusing to test an Auth-backed build");
   }
 }

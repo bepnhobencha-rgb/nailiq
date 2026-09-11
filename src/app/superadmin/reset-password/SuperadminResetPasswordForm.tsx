@@ -1,6 +1,8 @@
 "use client";
 
 import Link from "next/link";
+import { useUserLanguage } from "@/shared/lib/useUserLanguage";
+import { getSuperadminAuthMessages } from "@/shared/i18n/superadmin/auth";
 import { useRouter } from "next/navigation";
 import { useState, useSyncExternalStore, useTransition } from "react";
 import { Button } from "@/components/ui/Button";
@@ -11,19 +13,17 @@ type ErrorCode = "weak_password" | "mismatch" | "no_session" | "no_role" | "serv
 
 const noopSubscribe = () => () => {};
 
-const ERROR_COPY: Record<ErrorCode, string> = {
-  weak_password: "Password must be 8–72 characters. / Mật khẩu phải có 8–72 ký tự.",
-  mismatch: "Passwords don't match. / Mật khẩu không khớp.",
-  no_session:
-    "Reset link is no longer valid. Request a new one. / Link đặt lại không còn hiệu lực. Vui lòng yêu cầu link mới.",
-  no_role:
-    "This account is not an active SuperAdmin. / Tài khoản này không phải SuperAdmin đang hoạt động.",
-  server_error: "Something went wrong. Try again. / Có lỗi xảy ra. Vui lòng thử lại.",
-  unconfirmed:
-    "We could not confirm whether your password changed. Try signing in with your new password. If it does not work, request a new reset link. / Chưa thể xác nhận mật khẩu đã được đổi. Hãy thử đăng nhập bằng mật khẩu mới. Nếu không đăng nhập được, hãy yêu cầu link đặt lại mới.",
-};
-
 export function SuperadminResetPasswordForm() {
+  const { language } = useUserLanguage();
+  const t = getSuperadminAuthMessages(language);
+  const errorCopy: Record<ErrorCode, string> = {
+    weak_password: t.weakPassword,
+    mismatch: t.mismatch,
+    no_session: t.noSession,
+    no_role: t.noRole,
+    server_error: t.serverError,
+    unconfirmed: t.unconfirmed,
+  };
   const router = useRouter();
   // A value typed into server HTML before onChange exists is lost on the
   // next controlled render. Accept input only after handlers are attached.
@@ -73,7 +73,7 @@ export function SuperadminResetPasswordForm() {
     >
       <label className="flex flex-col gap-2">
         <span className="text-sm font-medium text-nq-foreground">
-          New password / Mật khẩu mới
+          {t.newPassword}
         </span>
         <Input
           type="password"
@@ -95,7 +95,7 @@ export function SuperadminResetPasswordForm() {
 
       <label className="flex flex-col gap-2">
         <span className="text-sm font-medium text-nq-foreground">
-          Confirm password / Xác nhận mật khẩu
+          {t.confirmPassword}
         </span>
         <Input
           type="password"
@@ -122,24 +122,44 @@ export function SuperadminResetPasswordForm() {
         loading={pending}
         disabled={!isHydrated || pending}
       >
-        Set new password / Đặt mật khẩu mới
+        {t.resetSubmit}
       </Button>
 
       {error ? (
         <div className="flex flex-col gap-2">
           <p className="text-sm text-nq-error" role="alert">
-            {ERROR_COPY[error]}
+            {errorCopy[error]}
           </p>
           {error === "unconfirmed" ? (
             <Link
               href="/superadmin/login"
               className="inline-flex min-h-11 items-center text-sm text-nq-primary underline underline-offset-4"
             >
-              Back to sign in / Quay lại đăng nhập
+              {t.backToSignIn}
             </Link>
           ) : null}
         </div>
       ) : null}
     </form>
+  );
+}
+
+export function SuperadminResetPasswordHeader() {
+  const { language } = useUserLanguage();
+  const t = getSuperadminAuthMessages(language);
+  return (
+    <>
+      <header className="flex flex-col gap-2">
+        <p className="text-xs font-medium uppercase tracking-[0.18em] text-nq-muted">
+          NailIQ
+        </p>
+        <h1 className="text-2xl font-semibold tracking-tight text-nq-foreground">
+          {t.resetTitle}
+        </h1>
+        <p className="text-sm text-nq-muted">
+          {t.resetSubtitle}
+        </p>
+      </header>
+    </>
   );
 }

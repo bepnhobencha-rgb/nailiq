@@ -810,7 +810,9 @@ export const userVi: UserMessages = {
     forgotPasswordSentBody:
       "Nếu tài khoản tồn tại với email đó, chúng tôi đã gửi link đặt lại mật khẩu. Link có hiệu lực trong 1 giờ.",
     forgotPasswordBackToSignIn: "Quay lại đăng nhập",
+    forgotPasswordRemembered: "Bạn đã nhớ mật khẩu?",
     resetPasswordPageTitle: "Tạo mật khẩu mới",
+    resetPasswordPageSubtitle: "Chọn mật khẩu có ít nhất 8 ký tự; nên có chữ hoa và số. Sau khi đổi mật khẩu, bạn sẽ được đăng xuất và cần đăng nhập lại bằng mật khẩu mới.",
     resetPasswordNewPassword: "Mật khẩu mới",
     resetPasswordConfirmPassword: "Xác nhận mật khẩu",
     resetPasswordSubmit: "Đặt mật khẩu mới",
