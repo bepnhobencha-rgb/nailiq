@@ -485,6 +485,8 @@ const CRITICAL_TABLES = [
   "booking_card_management_operations",
   "booking_card_save_operations",
   "booking_card_management_continuations",
+  "booking_card_delivery_events",
+  "square_card_customer_claims",
   "waitlist_claim_action_state",
   "waitlist_claim_capabilities",
   "waitlist_claim_action_receipts",
@@ -981,7 +983,10 @@ function main() {
   // mutation-through-RPC only and intentionally grants no table reachability.
   // TurnIQ adds thirty-three private tables reachable only by service_role. Neither
   // browser role gains direct table reachability.
-  const GRANTS = { anon: 56, authenticated: 78, service_role: 222 } as const;
+  // The 20260911040747 card-delivery migration adds exactly two service-only
+  // tables. Check each table's browser denial and FORCE RLS below as well as
+  // the exact count; public/authenticated reachability must remain unchanged.
+  const GRANTS = { anon: 56, authenticated: 78, service_role: 224 } as const;
   for (const [role, want] of Object.entries(GRANTS)) {
     const got = num(
       `select count(distinct table_name) from (
@@ -1006,8 +1011,12 @@ function main() {
     );
   }
 
-  console.log("\n── No-show fee service-only boundary ──\n");
-  for (const table of NO_SHOW_FEE_SERVICE_ONLY_TABLES) {
+  console.log("\n── No-show fee and card-delivery service-only boundary ──\n");
+  for (const table of [
+    ...NO_SHOW_FEE_SERVICE_ONLY_TABLES,
+    "booking_card_delivery_events",
+    "square_card_customer_claims",
+  ]) {
     const browserReachable = num(
       `select count(*) from (
          select grantee from information_schema.role_table_grants
