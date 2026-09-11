@@ -20,12 +20,14 @@ type Ctx = {
   alreadySaved: boolean;
   cancelled: boolean;
   cardRequired: boolean;
+  capturePaused?: boolean;
   code?: string;
 };
 
 type Phase =
   | { phase: "loading" }
   | { phase: "ready"; ctx: Ctx }
+  | { phase: "paused"; alreadySaved: boolean }
   | { phase: "saved"; salonName: string }
   | { phase: "not_required" }
   | { phase: "error"; code: string };
@@ -64,6 +66,10 @@ function SaveCardManager() {
         setState({ phase: "error", code: "cancelled" });
         return;
       }
+      if (json.capturePaused) {
+        setState({ phase: "paused", alreadySaved: json.alreadySaved });
+        return;
+      }
       if (json.alreadySaved) {
         setState({ phase: "saved", salonName: json.salonName });
         return;
@@ -92,11 +98,37 @@ function SaveCardManager() {
             {lang === "en" ? "Hold your appointment" : "Giữ lịch hẹn của bạn"}
           </h1>
           <p className="mt-1 text-sm text-neutral-500">
-            {lang === "en"
+            {state.phase === "paused"
+              ? lang === "en"
+                ? "Your appointment remains reserved."
+                : "Lịch hẹn của bạn vẫn được giữ."
+              : lang === "en"
               ? "Save a card to confirm — you're only charged if you don't show up."
               : "Lưu thẻ để xác nhận — bạn chỉ bị tính phí nếu không đến."}
           </p>
         </header>
+
+        {state.phase === "paused" ? (
+          <div className="rounded-2xl border border-amber-200 bg-amber-50 p-6 text-center" role="status" data-testid="card-capture-paused">
+            <p className="text-lg font-semibold text-amber-900">
+              {lang === "en" ? "Card saving is temporarily paused" : "Đang tạm dừng lưu thẻ"}
+            </p>
+            <p className="mt-2 text-sm text-amber-800">
+              {state.alreadySaved
+                ? lang === "en"
+                  ? "Your existing card details have not been changed."
+                  : "Thông tin thẻ hiện có không bị thay đổi."
+                : lang === "en"
+                  ? "Your appointment is reserved, but your card has not been saved. Card protection is not active."
+                  : "Lịch hẹn đã được giữ, nhưng thẻ chưa được lưu. Bảo vệ hủy trễ/no-show chưa được kích hoạt."}
+            </p>
+            <p className="mt-2 text-sm text-amber-800">
+              {lang === "en"
+                ? "Please reopen this secure link later, or contact the salon if it expires."
+                : "Vui lòng mở lại liên kết an toàn này sau, hoặc liên hệ salon nếu liên kết hết hạn."}
+            </p>
+          </div>
+        ) : null}
 
         {state.phase === "loading" ? (
           <div className="animate-pulse rounded-2xl border border-neutral-200 bg-neutral-50 p-6">

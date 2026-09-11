@@ -4,6 +4,7 @@ import { inspectBookingManagementCapability } from "@/shared/booking/bookingMana
 import { consumeBookingManagementRateLimit } from "@/shared/booking/bookingManagementRateLimit";
 import { noShowCardDecision } from "@/shared/integrations/square/noshow";
 import { createServiceRoleClient } from "@/shared/lib/supabase/serviceRole";
+import { isCardCapturePaused } from "@/shared/booking/cardCapturePause";
 
 const PRIVATE_HEADERS = {
   "Cache-Control": "private, no-store, max-age=0", Pragma: "no-cache",
@@ -23,19 +24,24 @@ export async function GET(req: Request) {
   const { bookingId, salonId } = inspected.inspection.context;
   const db = createServiceRoleClient();
   const [bookingResult, salonResult] = await Promise.all([
-    db.from("bookings" as never).select("id,status,noshow_card_id").eq("id", bookingId).eq("salon_id", salonId).maybeSingle(),
+    db.from("bookings" as never).select("id,status,noshow_card_id,noshow_card_required").eq("id", bookingId).eq("salon_id", salonId).maybeSingle(),
     db.from("salons" as never).select("name,currency_code").eq("id", salonId).maybeSingle(),
   ]);
   if (bookingResult.error || salonResult.error || !bookingResult.data || !salonResult.data) {
     return json({ ok: false, code: "management_unavailable" }, 503);
   }
-  const booking = bookingResult.data as { status: string; noshow_card_id: string | null };
+  const booking = bookingResult.data as { status: string; noshow_card_id: string | null; noshow_card_required: boolean | null };
   const salon = salonResult.data as { name: string | null; currency_code: string | null };
-  const decision = await noShowCardDecision(bookingId);
+  const capturePaused = isCardCapturePaused();
+  // A maintenance pause is not evidence that this reservation needs no card.
+  // Read only existing booking fields; do not resolve a provider while paused.
+  const cardRequired = capturePaused
+    ? booking.noshow_card_required === true
+    : (await noShowCardDecision(bookingId)).required;
   return json({
     ok: true, bookingId, managementToken: token, salonName: salon.name ?? "",
     currencyCode: String(salon.currency_code || "USD").trim().toUpperCase() || "USD",
     alreadySaved: Boolean(booking.noshow_card_id), cancelled: booking.status === "cancelled",
-    cardRequired: decision.required,
+    cardRequired, capturePaused,
   });
 }
