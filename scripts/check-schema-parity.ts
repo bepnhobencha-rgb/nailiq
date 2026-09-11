@@ -190,6 +190,12 @@ import { execFileSync } from "node:child_process";
  * service-only or immutable-ledger functions, three restrictive deny policies,
  * one append-only trigger, and fourteen primary/unique/lookup/FK indexes. Dispatch is
  * absent/OFF by default and browser roles gain no table or RPC privilege.
+ * The 20260911190838 controlled dispatch migration adds eight state columns,
+ * four service-role-only owner/admin control RPCs, one canary-completion
+ * trigger function/trigger, and three supporting indexes. It creates no row,
+ * enables no salon, and cannot call an email provider by itself.
+ * The 20260911191812 expired-lease recovery hotfix replaces the claim function
+ * in place, so it changes behavior but does not change these shape counts.
  * The 20260911040747 card-delivery-truth migration adds two service-only
  * event/customer-claim tables, 50 columns, 22 functions (including preserved
  * legacy wrappers), six triggers and five indexes. These are the rehearsed
@@ -266,7 +272,8 @@ const PRODUCTION = {
   // +28 TurnIQ staff PIN credential and immutable receipt columns.
   // +18 PII-free individual waitlist capacity-decision evidence columns.
   // +54 private bulk-email campaign, recipient-claim, and event columns.
-  columns: 3726,
+  // +8 controlled canary, bulk-release, pause, and recipient-cohort columns.
+  columns: 3734,
   // The upsell migration replaces two legacy member-write policies with one
   // service-role-only immutable claim policy. The staff-lifecycle hardening
   // removes the browser DELETE policy so hard deletion cannot bypass the
@@ -342,7 +349,8 @@ const PRODUCTION = {
   // +3 individual waitlist capacity evaluator, insert guard, and v2 RPC functions.
   // +9 bulk email role, immutable-event, draft/audience/approval, claim,
   // completion, final-material, and signed-receipt functions.
-  functions: 554,
+  // +5 controlled canary/pause/resume/release and completion-trigger functions.
+  functions: 559,
   // +4 pending-receipt correlation triggers across notification/staff INSERT
   // and provider-SID transitions.
   // +1 V1 terminal-booking policy trigger.
@@ -367,7 +375,8 @@ const PRODUCTION = {
   // +1 Waitlist source-provenance normalization trigger.
   // +1 fail-closed individual waitlist insert trigger.
   // +1 bulk email append-only event trigger.
-  triggers: 160,
+  // +1 bulk email canary-completion trigger.
+  triggers: 161,
   // Transition/capability PKs, unique keys and focused due/salon indexes.
   // The refund inbox and customer identity map each add PK, unique, and two
   // focused indexes.
@@ -397,7 +406,8 @@ const PRODUCTION = {
   // +13 TurnIQ staff PIN primary, foreign-key, and lookup indexes.
   // +3 PII-free capacity-decision primary and lookup indexes.
   // +14 bulk email primary, unique, claim, delivery, timeline, and FK indexes.
-  indexes: 989,
+  // +3 controlled dispatch actor and cohort/status indexes.
+  indexes: 992,
 } as const;
 
 /**

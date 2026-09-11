@@ -6,6 +6,7 @@ import { loadCampaignStats } from "@/shared/reoptin/reoptinCampaign";
 import { loadSchedules } from "@/shared/reoptin/campaignSchedule";
 import { MarketingCampaigns } from "@/components/dashboard/MarketingCampaigns";
 import { loadBulkEmailCampaigns } from "@/shared/marketing/bulkEmailCampaignStore";
+import { bulkEmailDeliveryMode } from "@/shared/marketing/bulkEmailCampaignDelivery";
 
 export const dynamic = "force-dynamic";
 
@@ -39,6 +40,7 @@ export default async function MarketingPage({ params }: Props) {
       stats={stats}
       schedules={schedules}
       bulkCampaigns={bulkCampaigns}
+      bulkDeliveryMode={bulkEmailDeliveryMode()}
     />
   );
 }

@@ -11,6 +11,14 @@ const fkIndexesMigration = readFileSync(
   join(root, "supabase/migrations/20260911164500_add_bulk_email_campaign_fk_indexes.sql"),
   "utf8",
 );
+const controlledDispatchMigration = readFileSync(
+  join(root, "supabase/migrations/20260911190838_add_bulk_email_controlled_dispatch.sql"),
+  "utf8",
+);
+const expiredLeaseMigration = readFileSync(
+  join(root, "supabase/migrations/20260911191812_recover_bulk_email_expired_leases.sql"),
+  "utf8",
+);
 const delivery = readFileSync(join(root, "src/shared/marketing/bulkEmailCampaignDelivery.ts"), "utf8");
 const registry = readFileSync(join(root, "src/shared/lib/emailExperienceRegistry.ts"), "utf8");
 const webhook = readFileSync(join(root, "src/app/api/webhooks/resend/route.ts"), "utf8");
@@ -58,5 +66,43 @@ describe("bulk email campaign safety acceptance", () => {
     expect(fkIndexesMigration).toContain("marketing_email_campaign_events_salon_idx");
     expect(fkIndexesMigration).toContain("marketing_email_campaign_events_actor_idx");
     expect(fkIndexesMigration).not.toMatch(/GRANT|feature_flags|email_outbound_enabled/i);
+  });
+
+  it("enforces canary, pause and explicit owner bulk release in the database", () => {
+    expect(controlledDispatchMigration).toContain("dispatch_stage text NOT NULL DEFAULT 'locked'");
+    expect(controlledDispatchMigration).toContain("canary_claimed_count");
+    expect(controlledDispatchMigration).toContain("v_campaign.canary_size::integer");
+    expect(controlledDispatchMigration).toContain("v_limit := least(v_limit, v_campaign.batch_size::integer)");
+    expect(controlledDispatchMigration).toContain("dispatch_cohort");
+    expect(controlledDispatchMigration).toContain("member.role IN ('owner', 'admin')");
+    expect(controlledDispatchMigration).toContain("canary_needs_review");
+    expect(controlledDispatchMigration).toContain("FOR UPDATE SKIP LOCKED");
+  });
+
+  it("keeps controlled dispatch RPCs service-role only", () => {
+    for (const functionName of [
+      "start_marketing_email_campaign_canary",
+      "pause_marketing_email_campaign_dispatch",
+      "resume_marketing_email_campaign_dispatch",
+      "approve_marketing_email_campaign_bulk_release",
+    ]) {
+      expect(controlledDispatchMigration).toMatch(
+        new RegExp(`REVOKE ALL ON FUNCTION public\\.${functionName}[\\s\\S]*?FROM PUBLIC, anon, authenticated`),
+      );
+      expect(controlledDispatchMigration).toMatch(
+        new RegExp(`GRANT EXECUTE ON FUNCTION public\\.${functionName}[\\s\\S]*?TO service_role`),
+      );
+    }
+  });
+
+  it("recovers expired leases without widening canary or blind third retries", () => {
+    expect(expiredLeaseMigration).toContain("recipient.lease_expires_at <= v_now");
+    expect(expiredLeaseMigration).toContain("recipient.attempt_count < 3 THEN 'prepared' ELSE 'unknown'");
+    expect(expiredLeaseMigration).toContain("'provider_call_state', 'unknown'");
+    expect(expiredLeaseMigration).toContain("recipient.dispatch_cohort IN ('pending', v_campaign.dispatch_stage)");
+    expect(expiredLeaseMigration).toContain("v_new_claimed");
+    expect(expiredLeaseMigration).toMatch(
+      /REVOKE ALL ON FUNCTION public\.claim_marketing_email_campaign_recipients[\s\S]*?FROM PUBLIC, anon, authenticated/,
+    );
   });
 });

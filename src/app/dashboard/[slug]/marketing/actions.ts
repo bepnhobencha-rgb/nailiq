@@ -8,10 +8,19 @@ import { scheduleCampaign, cancelSchedule } from "@/shared/reoptin/campaignSched
 import { salonWallTimeToUtcIso } from "@/shared/lib/salonTime";
 import { bulkEmailCampaignInputSchema } from "@/shared/marketing/bulkEmailCampaign";
 import {
+  approveBulkEmailCampaignRelease,
   approveBulkEmailCampaign,
   createBulkEmailCampaignDraft,
+  pauseBulkEmailCampaignDispatch,
   prepareBulkEmailCampaign,
+  resumeBulkEmailCampaignDispatch,
+  startBulkEmailCampaignCanary,
 } from "@/shared/marketing/bulkEmailCampaignStore";
+import {
+  bulkEmailDeliveryMode,
+  runBulkEmailCampaignBatch,
+  type BulkEmailBatchSummary,
+} from "@/shared/marketing/bulkEmailCampaignDelivery";
 
 type ActionResult =
   | { ok: true; summary: BatchSummary; sentTo?: string }
@@ -22,7 +31,14 @@ type ScheduleResult =
   | { ok: false; error: string };
 
 export type BulkCampaignActionResult =
-  | { ok: true; code: string; campaignId?: string; audienceCount?: number }
+  | {
+      ok: true;
+      code: string;
+      campaignId?: string;
+      audienceCount?: number;
+      stage?: string;
+      summary?: BulkEmailBatchSummary;
+    }
   | { ok: false; code: string };
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
@@ -91,6 +107,108 @@ export async function approveBulkEmailCampaignAction(
   if (!result.ok) return { ok: false, code: result.code };
   revalidatePath(`/dashboard/${slug}/marketing`);
   return { ok: true, code: result.code };
+}
+
+export async function runBulkEmailCampaignCanaryAction(
+  slug: string,
+  campaignId: string,
+): Promise<BulkCampaignActionResult> {
+  const actor = await bulkCampaignActor(slug);
+  if (!actor) return { ok: false, code: "unauthorized" };
+  if (!UUID_RE.test(campaignId)) return { ok: false, code: "invalid_input" };
+  if (bulkEmailDeliveryMode() === "disabled") return { ok: false, code: "dispatch_disabled" };
+
+  let started: Awaited<ReturnType<typeof startBulkEmailCampaignCanary>>;
+  let summary: BulkEmailBatchSummary;
+  try {
+    started = await startBulkEmailCampaignCanary({
+      campaignId,
+      actorUserId: actor.userId,
+    });
+    if (!started.ok) return { ok: false, code: started.code };
+    summary = await runBulkEmailCampaignBatch(campaignId, started.canaryLimit ?? 25);
+  } catch {
+    return { ok: false, code: "dispatch_unavailable" };
+  }
+  revalidatePath(`/dashboard/${slug}/marketing`);
+  return { ok: true, code: "canary_batch_finished", summary };
+}
+
+export async function pauseBulkEmailCampaignAction(
+  slug: string,
+  campaignId: string,
+): Promise<BulkCampaignActionResult> {
+  const actor = await bulkCampaignActor(slug);
+  if (!actor) return { ok: false, code: "unauthorized" };
+  if (!UUID_RE.test(campaignId)) return { ok: false, code: "invalid_input" };
+  let result: Awaited<ReturnType<typeof pauseBulkEmailCampaignDispatch>>;
+  try {
+    result = await pauseBulkEmailCampaignDispatch({ campaignId, actorUserId: actor.userId });
+  } catch {
+    return { ok: false, code: "dispatch_unavailable" };
+  }
+  if (!result.ok) return { ok: false, code: result.code };
+  revalidatePath(`/dashboard/${slug}/marketing`);
+  return { ok: true, code: result.code };
+}
+
+export async function resumeBulkEmailCampaignAction(
+  slug: string,
+  campaignId: string,
+): Promise<BulkCampaignActionResult> {
+  const actor = await bulkCampaignActor(slug);
+  if (!actor) return { ok: false, code: "unauthorized" };
+  if (!UUID_RE.test(campaignId)) return { ok: false, code: "invalid_input" };
+  let result: Awaited<ReturnType<typeof resumeBulkEmailCampaignDispatch>>;
+  try {
+    result = await resumeBulkEmailCampaignDispatch({ campaignId, actorUserId: actor.userId });
+  } catch {
+    return { ok: false, code: "dispatch_unavailable" };
+  }
+  if (!result.ok) return { ok: false, code: result.code };
+  revalidatePath(`/dashboard/${slug}/marketing`);
+  return { ok: true, code: result.code, stage: result.stage };
+}
+
+export async function releaseBulkEmailCampaignAction(
+  slug: string,
+  campaignId: string,
+): Promise<BulkCampaignActionResult> {
+  const actor = await bulkCampaignActor(slug);
+  if (!actor) return { ok: false, code: "unauthorized" };
+  if (!UUID_RE.test(campaignId)) return { ok: false, code: "invalid_input" };
+  let result: Awaited<ReturnType<typeof approveBulkEmailCampaignRelease>>;
+  try {
+    result = await approveBulkEmailCampaignRelease({ campaignId, actorUserId: actor.userId });
+  } catch {
+    return { ok: false, code: "dispatch_unavailable" };
+  }
+  if (!result.ok) return { ok: false, code: result.code };
+  revalidatePath(`/dashboard/${slug}/marketing`);
+  return { ok: true, code: result.code };
+}
+
+export async function runBulkEmailCampaignBatchAction(
+  slug: string,
+  campaignId: string,
+): Promise<BulkCampaignActionResult> {
+  const actor = await bulkCampaignActor(slug);
+  if (!actor) return { ok: false, code: "unauthorized" };
+  if (!UUID_RE.test(campaignId)) return { ok: false, code: "invalid_input" };
+  if (bulkEmailDeliveryMode() === "disabled") return { ok: false, code: "dispatch_disabled" };
+
+  let summary: BulkEmailBatchSummary;
+  try {
+    summary = await runBulkEmailCampaignBatch(campaignId, 100);
+  } catch {
+    return { ok: false, code: "dispatch_unavailable" };
+  }
+  revalidatePath(`/dashboard/${slug}/marketing`);
+  return {
+    ok: true,
+    code: summary.claimed > 0 ? "bulk_batch_finished" : "no_recipients_claimed",
+    summary,
+  };
 }
 
 /**
