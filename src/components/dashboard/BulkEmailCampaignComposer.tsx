@@ -3,9 +3,13 @@
 import { useState } from "react";
 import { useRouter } from "next/navigation";
 import Image from "next/image";
-import { CheckCircle2, Eye, MailPlus, Pause, Play, Send, ShieldCheck, Users } from "lucide-react";
+import { BarChart3, CheckCircle2, Eye, MailPlus, Pause, Play, Send, ShieldCheck, Users } from "lucide-react";
 import { Button } from "@/components/ui/Button";
 import { SetupToast, type SetupToastPayload } from "@/components/ui/Toast";
+import {
+  BulkEmailCampaignReportDrawer,
+  type ReportCampaign,
+} from "@/components/dashboard/BulkEmailCampaignReportDrawer";
 import {
   approveBulkEmailCampaignAction,
   createBulkEmailCampaignAction,
@@ -36,6 +40,7 @@ type Campaign = {
   batchSize: number;
   bulkReleaseApprovedAt: string | null;
   createdAt: string;
+  report: ReportCampaign["report"];
 };
 
 const inputClass = "mt-1.5 min-h-11 w-full rounded-xl border border-nq-border bg-nq-bg/40 px-3 py-2.5 text-sm text-nq-foreground outline-none focus-visible:ring-2 focus-visible:ring-nq-primary/60";
@@ -60,6 +65,7 @@ export function BulkEmailCampaignComposer({
   const [busyId, setBusyId] = useState<string | null>(null);
   const [toast, setToast] = useState<SetupToastPayload | null>(null);
   const [showComposer, setShowComposer] = useState(false);
+  const [selectedReportId, setSelectedReportId] = useState<string | null>(null);
   const [form, setForm] = useState({
     name: "",
     subject: "",
@@ -75,6 +81,9 @@ export function BulkEmailCampaignComposer({
   });
 
   const latest = campaigns.slice(0, 6);
+  const selectedReport = selectedReportId
+    ? campaigns.find((campaign) => campaign.id === selectedReportId) ?? null
+    : null;
 
   function update(key: keyof typeof form, value: string | number) {
     setForm((current) => ({ ...current, [key]: value }));
@@ -344,6 +353,16 @@ export function BulkEmailCampaignComposer({
                   </div>
                 ) : null}
                 <div className="mt-3 flex flex-wrap gap-2">
+                  {campaign.status !== "draft" ? (
+                    <Button
+                      size="sm"
+                      variant="secondary"
+                      leftIcon={<BarChart3 className="h-4 w-4" aria-hidden />}
+                      onClick={() => setSelectedReportId(campaign.id)}
+                    >
+                      {t("View report", "Xem báo cáo")}
+                    </Button>
+                  ) : null}
                   {campaign.status === "draft" ? <Button size="sm" variant="secondary" loading={busyId === campaign.id} onClick={() => void prepare(campaign.id)}>{t("Check audience", "Kiểm tra khách")}</Button> : null}
                   {campaign.status === "prepared" ? <Button size="sm" loading={busyId === campaign.id} onClick={() => void approve(campaign.id)}>{t("Approve", "Duyệt")}</Button> : null}
                   {campaign.status === "approved" && campaign.dispatchStage === "locked" ? (
@@ -379,6 +398,11 @@ export function BulkEmailCampaignComposer({
           </ul>
         </div>
       ) : null}
+
+      <BulkEmailCampaignReportDrawer
+        campaign={selectedReport}
+        onClose={() => setSelectedReportId(null)}
+      />
 
       <SetupToast toast={toast} onDismiss={() => setToast(null)} autoDismissMs={5000} />
     </section>

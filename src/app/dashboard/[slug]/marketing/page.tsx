@@ -22,12 +22,14 @@ export default async function MarketingPage({ params }: Props) {
   const ctx = await getDashboardWriteClient(slug);
   if (!ctx) redirect("/register");
   if (!isOwnerOrAdmin(ctx.role)) redirect(`/dashboard/${encodeURIComponent(slug)}`);
+  const { data: { user } } = await ctx.supabase.auth.getUser();
+  if (!user) redirect("/register");
 
   const [stats, schedules, salonRow, bulkCampaigns] = await Promise.all([
     loadCampaignStats(ctx.salon.id),
     loadSchedules(ctx.salon.id),
     ctx.supabase.from("salons").select("timezone").eq("id", ctx.salon.id).maybeSingle(),
-    loadBulkEmailCampaigns(ctx.salon.id),
+    loadBulkEmailCampaigns(ctx.salon.id, user.id),
   ]);
   const timezone =
     (salonRow.data as { timezone?: string } | null)?.timezone || "America/Los_Angeles";

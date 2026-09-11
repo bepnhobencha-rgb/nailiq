@@ -6,6 +6,11 @@ import {
   bulkEmailContentFingerprint,
   type BulkEmailCampaignInput,
 } from "./bulkEmailCampaign";
+import {
+  emptyBulkEmailRecipientCounts,
+  type BulkEmailCampaignReport,
+  type BulkEmailRecipientCounts,
+} from "./bulkEmailCampaignReport";
 
 export type BulkEmailCampaignStatus =
   | "draft"
@@ -32,6 +37,7 @@ export type BulkEmailCampaignSummary = {
   batchSize: number;
   bulkReleaseApprovedAt: string | null;
   createdAt: string;
+  report: BulkEmailCampaignReport;
 };
 
 export type BulkEmailCampaignList = {
@@ -48,8 +54,87 @@ type RpcResult = {
   stage?: string;
 };
 
+type ReportRpcResult = {
+  success?: boolean;
+  audience_count?: unknown;
+  counts?: unknown;
+  global_suppression_count?: unknown;
+  delivery_receipt_count?: unknown;
+  last_delivery_event_at?: unknown;
+  generated_at?: unknown;
+};
+
 function parseRpcResult(value: unknown): RpcResult {
   return value && typeof value === "object" ? (value as RpcResult) : {};
+}
+
+function nonNegativeInteger(value: unknown): number {
+  const parsed = Number(value);
+  return Number.isFinite(parsed) ? Math.max(0, Math.floor(parsed)) : 0;
+}
+
+function parseRecipientCounts(value: unknown): BulkEmailRecipientCounts {
+  const row = value && typeof value === "object"
+    ? value as Record<string, unknown>
+    : {};
+  return {
+    prepared: nonNegativeInteger(row.prepared),
+    leased: nonNegativeInteger(row.leased),
+    simulated: nonNegativeInteger(row.simulated),
+    providerAccepted: nonNegativeInteger(row.provider_accepted),
+    delivered: nonNegativeInteger(row.delivered),
+    failed: nonNegativeInteger(row.failed),
+    unknown: nonNegativeInteger(row.unknown),
+    suppressed: nonNegativeInteger(row.suppressed),
+    bounced: nonNegativeInteger(row.bounced),
+    complained: nonNegativeInteger(row.complained),
+  };
+}
+
+function unavailableReport(audienceCount: number): BulkEmailCampaignReport {
+  return {
+    available: false,
+    audienceCount,
+    counts: emptyBulkEmailRecipientCounts(),
+    globalSuppressionCount: 0,
+    deliveryReceiptCount: 0,
+    lastDeliveryEventAt: null,
+    generatedAt: null,
+  };
+}
+
+async function loadBulkEmailCampaignReport(input: {
+  campaignId: string;
+  actorUserId: string;
+  audienceCount: number;
+}): Promise<BulkEmailCampaignReport> {
+  try {
+    const { data, error } = await createServiceRoleClient().rpc(
+      "get_marketing_email_campaign_report" as never,
+      {
+        p_campaign_id: input.campaignId,
+        p_actor_user_id: input.actorUserId,
+      } as never,
+    );
+    if (error || !data || typeof data !== "object") {
+      return unavailableReport(input.audienceCount);
+    }
+    const result = data as ReportRpcResult;
+    if (result.success !== true) return unavailableReport(input.audienceCount);
+    return {
+      available: true,
+      audienceCount: nonNegativeInteger(result.audience_count),
+      counts: parseRecipientCounts(result.counts),
+      globalSuppressionCount: nonNegativeInteger(result.global_suppression_count),
+      deliveryReceiptCount: nonNegativeInteger(result.delivery_receipt_count),
+      lastDeliveryEventAt: typeof result.last_delivery_event_at === "string"
+        ? result.last_delivery_event_at
+        : null,
+      generatedAt: typeof result.generated_at === "string" ? result.generated_at : null,
+    };
+  } catch {
+    return unavailableReport(input.audienceCount);
+  }
 }
 
 export async function createBulkEmailCampaignDraft(input: {
@@ -150,7 +235,10 @@ export function approveBulkEmailCampaignRelease(input: { campaignId: string; act
   return runControlledCampaignRpc("approve_marketing_email_campaign_bulk_release", input);
 }
 
-export async function loadBulkEmailCampaigns(salonId: string): Promise<BulkEmailCampaignList> {
+export async function loadBulkEmailCampaigns(
+  salonId: string,
+  actorUserId: string,
+): Promise<BulkEmailCampaignList> {
   try {
     const { data, error } = await createServiceRoleClient()
       .from("marketing_email_campaigns" as never)
@@ -159,9 +247,7 @@ export async function loadBulkEmailCampaigns(salonId: string): Promise<BulkEmail
       .order("created_at" as never, { ascending: false })
       .limit(12);
     if (error) return { available: false, campaigns: [] };
-    return {
-      available: true,
-      campaigns: ((data ?? []) as Array<Record<string, unknown>>).map((row) => ({
+    const campaigns = ((data ?? []) as Array<Record<string, unknown>>).map((row) => ({
         id: String(row.id),
         name: String(row.name),
         subject: String(row.subject),
@@ -178,6 +264,20 @@ export async function loadBulkEmailCampaigns(salonId: string): Promise<BulkEmail
         batchSize: Number(row.batch_size ?? 100),
         bulkReleaseApprovedAt: row.bulk_release_approved_at ? String(row.bulk_release_approved_at) : null,
         createdAt: String(row.created_at),
+        report: unavailableReport(Number(row.audience_count ?? 0)),
+      }));
+    const reports = await Promise.all(campaigns.map((campaign) =>
+      loadBulkEmailCampaignReport({
+        campaignId: campaign.id,
+        actorUserId,
+        audienceCount: campaign.audienceCount,
+      })
+    ));
+    return {
+      available: true,
+      campaigns: campaigns.map((campaign, index) => ({
+        ...campaign,
+        report: reports[index] ?? unavailableReport(campaign.audienceCount),
       })),
     };
   } catch {
