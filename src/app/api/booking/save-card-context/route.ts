@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 
 import { inspectCardRecovery, loadCardRecoveryConsent } from "@/shared/booking/bookingCardRecovery";
+import { isCardCapturePaused } from "@/shared/booking/cardCapturePause";
 import { consumeBookingManagementRateLimit } from "@/shared/booking/bookingManagementRateLimit";
 import { createServiceRoleClient } from "@/shared/lib/supabase/serviceRole";
 
@@ -30,14 +31,19 @@ export async function GET(req: Request) {
   }
   const booking = bookingResult.data as { status: string; start_time_utc: string; services: { name: string } | null };
   const salon = salonResult.data as { name: string | null; currency_code: string | null; brand_color: string | null; theme_mode: string | null; timezone: string | null };
-  const consent = (inspected.context.canRefreshConsent || inspected.context.canVerifyExistingCard) ? await loadCardRecoveryConsent(inspected.context) : null;
+  const capturePaused = isCardCapturePaused();
+  const consent = !capturePaused && (inspected.context.canRefreshConsent || inspected.context.canVerifyExistingCard) ? await loadCardRecoveryConsent(inspected.context) : null;
   return json({
     ok: true, bookingId, managementToken: token, salonName: salon.name ?? "",
     brandColor: salon.brand_color, themeMode: salon.theme_mode === "light" ? "light" : "dark", timezone: salon.timezone ?? "UTC",
     currencyCode: String(salon.currency_code || "USD").trim().toUpperCase() || "USD",
     alreadySaved: inspected.context.protectionStatus === "saved", cancelled: booking.status === "cancelled",
     cardRequired: inspected.context.protectionStatus !== "not_required",
-    protectionStatus: inspected.context.protectionStatus, canRetry: inspected.context.canRetry, canRefreshConsent: inspected.context.canRefreshConsent, canVerifyExistingCard: inspected.context.canVerifyExistingCard,
+    // A pause changes available actions, never the durable protection receipt.
+    capturePaused, protectionStatus: inspected.context.protectionStatus,
+    canRetry: !capturePaused && inspected.context.canRetry,
+    canRefreshConsent: !capturePaused && inspected.context.canRefreshConsent,
+    canVerifyExistingCard: !capturePaused && inspected.context.canVerifyExistingCard,
     consent: consent ? { version: consent.version, policyEn: consent.policyEn, policyVi: consent.policyVi } : null,
     expiresAt: inspected.context.expiresAt, bookingTime: booking.start_time_utc, service: booking.services?.name ?? "",
   });
