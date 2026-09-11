@@ -6,6 +6,12 @@ import { isOwnerOrAdmin } from "@/shared/lib/salonMemberRole";
 import { runReoptinBatch, type BatchSummary } from "@/shared/reoptin/reoptinCampaign";
 import { scheduleCampaign, cancelSchedule } from "@/shared/reoptin/campaignSchedule";
 import { salonWallTimeToUtcIso } from "@/shared/lib/salonTime";
+import { bulkEmailCampaignInputSchema } from "@/shared/marketing/bulkEmailCampaign";
+import {
+  approveBulkEmailCampaign,
+  createBulkEmailCampaignDraft,
+  prepareBulkEmailCampaign,
+} from "@/shared/marketing/bulkEmailCampaignStore";
 
 type ActionResult =
   | { ok: true; summary: BatchSummary; sentTo?: string }
@@ -14,6 +20,78 @@ type ActionResult =
 type ScheduleResult =
   | { ok: true; scheduledAtIso: string }
   | { ok: false; error: string };
+
+export type BulkCampaignActionResult =
+  | { ok: true; code: string; campaignId?: string; audienceCount?: number }
+  | { ok: false; code: string };
+
+const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-5][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
+
+async function bulkCampaignActor(slug: string) {
+  const ctx = await getDashboardWriteClient(slug);
+  if (!ctx || !isOwnerOrAdmin(ctx.role)) return null;
+  const { data: { user } } = await ctx.supabase.auth.getUser();
+  return user ? { ctx, userId: user.id } : null;
+}
+
+export async function createBulkEmailCampaignAction(
+  slug: string,
+  values: unknown,
+): Promise<BulkCampaignActionResult> {
+  const actor = await bulkCampaignActor(slug);
+  if (!actor) return { ok: false, code: "unauthorized" };
+  const parsed = bulkEmailCampaignInputSchema.safeParse(values);
+  if (!parsed.success) return { ok: false, code: "invalid_input" };
+  let result: Awaited<ReturnType<typeof createBulkEmailCampaignDraft>>;
+  try {
+    result = await createBulkEmailCampaignDraft({
+      salonId: actor.ctx.salon.id,
+      actorUserId: actor.userId,
+      campaign: parsed.data,
+    });
+  } catch {
+    return { ok: false, code: "storage_unavailable" };
+  }
+  if (!result.ok) return result;
+  revalidatePath(`/dashboard/${slug}/marketing`);
+  return { ok: true, code: "draft_created", campaignId: result.campaignId };
+}
+
+export async function prepareBulkEmailCampaignAction(
+  slug: string,
+  campaignId: string,
+): Promise<BulkCampaignActionResult> {
+  const actor = await bulkCampaignActor(slug);
+  if (!actor) return { ok: false, code: "unauthorized" };
+  if (!UUID_RE.test(campaignId)) return { ok: false, code: "invalid_input" };
+  let result: Awaited<ReturnType<typeof prepareBulkEmailCampaign>>;
+  try {
+    result = await prepareBulkEmailCampaign({ campaignId, actorUserId: actor.userId });
+  } catch {
+    return { ok: false, code: "storage_unavailable" };
+  }
+  if (!result.ok) return { ok: false, code: result.code };
+  revalidatePath(`/dashboard/${slug}/marketing`);
+  return { ok: true, code: result.code, audienceCount: result.audienceCount };
+}
+
+export async function approveBulkEmailCampaignAction(
+  slug: string,
+  campaignId: string,
+): Promise<BulkCampaignActionResult> {
+  const actor = await bulkCampaignActor(slug);
+  if (!actor) return { ok: false, code: "unauthorized" };
+  if (!UUID_RE.test(campaignId)) return { ok: false, code: "invalid_input" };
+  let result: Awaited<ReturnType<typeof approveBulkEmailCampaign>>;
+  try {
+    result = await approveBulkEmailCampaign({ campaignId, actorUserId: actor.userId });
+  } catch {
+    return { ok: false, code: "storage_unavailable" };
+  }
+  if (!result.ok) return { ok: false, code: result.code };
+  revalidatePath(`/dashboard/${slug}/marketing`);
+  return { ok: true, code: result.code };
+}
 
 /**
  * Send one sample re-opt-in email to the logged-in owner/admin for copy review.

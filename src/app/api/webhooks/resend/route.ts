@@ -123,6 +123,22 @@ export async function POST(request: Request) {
     const classified = classifyRpcResult(data);
     if (!classified.ok) return json({ ok: false, code: classified.code }, classified.status);
     registeredCode = classified.code;
+
+    if (registeredMaterial.emailKey === "bulk_marketing_campaign") {
+      const { data: campaignData, error: campaignError } = await db.rpc(
+        "record_marketing_email_campaign_delivery_event" as never,
+        {
+          p_provider_message_id: registeredMaterial.providerMessageId,
+          p_recipient_fingerprint: registeredMaterial.recipientFingerprint,
+          p_event_type: registeredMaterial.eventType,
+        } as never,
+      );
+      if (campaignError) return json({ ok: false, code: "webhook_store_unavailable" }, 503);
+      const campaignClassified = classifyRpcResult(campaignData);
+      if (!campaignClassified.ok) {
+        return json({ ok: false, code: campaignClassified.code }, campaignClassified.status);
+      }
+    }
   }
 
   const material = ownerMaterial !== "ignored"

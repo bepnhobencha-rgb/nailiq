@@ -5,6 +5,42 @@ Newest entries on top.
 
 ---
 
+## 2026-09-11 — Bulk salon marketing uses a consent-frozen delivery ledger
+
+**Status.** Implemented for local/Preview review only. Dispatch defaults OFF;
+no provider call, customer email, QA/Production migration, or live-salon change
+is authorized by this milestone.
+
+**Decision.** General salon promotions use their own tenant-scoped campaign and
+recipient ledger instead of reusing the fixed re-opt-in campaign or the
+appointment win-back contract. Owner/Admin authors content, freezes a deduped
+consent-aware audience, and approves that exact content/audience pair before a
+worker may claim recipients.
+
+- Recipient rows store profile IDs and irreversible fingerprints, not raw email
+  addresses or phone numbers.
+- Every claim has a bounded lease, stable idempotency key, retry cap, and
+  append-only PII-free lifecycle event.
+- Consent, preferred channel, opt-out, provider suppression, salon status,
+  outbound-email state, content fingerprint, and per-salon dispatch flag are
+  revalidated immediately before transient delivery material is returned.
+- Real provider delivery requires both a Production-only application gate and a
+  per-salon database flag; both are absent/OFF by default. Preview can only run
+  an explicitly enabled mock simulation.
+- Resend acceptance is distinct from signed delivery, bounce, complaint, and
+  suppression evidence. The existing registered webhook remains the delivery
+  truth boundary.
+- The first UI milestone deliberately has no Send button. It supports draft,
+  live preview, audience preparation, exclusion totals, and Owner/Admin
+  approval so copy and consent can be reviewed without contacting customers.
+
+**Why.** Bulk marketing is externally consequential and cannot inherit the old
+best-effort loop. Freezing content/audience, rechecking consent at the claim
+boundary, and keeping dispatch double-OFF prevents accidental sends while
+making later canary and batched delivery reviewable and recoverable.
+
+---
+
 ## 2026-08-30 — Every outbound email declares its purpose and evidence boundary
 
 **Status.** Implemented locally for review; no provider call, customer send,

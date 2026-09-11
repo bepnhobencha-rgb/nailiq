@@ -5,6 +5,7 @@ import { isOwnerOrAdmin } from "@/shared/lib/salonMemberRole";
 import { loadCampaignStats } from "@/shared/reoptin/reoptinCampaign";
 import { loadSchedules } from "@/shared/reoptin/campaignSchedule";
 import { MarketingCampaigns } from "@/components/dashboard/MarketingCampaigns";
+import { loadBulkEmailCampaigns } from "@/shared/marketing/bulkEmailCampaignStore";
 
 export const dynamic = "force-dynamic";
 
@@ -21,10 +22,11 @@ export default async function MarketingPage({ params }: Props) {
   if (!ctx) redirect("/register");
   if (!isOwnerOrAdmin(ctx.role)) redirect(`/dashboard/${encodeURIComponent(slug)}`);
 
-  const [stats, schedules, salonRow] = await Promise.all([
+  const [stats, schedules, salonRow, bulkCampaigns] = await Promise.all([
     loadCampaignStats(ctx.salon.id),
     loadSchedules(ctx.salon.id),
     ctx.supabase.from("salons").select("timezone").eq("id", ctx.salon.id).maybeSingle(),
+    loadBulkEmailCampaigns(ctx.salon.id),
   ]);
   const timezone =
     (salonRow.data as { timezone?: string } | null)?.timezone || "America/Los_Angeles";
@@ -36,6 +38,7 @@ export default async function MarketingPage({ params }: Props) {
       timezone={timezone}
       stats={stats}
       schedules={schedules}
+      bulkCampaigns={bulkCampaigns}
     />
   );
 }
