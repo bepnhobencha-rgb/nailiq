@@ -17,6 +17,7 @@ import { SetupToast, type SetupToastPayload } from "@/components/ui/Toast";
 import { useUserLanguage } from "@/shared/lib/useUserLanguage";
 import { cn } from "@/shared/lib/cn";
 import { BulkEmailCampaignComposer } from "@/components/dashboard/BulkEmailCampaignComposer";
+import type { DeliveryMode } from "@/shared/marketing/bulkEmailCampaignDelivery";
 import {
   sendReoptinTestAction,
   sendReoptinCampaignAction,
@@ -59,12 +60,14 @@ export function MarketingCampaigns({
   stats,
   schedules,
   bulkCampaigns,
+  bulkDeliveryMode,
 }: {
   slug: string;
   salonName: string;
   timezone: string;
   stats: Stats;
   schedules: Schedule[];
+  bulkDeliveryMode: DeliveryMode;
   bulkCampaigns: {
     available: boolean;
     campaigns: Array<{
@@ -78,6 +81,11 @@ export function MarketingCampaigns({
       excludedOptout: number;
       excludedProviderSuppression: number;
       excludedDuplicate: number;
+      dispatchStage: "locked" | "canary" | "canary_complete" | "bulk" | "paused" | "completed";
+      canarySize: number;
+      canaryClaimedCount: number;
+      batchSize: number;
+      bulkReleaseApprovedAt: string | null;
       createdAt: string;
     }>;
   };
@@ -190,6 +198,7 @@ export function MarketingCampaigns({
         salonName={salonName}
         available={bulkCampaigns.available}
         campaigns={bulkCampaigns.campaigns}
+        deliveryMode={bulkDeliveryMode}
       />
 
       <section className="rounded-2xl border border-nq-border bg-nq-surface p-5">

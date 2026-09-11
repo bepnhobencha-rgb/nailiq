@@ -3,15 +3,21 @@
 import { useState } from "react";
 import { useRouter } from "next/navigation";
 import Image from "next/image";
-import { CheckCircle2, Eye, MailPlus, ShieldCheck, Users } from "lucide-react";
+import { CheckCircle2, Eye, MailPlus, Pause, Play, Send, ShieldCheck, Users } from "lucide-react";
 import { Button } from "@/components/ui/Button";
 import { SetupToast, type SetupToastPayload } from "@/components/ui/Toast";
 import {
   approveBulkEmailCampaignAction,
   createBulkEmailCampaignAction,
+  pauseBulkEmailCampaignAction,
   prepareBulkEmailCampaignAction,
+  releaseBulkEmailCampaignAction,
+  resumeBulkEmailCampaignAction,
+  runBulkEmailCampaignBatchAction,
+  runBulkEmailCampaignCanaryAction,
 } from "@/app/dashboard/[slug]/marketing/actions";
 import { useUserLanguage } from "@/shared/lib/useUserLanguage";
+import type { DeliveryMode } from "@/shared/marketing/bulkEmailCampaignDelivery";
 
 type Campaign = {
   id: string;
@@ -24,6 +30,11 @@ type Campaign = {
   excludedOptout: number;
   excludedProviderSuppression: number;
   excludedDuplicate: number;
+  dispatchStage: "locked" | "canary" | "canary_complete" | "bulk" | "paused" | "completed";
+  canarySize: number;
+  canaryClaimedCount: number;
+  batchSize: number;
+  bulkReleaseApprovedAt: string | null;
   createdAt: string;
 };
 
@@ -34,11 +45,13 @@ export function BulkEmailCampaignComposer({
   salonName,
   available,
   campaigns,
+  deliveryMode,
 }: {
   slug: string;
   salonName: string;
   available: boolean;
   campaigns: Campaign[];
+  deliveryMode: DeliveryMode;
 }) {
   const { language } = useUserLanguage();
   const vi = language === "vi";
@@ -111,6 +124,63 @@ export function BulkEmailCampaignComposer({
     if (result.ok) router.refresh();
   }
 
+  function deliverySummaryMessage(
+    result: Awaited<ReturnType<typeof runBulkEmailCampaignBatchAction>>,
+  ) {
+    if (!result.ok || !result.summary) {
+      return t("Dispatch stopped safely. No unverified send was claimed.", "Đã dừng gửi an toàn. Không ghi nhận lần gửi chưa xác minh.");
+    }
+    const summary = result.summary;
+    if (summary.mode === "simulate") {
+      return t(
+        `Safe simulation completed for ${summary.simulated} recipients. No email was sent.`,
+        `Đã mô phỏng an toàn cho ${summary.simulated} người nhận. Không có email thật được gửi.`,
+      );
+    }
+    return t(
+      `${summary.providerAccepted} emails were accepted by the provider; ${summary.failed + summary.unknown} need review.`,
+      `Nhà cung cấp đã nhận ${summary.providerAccepted} email; ${summary.failed + summary.unknown} trường hợp cần kiểm tra.`,
+    );
+  }
+
+  async function control(
+    campaignId: string,
+    operation: "canary" | "batch" | "pause" | "resume" | "release",
+  ) {
+    setBusyId(campaignId);
+    const result = operation === "canary"
+      ? await runBulkEmailCampaignCanaryAction(slug, campaignId)
+      : operation === "batch"
+        ? await runBulkEmailCampaignBatchAction(slug, campaignId)
+        : operation === "pause"
+          ? await pauseBulkEmailCampaignAction(slug, campaignId)
+          : operation === "resume"
+            ? await resumeBulkEmailCampaignAction(slug, campaignId)
+            : await releaseBulkEmailCampaignAction(slug, campaignId);
+    setBusyId(null);
+
+    if (!result.ok) {
+      const disabled = result.code === "dispatch_disabled";
+      setToast({
+        variant: "error",
+        message: disabled
+          ? t("Delivery is locked in this environment.", "Gửi email đang bị khóa trong môi trường này.")
+          : t("The action stopped safely. Refresh and try again.", "Thao tác đã dừng an toàn. Hãy tải lại và thử lại."),
+      });
+      return;
+    }
+
+    const message = operation === "canary" || operation === "batch"
+      ? deliverySummaryMessage(result)
+      : operation === "pause"
+        ? t("Campaign paused. No new recipients can be claimed.", "Đã tạm dừng. Không thể nhận thêm người gửi mới.")
+        : operation === "resume"
+          ? t("Campaign resumed from its prior safe stage.", "Chiến dịch đã tiếp tục từ trạng thái an toàn trước đó.")
+          : t("Owner approved the remaining audience. Send batches are now unlocked.", "Chủ tiệm đã duyệt phần khách còn lại. Các đợt gửi tiếp theo đã được mở khóa.");
+    setToast({ variant: "success", message });
+    router.refresh();
+  }
+
   const statusLabel: Record<Campaign["status"], string> = {
     draft: t("Draft", "Bản nháp"),
     prepared: t("Audience ready", "Đã kiểm tra khách"),
@@ -119,6 +189,17 @@ export function BulkEmailCampaignComposer({
     completed: t("Completed", "Hoàn tất"),
     cancelled: t("Cancelled", "Đã huỷ"),
   };
+
+  const stageLabel: Record<Campaign["dispatchStage"], string> = {
+    locked: t("Delivery locked", "Đang khóa gửi"),
+    canary: t("Canary in progress", "Đang gửi thử nhóm nhỏ"),
+    canary_complete: t("Canary passed · owner review", "Nhóm thử đã xong · chờ chủ duyệt"),
+    bulk: t("Full audience approved", "Đã duyệt toàn bộ khách"),
+    paused: t("Paused", "Đang tạm dừng"),
+    completed: t("Completed", "Hoàn tất"),
+  };
+
+  const deliveryLocked = deliveryMode === "disabled";
 
   return (
     <section className="mb-6 rounded-2xl border border-nq-primary/35 bg-nq-surface p-5" aria-labelledby="bulk-email-heading">
@@ -155,7 +236,11 @@ export function BulkEmailCampaignComposer({
 
       <div className="mt-3 flex items-start gap-2 rounded-xl border border-nq-success/30 bg-nq-success/10 px-3 py-2.5 text-sm text-nq-foreground">
         <ShieldCheck className="mt-0.5 h-4 w-4 shrink-0 text-nq-success" aria-hidden />
-        <span>{t("Safe preview: no provider call and no customer email can be sent from this screen.", "Preview an toàn: màn hình này không gọi nhà cung cấp và không thể gửi email cho khách.")}</span>
+        <span>{deliveryMode === "simulate"
+          ? t("QA simulation: every delivery receipt is recorded, but no provider or customer email is used.", "Mô phỏng QA: có ghi nhận đầy đủ kết quả, nhưng không gọi nhà cung cấp và không gửi email thật.")
+          : deliveryMode === "resend"
+            ? t("Controlled delivery: a small canary must finish before the owner can unlock the remaining audience.", "Gửi có kiểm soát: phải hoàn tất nhóm thử nhỏ trước khi chủ tiệm mở khóa phần khách còn lại.")
+            : t("Delivery is locked. Draft, preview and consent checks remain available.", "Gửi email đang khóa. Vẫn có thể soạn, xem trước và kiểm tra khách đã đồng ý.")}</span>
       </div>
 
       {!available ? (
@@ -237,6 +322,21 @@ export function BulkEmailCampaignComposer({
                   </div>
                   <span className="rounded-full bg-nq-surface px-2.5 py-1 text-xs text-nq-muted">{statusLabel[campaign.status]}</span>
                 </div>
+                {campaign.status !== "draft" && campaign.status !== "prepared" ? (
+                  <div className="mt-2 flex flex-wrap items-center gap-2 text-xs">
+                    <span className="rounded-full border border-nq-primary/25 bg-nq-primary/10 px-2.5 py-1 font-medium text-nq-foreground">
+                      {stageLabel[campaign.dispatchStage]}
+                    </span>
+                    {campaign.dispatchStage === "canary" || campaign.dispatchStage === "canary_complete" ? (
+                      <span className="text-nq-muted">
+                        {t(
+                          `${campaign.canaryClaimedCount}/${Math.min(campaign.canarySize, campaign.audienceCount)} canary recipients claimed`,
+                          `Đã nhận ${campaign.canaryClaimedCount}/${Math.min(campaign.canarySize, campaign.audienceCount)} khách thử`,
+                        )}
+                      </span>
+                    ) : null}
+                  </div>
+                ) : null}
                 {campaign.status !== "draft" ? (
                   <div className="mt-2 flex items-center gap-1.5 text-xs text-nq-muted">
                     <Users className="h-3.5 w-3.5" aria-hidden />
@@ -246,6 +346,33 @@ export function BulkEmailCampaignComposer({
                 <div className="mt-3 flex flex-wrap gap-2">
                   {campaign.status === "draft" ? <Button size="sm" variant="secondary" loading={busyId === campaign.id} onClick={() => void prepare(campaign.id)}>{t("Check audience", "Kiểm tra khách")}</Button> : null}
                   {campaign.status === "prepared" ? <Button size="sm" loading={busyId === campaign.id} onClick={() => void approve(campaign.id)}>{t("Approve", "Duyệt")}</Button> : null}
+                  {campaign.status === "approved" && campaign.dispatchStage === "locked" ? (
+                    <Button size="sm" loading={busyId === campaign.id} disabled={deliveryLocked} leftIcon={<Play className="h-4 w-4" />} onClick={() => void control(campaign.id, "canary")}>
+                      {deliveryMode === "simulate" ? t(`Simulate ${Math.min(campaign.canarySize, campaign.audienceCount)}`, `Mô phỏng ${Math.min(campaign.canarySize, campaign.audienceCount)} khách`) : t(`Send canary (${Math.min(campaign.canarySize, campaign.audienceCount)})`, `Gửi thử (${Math.min(campaign.canarySize, campaign.audienceCount)})`)}
+                    </Button>
+                  ) : null}
+                  {campaign.dispatchStage === "canary" ? (
+                    <>
+                      <Button size="sm" loading={busyId === campaign.id} disabled={deliveryLocked} leftIcon={<Send className="h-4 w-4" />} onClick={() => void control(campaign.id, "batch")}>
+                        {deliveryMode === "simulate" ? t("Continue simulation", "Tiếp tục mô phỏng") : t("Continue canary", "Tiếp tục nhóm thử")}
+                      </Button>
+                      <Button size="sm" variant="secondary" loading={busyId === campaign.id} leftIcon={<Pause className="h-4 w-4" />} onClick={() => void control(campaign.id, "pause")}>{t("Pause", "Tạm dừng")}</Button>
+                    </>
+                  ) : null}
+                  {campaign.dispatchStage === "canary_complete" ? (
+                    <Button size="sm" loading={busyId === campaign.id} disabled={deliveryLocked} leftIcon={<CheckCircle2 className="h-4 w-4" />} onClick={() => void control(campaign.id, "release")}>{t("Approve remaining audience", "Duyệt phần khách còn lại")}</Button>
+                  ) : null}
+                  {campaign.dispatchStage === "bulk" ? (
+                    <>
+                      <Button size="sm" loading={busyId === campaign.id} disabled={deliveryLocked} leftIcon={<Send className="h-4 w-4" />} onClick={() => void control(campaign.id, "batch")}>
+                        {deliveryMode === "simulate" ? t(`Simulate next ${campaign.batchSize}`, `Mô phỏng ${campaign.batchSize} khách tiếp`) : t(`Send next ${campaign.batchSize}`, `Gửi ${campaign.batchSize} khách tiếp`)}
+                      </Button>
+                      <Button size="sm" variant="secondary" loading={busyId === campaign.id} leftIcon={<Pause className="h-4 w-4" />} onClick={() => void control(campaign.id, "pause")}>{t("Pause", "Tạm dừng")}</Button>
+                    </>
+                  ) : null}
+                  {campaign.dispatchStage === "paused" ? (
+                    <Button size="sm" variant="secondary" loading={busyId === campaign.id} leftIcon={<Play className="h-4 w-4" />} onClick={() => void control(campaign.id, "resume")}>{t("Resume safely", "Tiếp tục an toàn")}</Button>
+                  ) : null}
                 </div>
               </li>
             ))}

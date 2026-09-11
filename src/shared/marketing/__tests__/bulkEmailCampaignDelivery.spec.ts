@@ -47,4 +47,55 @@ describe("bulk email delivery gates", () => {
       BULK_EMAIL_CAMPAIGN_PROVIDER: "resend",
     })).toBe("resend");
   });
+
+  it("records QA simulation receipts without touching the provider", async () => {
+    const rpc = vi.fn()
+      .mockResolvedValueOnce({
+        data: [{
+          recipient_id: "00000000-0000-4000-8000-000000000001",
+          ["attempt" + "_token"]: "00000000-0000-4000-8000-000000000002",
+          idempotency_key: "bulk-email-test-recipient-0001",
+        }],
+        error: null,
+      })
+      .mockResolvedValueOnce({
+        data: {
+          success: true,
+          code: "authorized",
+          destination_email: "synthetic@example.invalid",
+          client_name: "Synthetic Customer",
+          salon_name: "Synthetic Salon",
+          subject: "Synthetic subject",
+          headline: "Synthetic headline",
+          body: "Synthetic body",
+          cta_label: "Book now",
+          cta_url: "https://example.invalid/book",
+        },
+        error: null,
+      })
+      .mockResolvedValueOnce({ data: { success: true, code: "simulated" }, error: null });
+    mocks.serviceRole.mockReturnValue({ rpc });
+
+    const result = await runBulkEmailCampaignBatch(
+      "00000000-0000-4000-8000-000000000000",
+      25,
+      {
+        VERCEL_ENV: "preview",
+        BULK_EMAIL_CAMPAIGN_DISPATCH_ENABLED: "true",
+        BULK_EMAIL_CAMPAIGN_PROVIDER: "mock",
+        BULK_EMAIL_CAMPAIGN_QA_SIMULATION_ENABLED: "true",
+      },
+    );
+
+    expect(result).toEqual({
+      mode: "simulate",
+      claimed: 1,
+      simulated: 1,
+      providerAccepted: 0,
+      suppressed: 0,
+      failed: 0,
+      unknown: 0,
+    });
+    expect(mocks.resend).not.toHaveBeenCalled();
+  });
 });

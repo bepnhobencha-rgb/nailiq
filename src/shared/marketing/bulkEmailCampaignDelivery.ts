@@ -7,7 +7,7 @@ import { listUnsubscribeHeaders } from "@/shared/lib/emailCompliance";
 import { emailExperienceTags } from "@/shared/lib/emailExperienceRegistry";
 import { renderBulkEmailCampaign } from "./bulkEmailCampaign";
 
-type DeliveryMode = "disabled" | "simulate" | "resend";
+export type DeliveryMode = "disabled" | "simulate" | "resend";
 type BulkEmailRuntimeEnv = Record<string, string | undefined>;
 
 type Claim = {
