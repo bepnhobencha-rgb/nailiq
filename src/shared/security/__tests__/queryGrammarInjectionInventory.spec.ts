@@ -88,6 +88,7 @@ describe("query grammar injection inventory", () => {
     expect(counts).toEqual({
       "src/shared/ai/analyzeChannelFailures.ts": 1,
       "src/shared/ai/lessons.ts": 1,
+      "src/shared/booking/cardProtectionExceptionActions.ts": 1,
       "src/shared/dashboard/availabilityEngine.ts": 2,
       "src/shared/groupbooking/agentLateDecline.ts": 1,
       "src/shared/superadmin/agentCertificationActions.ts": 1,

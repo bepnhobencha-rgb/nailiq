@@ -2,6 +2,7 @@
 import assert from "node:assert/strict";
 import {execFile} from "node:child_process";
 import {promisify} from "node:util";
+import {readFileSync} from "node:fs";
 const run=promisify(execFile);
 const dbUrl=process.env.DB_URL,psql=process.env.PSQL_BIN??"psql";
 if(process.env.NAILIQ_DISPOSABLE_DB!=="1"||!dbUrl) throw new Error("disposable local DB required");
@@ -35,6 +36,8 @@ try{
  insert into public.booking_management_capabilities(id,salon_id,booking_id,action,scope_kind,epoch,booking_version,expires_at,consumed_at,revoke_reason,request_id,payload_fingerprint,result_json,result_fingerprint) values
  ('15160000-0000-4000-8000-000000000021','${salon}','${late}','cancel','booking_own',1,0,clock_timestamp()+interval '1 day',clock_timestamp(),'action_consumed',gen_random_uuid(),repeat('1',64),jsonb_build_object('ok',true,'status','cancelled','scope_kind','booking_own','rsvp_semantic',null,'customer_transition_version',1,'cancel_preview',jsonb_build_object('will_charge',true,'has_chargeable_card',true,'within_window',true,'fee_cents',1500,'currency','CAD')),repeat('2',64));`);
 
+ await sql(readFileSync(new URL("./fixture-historical-card-receipt.sql",import.meta.url),"utf8")+
+   `select pg_temp.seed_historical_card_receipt('${noshow}');select pg_temp.seed_historical_card_receipt('${late}');`);
  const noMat=json(await sql(`begin;set local role service_role;select public.load_booking_payment_operation_material('${salon}','${noshow}','noshow_charge',1500)::text;commit;`));
  const noClaims=(await Promise.all(Array.from({length:10},()=>sql(`begin;set local role service_role;select public.claim_booking_payment_operation('${salon}','${noshow}','${noApprovalRequest}','noshow_charge',1500,'${noMat.material_fingerprint}')::text;commit;`)))).map(json);
  assert.equal(new Set(noClaims.map((x)=>x.operation_id)).size,1,JSON.stringify(noClaims));

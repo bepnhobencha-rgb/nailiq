@@ -137,7 +137,6 @@ export async function POST(request: NextRequest) {
   }
   if (result.ok && !cardManagementPending && cardManagementToken && parsed.data.cardSourceId) {
     if (parsed.data.noShowConsent !== true) {
-      cardManagementToken = null;
       cardManagementPending = true;
       pendingStage = "customer_action";
       pendingReason = "consent_required";
@@ -151,15 +150,11 @@ export async function POST(request: NextRequest) {
           verificationToken: parsed.data.cardVerificationToken,
         });
         if (!saved.ok) {
-          cardManagementToken = null;
           cardManagementPending = true;
           pendingStage = "provider_handoff";
           pendingReason = "card_save_unresolved";
-        } else {
-          cardManagementToken = null;
         }
       } catch {
-        cardManagementToken = null;
         cardManagementPending = true;
         pendingStage = "provider_handoff";
         pendingReason = "unexpected_post_commit_error";

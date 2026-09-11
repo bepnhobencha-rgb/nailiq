@@ -1,7 +1,10 @@
 "use client";
 
+import { Button } from "@/components/ui/Button";
+import { CardProtectionRecovery } from "./CardProtectionRecovery";
 import * as ErrorReporter from "@/shared/observability/errorReporter";
-import { useEffect, useRef, useState } from "react";
+import { useEffect, useId, useRef, useState } from "react";
+import { loadSquareWebPaymentsSdk, mountSquareCardForm, safeSquareTokenizationStatus, type SquareCard } from "@/shared/booking/squareCardForm";
 import type { BookingMessages } from "@/shared/i18n/booking/en";
 import { NoShowCardCaptureStripe } from "./NoShowCardCaptureStripe";
 import type { SavedNoShowCard } from "@/shared/noshow/resolveSavedNoShowCard";
@@ -15,6 +18,7 @@ import {
 } from "@/shared/booking/bookingManagementRequestId";
 
 type CaptureProps = {
+  onSettled?: () => Promise<void>;
   bookingId: string;
   /** Server-minted, action-scoped proof for this exact booking. */
   managementToken: string;
@@ -35,6 +39,11 @@ type CaptureProps = {
  * until it knows, and nothing when no card is required for this booking.
  */
 export function NoShowCardCapture(props: CaptureProps) {
+  return <CardProtectionRecovery key={props.managementToken} token={props.managementToken} t={props.t}
+    Capture={ProviderCardCapture} captureProps={props} />;
+}
+
+function ProviderCardCapture(props: CaptureProps) {
   const [stripeCfg, setStripeCfg] = useState<{
     required: boolean;
     clientSecret?: string;
@@ -91,7 +100,7 @@ export function NoShowCardCapture(props: CaptureProps) {
     };
   }, [props.managementToken]);
 
-  if (stripeCfg === null) return null; // still deciding which provider
+  if (stripeCfg === null) return <p role="status">{props.t.cardProtection.checking}</p>; // still deciding which provider
   if (stripeCfg.required && stripeCfg.clientSecret && stripeCfg.publishableKey && stripeCfg.finalizeToken) {
     return (
       <NoShowCardCaptureStripe
@@ -103,6 +112,7 @@ export function NoShowCardCapture(props: CaptureProps) {
         t={props.t}
         savedCard={props.savedCard}
         otpSessionId={props.otpSessionId}
+        onSettled={props.onSettled}
       />
     );
   }
@@ -116,57 +126,6 @@ type Cfg = {
   locationId?: string;
   environment?: "production" | "sandbox";
 };
-
-// Minimal shape of the Square Web Payments SDK we use.
-type SquareCard = {
-  attach: (sel: string) => Promise<void>;
-  tokenize: (
-    details?: SquareVerifyDetails,
-  ) => Promise<{ status: string; token?: string }>;
-};
-type SquareVerifyDetails = {
-  intent: "STORE" | "CHARGE";
-  customerInitiated?: boolean;
-  sellerKeyedIn?: boolean;
-  billingContact?: Record<string, string>;
-  amount?: string;
-  currencyCode?: string;
-};
-type SquarePayments = {
-  card: () => Promise<SquareCard>;
-};
-type SquareGlobal = { payments: (appId: string, locationId: string) => SquarePayments };
-
-declare global {
-  interface Window {
-    Square?: SquareGlobal;
-  }
-}
-
-const SDK_SRC = {
-  sandbox: "https://sandbox.web.squarecdn.com/v1/square.js",
-  production: "https://web.squarecdn.com/v1/square.js",
-};
-
-function loadSdk(env: "production" | "sandbox"): Promise<SquareGlobal> {
-  return new Promise((resolve, reject) => {
-    if (window.Square) return resolve(window.Square);
-    const src = SDK_SRC[env];
-    const existing = document.querySelector<HTMLScriptElement>(`script[src="${src}"]`);
-    if (existing) {
-      existing.addEventListener("load", () => resolve(window.Square as SquareGlobal));
-      existing.addEventListener("error", () => reject(new Error("sdk_load_failed")));
-      if (window.Square) resolve(window.Square);
-      return;
-    }
-    const s = document.createElement("script");
-    s.src = src;
-    s.async = true;
-    s.onload = () => (window.Square ? resolve(window.Square) : reject(new Error("sdk_no_global")));
-    s.onerror = () => reject(new Error("sdk_load_failed"));
-    document.head.appendChild(s);
-  });
-}
 
 /**
  * Post-booking no-show protection (Square card-on-file). Fetches its own config;
@@ -270,7 +229,7 @@ function SavedCardReuseTile({
 
 /** Square card-entry capture (Web Payments SDK). Used when the salon's provider
  *  is Square. The Stripe path (one-tap wallets) is handled by the dispatcher. */
-function SquareCardCapture({ bookingId, managementToken, currencyFormat, t, savedCard, otpSessionId }: CaptureProps) {
+function SquareCardCapture({ onSettled, bookingId, managementToken, currencyFormat, t, savedCard, otpSessionId }: CaptureProps) {
   const [cfg, setCfg] = useState<Cfg | null>(null);
   const [status, setStatus] = useState<"idle" | "saving" | "saved" | "error">("idle");
   const [errorMsg, setErrorMsg] = useState<string | null>(null);
@@ -280,7 +239,17 @@ function SquareCardCapture({ bookingId, managementToken, currencyFormat, t, save
   const [useDifferentCard, setUseDifferentCard] = useState(false);
   const inAppBrowser = useInAppBrowser();
   const cardRef = useRef<SquareCard | null>(null);
-  const mountedRef = useRef(false);
+  const formId = useId().replace(/[^A-Za-z0-9_-]/g, "");
+  const [formAttempt, setFormAttempt] = useState(0);
+  const [formResult, setFormResult] = useState<{ key: string; state: "ready" | "error" } | null>(null);
+  const applicationId = cfg?.applicationId ?? "";
+  const locationId = cfg?.locationId ?? "";
+  const environment = cfg?.environment ?? "production";
+  const required = cfg?.required === true;
+  const configId = [applicationId, locationId, environment].join("-").replace(/[^A-Za-z0-9_-]/g, "");
+  const cardContainerId = `sq-noshow-card-${formId}-${formAttempt}-${configId}`;
+  const formKey = cardContainerId;
+  const formState = formResult?.key === formKey ? formResult.state : "loading";
 
   const showReuseTile =
     !!(savedCard?.hasSavedCard && otpSessionId) && !useDifferentCard && status !== "saved";
@@ -301,45 +270,51 @@ function SquareCardCapture({ bookingId, managementToken, currencyFormat, t, save
     };
   }, [managementToken]);
 
-  // 2. Init the Square card form once we know we need it.
-  //    Skip while the reuse tile is showing — the card iframe isn't mounted yet.
+  // Each attempt owns its card and DOM container. Cleanup cannot publish a
+  // stale instance or remove the iframe belonging to a newer attempt.
   useEffect(() => {
-    if (showReuseTile) return;
-    if (!cfg?.required || !cfg.applicationId || !cfg.locationId || mountedRef.current) {
-      return;
-    }
-    mountedRef.current = true;
-    let cancelled = false;
-    (async () => {
-      try {
-        const sq = await loadSdk(cfg.environment ?? "production");
-        const payments = sq.payments(cfg.applicationId!, cfg.locationId!);
-        const card = await payments.card();
-        if (cancelled) return;
-        await card.attach("#sq-noshow-card");
+    if (showReuseTile || !required || !applicationId || !locationId) return;
+    cardRef.current = null;
+    const cancel = mountSquareCardForm({
+      loadSdk: () => loadSquareWebPaymentsSdk(environment),
+      applicationId,
+      locationId,
+      selector: `#${cardContainerId}`,
+      onReady(card) {
         cardRef.current = card;
-      } catch {
-        if (!cancelled) {
-          setStatus("error");
-          setErrorMsg(t.noShowCardError ?? "Could not load the card form.");
-        }
-      }
-    })();
-    return () => {
-      cancelled = true;
-    };
-  }, [cfg, t.noShowCardError, showReuseTile]);
+        setFormResult({ key: formKey, state: "ready" });
+        setErrorMsg(null);
+      },
+      onError(failure) {
+        setFormResult({ key: formKey, state: "error" });
+        ErrorReporter.captureMessage("square_card_form_load_failed", {
+          level: "warning",
+          tags: { surface: "booking_save_card", payment_step: failure.stage,
+            square_error_kind: failure.code, environment,
+            secure_context: String(window.isSecureContext) },
+        });
+      },
+    });
+    return () => { cardRef.current = null; cancel(); };
+  }, [required, applicationId, locationId, environment, cardContainerId, formKey, showReuseTile]);
 
   async function onSave() {
-    if (!cardRef.current || status === "saving" || !consented) return;
+    if (!cardRef.current || formState !== "ready" || status === "saving" || !consented) return;
     setStatus("saving");
     setErrorMsg(null);
+    let dispatched = false;
     try {
+      const contextResponse = await fetch(`/api/booking/save-card-context?token=${encodeURIComponent(managementToken)}`, { cache: "no-store" });
+      const context = await contextResponse.json();
+      if (!contextResponse.ok || context.canRetry !== true) { await onSettled?.(); return; }
       // Square's current Web Payments flow performs buyer verification during
       // tokenization. Never downgrade to an unverified card when 3DS, CVV, or
       // AVS verification fails or times out.
       const result = await cardRef.current.tokenize({
         intent: "STORE",
+        // Square requires this object even when this secure recovery page
+        // intentionally has no customer contact fields to send.
+        billingContact: {},
         customerInitiated: true,
         sellerKeyedIn: false,
       });
@@ -348,7 +323,7 @@ function SquareCardCapture({ bookingId, managementToken, currencyFormat, t, save
           level: "warning",
           tags: {
             surface: "booking_save_card",
-            square_status: result.status,
+            square_status: safeSquareTokenizationStatus(result.status),
             in_app_browser: String(isInAppBrowser()),
           },
         });
@@ -359,6 +334,7 @@ function SquareCardCapture({ bookingId, managementToken, currencyFormat, t, save
         );
         return;
       }
+      dispatched = true;
       const res = await fetch("/api/booking/square-save-card", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -375,23 +351,25 @@ function SquareCardCapture({ bookingId, managementToken, currencyFormat, t, save
         }),
       });
       const j = (await res.json()) as { ok?: boolean };
-      if (j.ok) {
+      if (res.ok && j.ok) {
         setStatus("saved");
       } else {
         setStatus("error");
         setErrorMsg(t.noShowCardError ?? "Could not save the card.");
       }
-    } catch (cause) {
+      await onSettled?.();
+    } catch {
       ErrorReporter.captureException(
-        cause instanceof Error ? cause : new Error("square_card_tokenization_threw"),
+        new Error(dispatched ? "square_card_delivery_uncertain" : "square_card_tokenization_threw"),
         {
           tags: {
             surface: "booking_save_card",
-            payment_step: "card_tokenize",
+            payment_step: dispatched ? "card_save" : "card_tokenize",
             in_app_browser: String(isInAppBrowser()),
           },
         },
       );
+      if (dispatched) await onSettled?.();
       setStatus("error");
       setErrorMsg(
         t.cardVerificationError ??
@@ -400,20 +378,15 @@ function SquareCardCapture({ bookingId, managementToken, currencyFormat, t, save
     }
   }
 
-  if (!cfg?.required) return null;
+  if (!cfg) return <p role="status" className="mt-3 text-sm">{t.cardProtection.checking}</p>;
+  if (!cfg.required) return <div className="mt-3">
+    <p role="alert" className="text-sm text-[var(--booking-text-muted)]">{t.cardProtection.unavailable}</p>
+    <Button size="lg" fullWidth className="mt-3 bg-[var(--cta-bg)] text-[var(--cta-text)]" onClick={() => void onSettled?.()}>{t.cardProtection.retry}</Button>
+  </div>;
 
   const feeLabel = currencyFormat(cfg.feeCents ?? 0);
 
-  if (status === "saved") {
-    return (
-      <div
-        className="mt-5 rounded-xl border border-nq-success/40 bg-nq-success/10 px-4 py-3 text-sm text-nq-success"
-        data-testid="noshow-card-saved"
-      >
-        ✓ {(t.noShowCardSaved ?? "Card saved — you're only charged {fee} if you no-show.").replace("{fee}", feeLabel)}
-      </div>
-    );
-  }
+  if (status === "saved") return <p role="status" className="mt-3 text-sm">{t.cardProtection.checking}</p>;
 
   // Returning customer with a card on file → one-tap reuse (no re-entry),
   // unless they explicitly chose to enter a different card.
@@ -426,7 +399,7 @@ function SquareCardCapture({ bookingId, managementToken, currencyFormat, t, save
         feeLabel={feeLabel}
         t={t}
         onUseDifferent={() => setUseDifferentCard(true)}
-        onSaved={() => setStatus("saved")}
+        onSaved={() => { void onSettled?.(); }}
       />
     );
   }
@@ -434,10 +407,10 @@ function SquareCardCapture({ bookingId, managementToken, currencyFormat, t, save
   return (
     <div className="mt-5 rounded-2xl border border-[var(--booking-border)] bg-[var(--booking-bg-card)] p-4 sm:p-5">
       <p className="text-sm font-semibold text-[var(--booking-text)]">
-        {t.noShowCardTitle ?? "Secure your appointment"}
+        {t.noShowCardTitle ?? "No-show card protection"}
       </p>
       <p className="mt-1 text-xs leading-relaxed text-[var(--booking-text-muted)]">
-        {(t.noShowCardDesc ?? "Add a card to hold your spot. You're only charged {fee} if you don't show up — nothing now.").replace("{fee}", feeLabel)}
+        {(t.noShowCardDesc ?? "Save a card to activate no-show protection. Under the policy, a {fee} fee may apply if you miss your appointment. No charge today.").replace("{fee}", feeLabel)}
       </p>
       {inAppBrowser ? (
         <CardWebviewFallback
@@ -449,22 +422,21 @@ function SquareCardCapture({ bookingId, managementToken, currencyFormat, t, save
         />
       ) : null}
       <div
-        id="sq-noshow-card"
+        key={cardContainerId}
+        id={cardContainerId}
         className="mt-3 rounded-lg border border-[var(--booking-border)] bg-white p-2"
       />
-      {errorMsg ? (
+      {formState === "error" || errorMsg ? (
         <p className="mt-2 text-xs text-nq-error" role="alert">
-          {errorMsg}
+          {formState === "error" ? t.noShowCardLoadError : errorMsg}
         </p>
       ) : null}
-      {errorMsg && !inAppBrowser ? (
-        <CardWebviewFallback
-          forceVisible
-          hint={t.cardWebviewHint ?? "Can't load the card form in this app's browser. Open this page in Safari or Chrome to finish, or copy the link below."}
-          copyLabel={t.cardWebviewCopy ?? "Copy booking link"}
-          copiedLabel={t.cardWebviewCopied ?? "Link copied"}
-          openChromeLabel={t.cardWebviewOpenChrome ?? "Open in Chrome"}
-        />
+      {formState === "loading" ? <p role="status" className="mt-2 text-xs text-[var(--booking-text-muted)]">{t.noShowCardLoading}</p> : null}
+      {formState === "error" ? (
+        <Button size="lg" fullWidth className="mt-3" onClick={() => {
+          setErrorMsg(null); setFormResult(null); setStatus("idle");
+          setFormAttempt(attempt => attempt + 1);
+        }}>{t.noShowCardReload}</Button>
       ) : null}
       <label className="mt-3 flex cursor-pointer items-start gap-2 text-xs leading-relaxed text-[var(--booking-text-muted)]">
         <input
@@ -485,7 +457,7 @@ function SquareCardCapture({ bookingId, managementToken, currencyFormat, t, save
       <button
         type="button"
         onClick={onSave}
-        disabled={status === "saving" || !consented}
+        disabled={formState !== "ready" || status === "saving" || !consented}
         data-testid="noshow-card-save"
         className="mt-3 h-11 w-full rounded-xl bg-[var(--salon-primary)] text-sm font-semibold text-white disabled:opacity-50"
       >

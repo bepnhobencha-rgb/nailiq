@@ -1692,3 +1692,11 @@ The 266-row pre-repair backup remains available for rollback.
 **Related.** Commits `7de1124` (rename that exposed the drift), `06e9463` (CI env vars), `a381d92` (Edit perms scope). Discovery from `npx supabase migration list` output captured in chat on 2026-05-04.
 
 ---
+
+## 2026-09-11 — Square card delivery truth (local/QA only)
+
+A committed appointment and active card protection are separate outcomes. New saves require a complete bound provider receipt, consent policy metadata and a durable successful operation; a required-card flag or card ID alone is insufficient. PostgreSQL projects the seven typed protection states and enforces fee eligibility. Unknown dispatches use exact-reference read-only reconciliation; recovery links retain read authority until expiry without restoring consumed mutation authority or unrelated revoked links. Structured diagnostics preserve safe first-failure truth and append-only outcomes.
+
+No Production change, charge or notification is authorized by this decision. Historical incomplete receipts remain unprotected/manual review; capture can be paused with `NAILIQ_CARD_SAVE_DISPATCH_DISABLED=true`. Reverting only to the old app is not a safe rollback. Sandbox/Preview and rollout approval remain outstanding. Full evidence and remaining limitations: [QA report](qa/square-card-delivery-truth-2026-09-11.md).
+
+Customer creation for card saves now has a service-only shared claim per salon, Square account/environment and canonical contact. Its first request material and opaque key/reference survive cross-booking races and response loss; unresolved legacy keys are reconciled rather than replaced. Card references remain operation-specific. An insertion sequence resolves equal operation timestamps without altering chronological evidence. These additions are local/QA only.

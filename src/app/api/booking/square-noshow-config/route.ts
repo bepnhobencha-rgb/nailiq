@@ -16,6 +16,7 @@ const json = (body: Record<string, unknown>, status = 200) =>
   NextResponse.json(body, { status, headers: PRIVATE_HEADERS });
 
 export async function GET(request: Request) {
+  if (process.env.NAILIQ_CARD_SAVE_DISPATCH_DISABLED === "true") return json({ required:false,code:"card_capture_paused" },503);
   const token = new URL(request.url).searchParams.get("token")?.trim() ?? "";
   if (!token) return json({ required: false, code: "invalid_request" }, 400);
   const rate = await consumeBookingManagementRateLimit({ request, tokenId: token, action: "card_manage", phase: "inspect" });
@@ -25,7 +26,7 @@ export async function GET(request: Request) {
   try {
     const decision = await noShowCardDecision(inspected.inspection.context.bookingId, { strict: true });
     if (!decision.required) return json({ required: false });
-    const provider = await resolvePaymentProvider(inspected.inspection.context.salonId);
+    const provider = await resolvePaymentProvider(inspected.inspection.context.salonId, { strict: true, purpose: "card_on_file" });
     if (!provider) return json({ required: false, code: "provider_configuration_invalid" }, 503);
     if (provider.kind === "stripe") {
       return json({ required: true, provider: "stripe", feeCents: decision.feeCents });

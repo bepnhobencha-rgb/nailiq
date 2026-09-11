@@ -5,63 +5,17 @@ import {
   forwardRef,
   useEffect,
   useImperativeHandle,
+  useId,
   useRef,
   useState,
 } from "react";
+import { Button } from "@/components/ui/Button";
+import { loadSquareWebPaymentsSdk, mountSquareCardForm, safeSquareTokenizationStatus, type SquareCard } from "@/shared/booking/squareCardForm";
 import type { BookingMessages } from "@/shared/i18n/booking/en";
 import { CardWebviewFallback } from "@/components/booking/CardWebviewFallback";
 import { isInAppBrowser } from "@/shared/lib/inAppBrowser";
 import { useInAppBrowser } from "@/shared/lib/useInAppBrowser";
 import { buildSquareStoreBillingContact } from "@/shared/noshow/squareStoreBillingContact";
-
-type SquareCard = {
-  attach: (sel: string) => Promise<void>;
-  tokenize: (
-    details?: SquareVerifyDetails,
-  ) => Promise<{ status: string; token?: string }>;
-};
-type SquareVerifyDetails = {
-  intent: "STORE" | "CHARGE";
-  customerInitiated?: boolean;
-  sellerKeyedIn?: boolean;
-  billingContact?: Record<string, string>;
-  amount?: string;
-  currencyCode?: string;
-};
-type SquarePayments = {
-  card: () => Promise<SquareCard>;
-};
-type SquareGlobal = { payments: (appId: string, locationId: string) => SquarePayments };
-declare global {
-  interface Window {
-    Square?: SquareGlobal;
-  }
-}
-
-const SDK_SRC = {
-  sandbox: "https://sandbox.web.squarecdn.com/v1/square.js",
-  production: "https://web.squarecdn.com/v1/square.js",
-};
-
-function loadSdk(env: "production" | "sandbox"): Promise<SquareGlobal> {
-  return new Promise((resolve, reject) => {
-    if (window.Square) return resolve(window.Square);
-    const src = SDK_SRC[env];
-    const existing = document.querySelector<HTMLScriptElement>(`script[src="${src}"]`);
-    if (existing) {
-      existing.addEventListener("load", () => resolve(window.Square as SquareGlobal));
-      existing.addEventListener("error", () => reject(new Error("sdk_load_failed")));
-      if (window.Square) resolve(window.Square);
-      return;
-    }
-    const s = document.createElement("script");
-    s.src = src;
-    s.async = true;
-    s.onload = () => (window.Square ? resolve(window.Square) : reject(new Error("sdk_no_global")));
-    s.onerror = () => reject(new Error("sdk_load_failed"));
-    document.head.appendChild(s);
-  });
-}
 
 export type ConfirmStepCardHandle = {
   /** Tokenize the entered card AND run Square buyer verification (SCA/AVS/CVV).
@@ -103,45 +57,51 @@ export const ConfirmStepCardCapture = forwardRef<ConfirmStepCardHandle, Props>(
     t,
   }, ref) {
     const cardRef = useRef<SquareCard | null>(null);
-    const mountedRef = useRef(false);
+    const formId = useId().replace(/[^A-Za-z0-9_-]/g, "");
+    const [formAttempt, setFormAttempt] = useState(0);
+    const [failedForm, setFailedForm] = useState<string | null>(null);
+    const configId = [applicationId, locationId, environment].join("-").replace(/[^A-Za-z0-9_-]/g, "");
+    const cardContainerId = `sq-confirm-card-${formId}-${formAttempt}-${configId}`;
+    const formLoadFailed = failedForm === cardContainerId;
     const [error, setError] = useState<string | null>(null);
-    const [ready, setReady] = useState(false);
+    const [readyFor, setReadyFor] = useState<string | null>(null);
+    const formKey = [cardContainerId, applicationId, locationId, environment].join(":");
+    const ready = readyFor === formKey;
     const inAppBrowser = useInAppBrowser();
 
     useEffect(() => {
-      if (mountedRef.current) return;
-      mountedRef.current = true;
-      let cancelled = false;
-      (async () => {
-        try {
-          const sq = await loadSdk(environment);
-          const payments = sq.payments(applicationId, locationId);
-          const card = await payments.card();
-          if (cancelled) return;
-          await card.attach("#sq-confirm-card");
-          // Square fires 'errorChanged' when its own validation state changes.
-          // Use it to proactively clear our custom error so stale messages
-          // don't linger after the user corrects their card number.
+      cardRef.current = null;
+      const cancel = mountSquareCardForm({
+        loadSdk: () => loadSquareWebPaymentsSdk(environment),
+        applicationId, locationId, selector: `#${cardContainerId}`,
+        onReady(card) {
           try {
             (card as unknown as { addEventListener: (e: string, h: () => void) => void })
               .addEventListener("errorChanged", () => setError(null));
-          } catch { /* event not supported in all SDK versions — safe to ignore */ }
+          } catch { /* Older SDK versions might not expose this event. */ }
           cardRef.current = card;
-          setReady(true);
-        } catch {
-          if (!cancelled) setError(t.noShowCardError ?? "Could not load the card form.");
-        }
-      })();
-      return () => {
-        cancelled = true;
-      };
-    }, [applicationId, locationId, environment, t.noShowCardError]);
+          setReadyFor(formKey);
+          setFailedForm(null);
+          setError(null);
+        },
+        onError(failure) {
+          setFailedForm(cardContainerId);
+          ErrorReporter.captureMessage("square_card_form_load_failed", {
+            level: "warning",
+            tags: { surface: "booking_confirm", payment_step: failure.stage,
+              square_error_kind: failure.code, environment,
+              secure_context: String(window.isSecureContext) },
+          });
+        },
+      });
+      return () => { cardRef.current = null; cancel(); };
+    }, [applicationId, locationId, environment, cardContainerId, formKey]);
 
     useImperativeHandle(ref, () => ({
       clearError() { setError(null); },
       async tokenize() {
-        if (!cardRef.current) {
-          setError(t.noShowCardError ?? "Could not load the card form.");
+        if (!cardRef.current || !ready) {
+          setError(t.noShowCardLoadError);
           return null;
         }
         try {
@@ -163,7 +123,7 @@ export const ConfirmStepCardCapture = forwardRef<ConfirmStepCardHandle, Props>(
               level: "warning",
               tags: {
                 surface: "booking_confirm",
-                square_status: res.status,
+                square_status: safeSquareTokenizationStatus(res.status),
                 in_app_browser: String(isInAppBrowser()),
               },
             });
@@ -175,9 +135,9 @@ export const ConfirmStepCardCapture = forwardRef<ConfirmStepCardHandle, Props>(
           }
           setError(null);
           return { token: res.token };
-        } catch (cause) {
+        } catch {
           ErrorReporter.captureException(
-            cause instanceof Error ? cause : new Error("square_card_tokenization_threw"),
+            new Error("square_card_tokenization_threw"),
             {
               tags: {
                 surface: "booking_confirm",
@@ -198,11 +158,11 @@ export const ConfirmStepCardCapture = forwardRef<ConfirmStepCardHandle, Props>(
     return (
       <div className="mt-4 rounded-2xl border border-[var(--booking-border)] bg-[var(--booking-bg-card)] p-4">
         <p className="text-sm font-semibold text-[var(--booking-text)]">
-          {t.noShowCardTitle ?? "Card required to confirm"}
+          {t.noShowCardTitle ?? "No-show card protection"}
         </p>
         <p className="mt-1 text-xs leading-relaxed text-[var(--booking-text-muted)]">
           {(t.noShowCardDesc ??
-            "A card on file is required to complete this booking. You'll only be charged {fee} if you miss your appointment — no charge today.").replace(
+            "Save a card to activate no-show protection. Under the policy, a {fee} fee may apply if you miss your appointment. No charge today.").replace(
             "{fee}",
             feeLabel,
           )}
@@ -217,28 +177,26 @@ export const ConfirmStepCardCapture = forwardRef<ConfirmStepCardHandle, Props>(
           />
         ) : null}
         <div
-          id="sq-confirm-card"
+          key={cardContainerId}
+          id={cardContainerId}
           className="mt-3 rounded-lg border border-[var(--booking-border)] bg-white p-2"
           data-testid="confirm-step-card"
         />
-        {!ready && !error ? (
+        {!ready && !formLoadFailed && !error ? (
           <p className="mt-2 text-xs text-[var(--booking-text-muted)]">
-            {t.noShowCardSaving ?? "Loading…"}
+            {t.noShowCardLoading}
           </p>
         ) : null}
-        {error ? (
+        {formLoadFailed || error ? (
           <p className="mt-2 text-xs text-nq-error" role="alert" data-testid="confirm-step-card-error">
-            {error}
+            {formLoadFailed ? t.noShowCardLoadError : error}
           </p>
         ) : null}
-        {error && !inAppBrowser ? (
-          <CardWebviewFallback
-            forceVisible
-            hint={t.cardWebviewHint ?? "Can't load the card form in this app's browser. Open this page in Safari or Chrome to finish, or copy the link below."}
-            copyLabel={t.cardWebviewCopy ?? "Copy booking link"}
-            copiedLabel={t.cardWebviewCopied ?? "Link copied"}
-            openChromeLabel={t.cardWebviewOpenChrome ?? "Open in Chrome"}
-          />
+        {formLoadFailed ? (
+          <Button size="lg" fullWidth className="mt-3" onClick={() => {
+            setError(null); setReadyFor(null); setFailedForm(null);
+            setFormAttempt(attempt => attempt + 1);
+          }}>{t.noShowCardReload}</Button>
         ) : null}
       </div>
     );

@@ -1,3 +1,4 @@
+import { isCardProtectionStatus } from "@/shared/booking/cardProtection";
 import type { SupabaseClient } from "@supabase/supabase-js";
 import type { Database } from "@/lib/database.types";
 import { createServiceRoleClient } from "@/shared/lib/supabase/serviceRole";
@@ -498,6 +499,7 @@ export interface ReceptionistCenterData {
     wix_booking_id: string | null;
     /** Square card-on-file saved for this booking's no-show fee. Non-null →
      * the desk's no-show action offers a "charge $X / waive" choice. */
+    card_protection_status?: import("@/shared/booking/cardProtection").CardProtectionStatus;
     noshow_card_id: string | null;
     /** True when this booking SHOULD have a no-show card but doesn't yet —
      * flagged at creation across all paths (desk/group/voice/...). Drives the
@@ -1128,6 +1130,7 @@ export async function loadReceptionistCenterData(
       deposit_amount_cents,
       wix_booking_id,
       noshow_card_id,
+      card_protection_status,
       noshow_card_required,
       noshow_fee_cents,
       noshow_charge_status,
@@ -1449,7 +1452,7 @@ export async function loadReceptionistCenterData(
     const { data, error } = await ctx.supabase
       .from("bookings")
       .select(
-        "id, client_name, start_time_utc, end_time_utc, staff_id, noshow_fee_cents, noshow_card_id, noshow_charge_status, services!bookings_service_id_fkey(name), staff(name)",
+        "id, client_name, start_time_utc, end_time_utc, staff_id, noshow_fee_cents, noshow_card_id, card_protection_status, noshow_charge_status, services!bookings_service_id_fkey(name), staff(name)",
       )
       .eq("salon_id", ctx.salon.id)
       .gte("start_time_utc", startUtc)
@@ -1468,6 +1471,7 @@ export async function loadReceptionistCenterData(
         noshow_fee_cents: number | null;
         noshow_card_id: string | null;
         noshow_charge_status: string | null;
+        card_protection_status?: string;
         services?: { name?: string | null } | null;
         staff?: { name?: string | null } | null;
       }>) {
@@ -1488,8 +1492,7 @@ export async function loadReceptionistCenterData(
             typeof r.noshow_charge_status === "string" && r.noshow_charge_status
               ? r.noshow_charge_status
               : null,
-          hasCard:
-            typeof r.noshow_card_id === "string" && r.noshow_card_id.length > 0,
+          hasCard: r.card_protection_status === "saved",
         });
       }
     }
@@ -1832,6 +1835,10 @@ export async function loadReceptionistCenterData(
       wix_booking_id: (() => {
         const v = (row as { wix_booking_id?: unknown }).wix_booking_id;
         return typeof v === "string" && v.length > 0 ? v : null;
+      })(),
+      card_protection_status: (() => {
+        const value = (row as { card_protection_status?: unknown }).card_protection_status;
+        return isCardProtectionStatus(value) ? value : undefined;
       })(),
       noshow_card_id: (() => {
         const v = (row as { noshow_card_id?: unknown }).noshow_card_id;

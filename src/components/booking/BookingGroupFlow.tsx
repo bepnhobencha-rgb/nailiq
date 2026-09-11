@@ -4589,6 +4589,10 @@ function SuccessPanel({
   /** Salon id — needed to resolve the organizer's saved card on file. */
   salonId: string;
 }) {
+  const recoveryRouter = useRouter();
+  useEffect(() => {
+    if (successResult.cardManagementToken) recoveryRouter.replace(`/booking/save-card?token=${encodeURIComponent(successResult.cardManagementToken)}`);
+  }, [successResult.cardManagementToken, recoveryRouter]);
   const arrangement =
     scheduleResult && scheduleResult.ok
       ? scheduleResult.arrangements[selectedArrangementIdx]
@@ -4620,7 +4624,7 @@ function SuccessPanel({
       style={{ color: "var(--booking-text)" }}
     >
       <h2 className="text-xl font-semibold sm:text-2xl">
-        {groupCopy.groupSuccess ?? groupCopy.successHeading}
+        {successResult.cardManagementPending ? t.cardProtection.reserved : groupCopy.groupSuccess ?? groupCopy.successHeading}
       </h2>
       <p
         className="mt-2 text-sm text-[var(--booking-text-muted)]"

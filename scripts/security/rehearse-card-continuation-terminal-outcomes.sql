@@ -69,7 +69,7 @@ BEGIN
       END IF;
       op_id := (claim->>'operation_id')::uuid;
       attempt_id := (claim->>'attempt_token')::uuid;
-      receipt := public.prepare_booking_card_save_dispatch(op_id,attempt_id,transaction_timestamp(),'{"source":"e2e"}'::jsonb);
+      receipt := public.prepare_booking_card_save_dispatch(op_id,attempt_id,transaction_timestamp(),jsonb_build_object('policyVersion','nsp_'||repeat('a',64),'scope','booking_member','policyEn','QA policy','policyVi','QA policy'));
       IF receipt->>'ok' IS DISTINCT FROM 'true' THEN
         RAISE EXCEPTION 'fixture dispatch preparation failed: %',receipt;
       END IF;
@@ -85,8 +85,14 @@ BEGIN
     -- Fixture setup only; the worker below must never alter these booking states.
     UPDATE public.bookings b SET status=c.booking_status,
       deleted_at=CASE WHEN c.deleted THEN transaction_timestamp() ELSE NULL END,
-      noshow_card_id=CASE WHEN c.saved THEN 'ccof:e2e-saved' ELSE NULL END
+      noshow_card_id=NULL
     WHERE b.id=booking_id;
+    IF c.saved THEN
+      receipt := public.record_booking_existing_square_card(booking_id,salon_id,'customer_qa','ccof:e2e-saved','merchant_qa','sandbox','VISA','4242',
+        jsonb_build_object('policyVersion','nsp_'||repeat('a',64),'scope','booking_member','policyEn','QA policy','policyVi','QA policy',
+          'source','explicit_reuse','receiptSource','existing_card_read','feeCents',1000));
+      IF receipt->>'ok' IS DISTINCT FROM 'true' THEN RAISE EXCEPTION 'saved fixture receipt missing: %',receipt; END IF;
+    END IF;
     INSERT INTO public.booking_card_management_continuations(
       salon_id,booking_id,create_idempotency_key,pricing_fingerprint,scope,
       stage,status,reason_code,attempt_count,next_reconcile_at)

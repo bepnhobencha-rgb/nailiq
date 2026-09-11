@@ -1,3 +1,4 @@
+import { CARD_PROTECTION_COPY } from "@/shared/booking/cardProtection";
 /**
  * Public booking UI (`/[slug]`) copy: English only.
  * Do not import user locale or `useUserLanguage` here.
@@ -5,6 +6,7 @@
 import { PHONE_INPUT_PLACEHOLDER_NANP } from "@/shared/lib/phoneFormat";
 
 export const bookingEn = {
+  cardProtection: CARD_PROTECTION_COPY.en,
   errorBoundary: {
     title: "We could not display the booking page.",
     detail: "If you just submitted a booking, check your confirmation or contact the salon before booking again.",
@@ -56,13 +58,16 @@ export const bookingEn = {
   /** Live-availability teaser (#7): scarcity hint + soonest open time. */
   scarcityFewSlotsSoonest: "Only {n} open times left — soonest {time}.",
   // No-show protection — Square card-on-file (charged only on a no-show).
-  noShowCardTitle: "Card required to confirm",
+  noShowCardTitle: "No-show card protection",
   noShowCardDesc:
-    "A card on file is required to complete this booking. You'll only be charged {fee} if you miss your appointment — no charge today.",
+    "Save a card to activate no-show protection. Under the policy, a {fee} fee may apply if you miss your appointment. No charge today.",
   noShowCardSave: "Save card",
   noShowCardSaving: "Saving…",
   noShowCardSaved: "Card saved — you're only charged {fee} if you no-show.",
   noShowCardError: "Could not save the card. Please check your details.",
+  noShowCardLoading: "Loading the secure card form…",
+  noShowCardLoadError: "The card form could not load. Please try loading it again.",
+  noShowCardReload: "Load card form again",
   cardManagementPendingNotice:
     "Your booking is confirmed. The no-show card step did not finish. Do not book again; contact the salon if you need help.",
   cardVerificationError:

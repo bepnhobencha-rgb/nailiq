@@ -65,7 +65,12 @@ try{
  assert.equal(new Set(saveClaims.map((x)=>x.provider_idempotency_key)).size,1);
  const saveClaimed=saveClaims.find((x)=>x.attempt_replay===false);
  const consentAt=new Date().toISOString();
- const saveCompletions=(await Promise.all(Array.from({length:10},()=>sql(`begin;set local role service_role;select public.complete_booking_card_save_operation('${saveClaimed.operation_id}','${saveClaimed.attempt_token}','succeeded','square-save-concurrency','card_saved_concurrency','customer_saved_concurrency','Visa','4242','${consentAt}'::timestamptz,'{}'::jsonb,null)::text;commit;`)))).map(json);
+ const consent=JSON.stringify({policyVersion:`nsp_${"a".repeat(64)}`,scope:"booking_member",policyEn:"QA policy",policyVi:"QA policy"});
+ const prepared=json(await sql(`begin;set local role service_role;select public.prepare_booking_card_save_dispatch('${saveClaimed.operation_id}','${saveClaimed.attempt_token}','${consentAt}'::timestamptz,'${consent}'::jsonb)::text;commit;`));
+ assert.equal(prepared.ok,true);
+ const bound=json(await sql(`begin;set local role service_role;select public.bind_booking_card_save_dispatch('${saveClaimed.operation_id}','${saveClaimed.attempt_token}','customer_saved_concurrency','merchant_qa','sandbox')::text;commit;`));
+ assert.equal(bound.ok,true);
+ const saveCompletions=(await Promise.all(Array.from({length:10},()=>sql(`begin;set local role service_role;select public.complete_booking_card_save_operation('${saveClaimed.operation_id}','${saveClaimed.attempt_token}','succeeded','card_saved_concurrency','card_saved_concurrency','customer_saved_concurrency','VISA','4242','${consentAt}'::timestamptz,'${consent}'::jsonb,null)::text;commit;`)))).map(json);
  assert.ok(saveCompletions.every((x)=>x.code==="saved"),JSON.stringify(saveCompletions));
  assert.equal(saveCompletions.filter((x)=>x.idempotent===false).length,1);
  assert.equal(await sql(`select count(*) from public.bookings where id='${saveBooking}' and noshow_card_id='card_saved_concurrency' and noshow_card_last4='4242' and noshow_charge_status='saved'`),"1");

@@ -26,7 +26,15 @@ export interface SavedCard {
   cardId: string;
   last4: string;
   brand: string;
+  /** Read-only Square ownership receipt, never a client-supplied binding. */
+  binding?: CardDispatchBinding;
 }
+
+export type CardDispatchBinding = {
+  customerId: string;
+  merchantId: string;
+  environment: "sandbox" | "production";
+};
 
 export interface ChargeResult {
   paymentId: string;
@@ -55,6 +63,13 @@ export interface PaymentProvider {
     idempotencyKey: string;
     /** Exact provider-side lookup key used after an ambiguous response. */
     cardReferenceId: string;
+    /** Booking-stable customer identity also survives a failed card attempt. */
+    customerIdempotencyKey?: string;
+    /** Authenticated durable operation authority for tenant-scoped customer creation. */
+    customerOperation?: { operationId: string; attemptToken: string };
+    /** Durable acknowledgment is required before CreateCard may be dispatched. */
+    beforeCardDispatch?: (binding: CardDispatchBinding) => Promise<void>;
+    beforeCustomerWork?: (identity: Omit<CardDispatchBinding, "customerId">) => Promise<void>;
   }): Promise<SavedCard>;
 
   /** Charge a previously-saved card. `idempotencyKey` MUST be stable per logical
