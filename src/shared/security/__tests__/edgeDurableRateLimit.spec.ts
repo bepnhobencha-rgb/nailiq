@@ -74,6 +74,7 @@ function twoBuckets(material: string, scope = "booking-page") {
 
 describe("Proxy durable rate limiter", () => {
   beforeEach(() => {
+    vi.spyOn(console, "warn").mockImplementation(() => {});
     process.env.NEXT_PUBLIC_SUPABASE_URL = "https://example.supabase.co";
     delete process.env.SUPABASE_INTERNAL_URL;
     process.env.SUPABASE_SERVICE_ROLE_KEY = "service-secret";
@@ -95,6 +96,7 @@ describe("Proxy durable rate limiter", () => {
   });
 
   afterEach(() => {
+    vi.restoreAllMocks();
     delete process.env.SUPABASE_INTERNAL_URL;
     vi.useRealTimers();
     vi.unstubAllGlobals();
@@ -456,9 +458,16 @@ describe("Proxy durable rate limiter", () => {
     vi.stubGlobal("fetch", fetchMock);
 
     await expect(oneBucket("203.0.113.210")).resolves.toBe("unavailable");
+    expect(console.warn).toHaveBeenCalledExactlyOnceWith(JSON.stringify({ event: "edge_rate_limit_unavailable", reason: "transport" }));
     expect(fetchMock).toHaveBeenCalledTimes(1);
     await expect(oneBucket("203.0.113.211")).resolves.toBe("allowed");
     expect(fetchMock).toHaveBeenCalledTimes(2);
+  });
+
+  it("records upstream status without response bodies, IPs, keys or URLs", async () => {
+    vi.stubGlobal("fetch", vi.fn(async () => new Response("private email/token payload", { status: 503 })));
+    await expect(oneBucket("203.0.113.210")).resolves.toBe("unavailable");
+    expect(console.warn).toHaveBeenCalledExactlyOnceWith(JSON.stringify({ event: "edge_rate_limit_unavailable", reason: "http_error", upstreamStatus: 503 }));
   });
 
   it.each([

@@ -107,14 +107,16 @@ export async function POST(request: NextRequest) {
       ? 400
       : result.code === "voucher_invalid"
         ? 422
-        : 503;
+        : result.code === "slot_conflict" || result.code === "selection_invalid"
+          ? 409
+          : 503;
   if (!result.ok && status === 503) {
     logUnavailable("quote_resolution", result.code);
   }
   return json(
     result.ok
       ? { ok: true, quote: serializeGroupBookingPricingQuote(result.quote) }
-      : result,
+      : { ok: false, code: ["invalid_request", "voucher_invalid", "slot_conflict", "selection_invalid", "quote_unavailable", "pricing_invalid"].includes(result.code) ? result.code : "quote_unavailable" },
     status,
   );
 }

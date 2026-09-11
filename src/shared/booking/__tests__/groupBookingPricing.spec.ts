@@ -467,6 +467,58 @@ describe("public group booking authoritative server receipt", () => {
     });
   });
 
+  it.each(["invalid_input", "invalid_group_size", "invalid_booking_data", "invalid_email"])(
+    "returns a correctable request error for SQL %s, not a dependency outage", async (code) => {
+      const rpc = vi.fn().mockResolvedValue({ data: { success: false, code }, error: null });
+      createServiceRoleClientMock.mockReturnValue({ rpc });
+      await expect(resolveGroupBookingQuote(serverRequest)).resolves.toEqual({ ok: false, code: "invalid_request" });
+    },
+  );
+
+  it.each([
+    { clientName: "a".repeat(101) },
+    { clientName: "Guest<script>" },
+    { waveNumber: 3 },
+  ])("rejects SQL-invalid member input before dependency access: %j", async (change) => {
+    await expect(resolveGroupBookingQuote({
+      ...serverRequest,
+      bookings: [{ ...serverRequest.bookings[0], ...change }, serverRequest.bookings[1]],
+    })).resolves.toEqual({ ok: false, code: "invalid_request" });
+    expect(createServiceRoleClientMock).not.toHaveBeenCalled();
+  });
+
+  it.each(["invalid_time", "outside_hours"])("makes %s recoverable by selecting another time", async (code) => {
+    createServiceRoleClientMock.mockReturnValue({
+      rpc: vi.fn().mockResolvedValue({ data: { success: false, code }, error: null }),
+    });
+    await expect(resolveGroupBookingQuote(serverRequest)).resolves.toEqual({ ok: false, code: "slot_conflict" });
+  });
+
+  it.each(["invalid_service", "invalid_staff", "invalid_staff_capability", "invalid_resource", "invalid_combo", "invalid_addons", "invalid_addon", "invalid_reference"])(
+    "makes stale catalog selection %s recoverable without labeling it as an outage", async (code) => {
+      createServiceRoleClientMock.mockReturnValue({ rpc: vi.fn().mockResolvedValue({ data: { success: false, code }, error: null }) });
+      await expect(resolveGroupBookingQuote(serverRequest)).resolves.toEqual({ ok: false, code: "selection_invalid" });
+    },
+  );
+
+  it.each([
+    { data: null, error: { code: "57014", message: "private timeout detail" } },
+    { data: null, error: null },
+    { data: { success: false, code: "pricing_config_invalid" }, error: null },
+  ])("does not disguise dependency/config failure as a customer mistake", async (response) => {
+    const rpc = vi.fn().mockResolvedValue(response);
+    createServiceRoleClientMock.mockReturnValue({ rpc });
+    await expect(resolveGroupBookingQuote(serverRequest)).resolves.toEqual({ ok: false, code: "quote_unavailable" });
+    expect(rpc).toHaveBeenCalledTimes(1);
+  });
+
+  it("handles a thrown pricing transport error without raw error disclosure or automatic replay", async () => {
+    const rpc = vi.fn().mockRejectedValue(new Error("private token=secret"));
+    createServiceRoleClientMock.mockReturnValue({ rpc });
+    await expect(resolveGroupBookingQuote(serverRequest)).resolves.toEqual({ ok: false, code: "quote_unavailable" });
+    expect(rpc).toHaveBeenCalledTimes(1);
+  });
+
   it("preserves exact replay and changed-payload conflict outcomes", async () => {
     const replayRpc = vi.fn().mockResolvedValue({
       data: {

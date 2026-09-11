@@ -4,6 +4,7 @@ import { createHash } from "node:crypto";
 import { z } from "zod";
 import { createServiceRoleClient } from "@/shared/lib/supabase/serviceRole";
 import { isReleaseFeatureEnabled } from "@/shared/features/featureRegistry";
+import { logGroupBookingFailure } from "@/shared/booking/groupBookingDiagnostics";
 import {
   parseGroupBookingPricingQuote,
   type GroupBookingPricingQuote,
@@ -18,7 +19,7 @@ const memberSchema = z
     startTimeUtc: UTC,
     endTimeUtc: UTC,
     addonServiceIds: z.array(UUID).max(8).default([]),
-    clientName: z.string().trim().min(1).max(120),
+    clientName: z.string().trim().min(1).max(100).regex(/^[^<>{}=&;]+$/),
     clientPhone: z.string().regex(/^\d{7,15}$/).nullable().optional(),
     clientEmail: z.string().email().max(254).nullable().optional(),
     clientNotes: z.string().trim().max(500).nullable().optional(),
@@ -52,6 +53,11 @@ function validateOrganizer(
   value: z.infer<typeof groupBookingRequestObject>,
   ctx: z.RefinementCtx,
 ) {
+  value.bookings.forEach((member, index) => {
+    if (member.waveNumber > value.bookings.length) {
+      ctx.addIssue({ code: "custom", path: ["bookings", index, "waveNumber"], message: "invalid wave" });
+    }
+  });
   const organizer = value.bookings[0];
   if (!organizer.clientName) {
     ctx.addIssue({ code: "custom", path: ["bookings", 0, "clientName"], message: "organizer name required" });
@@ -85,6 +91,7 @@ type GroupQuoteResult =
         | "invalid_request"
         | "voucher_invalid"
         | "slot_conflict"
+        | "selection_invalid"
         | "quote_unavailable"
         | "pricing_invalid";
     };
@@ -126,14 +133,19 @@ export async function authorizeGroupBookingBoundary(args: {
   otpSessionId?: string | null;
   requireOtp: boolean;
 }): Promise<GroupBookingBoundaryAuthorization> {
+  let stage: "client_configuration" | "salon_read" | "otp_read" = "client_configuration";
   try {
-    const client = createServiceRoleClient();
+    const client = createServiceRoleClient({ timeoutMs: 4_000 });
+    stage = "salon_read";
     const { data, error } = await client
       .from("salons" as never)
       .select("id, profile_complete, feature_flags, phone_otp_enabled")
       .eq("id" as never, args.salonId)
       .maybeSingle();
-    if (error || !data) return { ok: false, code: "booking_unavailable" };
+    if (error || !data) {
+      logGroupBookingFailure("salon_read", error ? "dependency_error" : "not_available", error?.code);
+      return { ok: false, code: "booking_unavailable" };
+    }
     const salon = data as unknown as {
       profile_complete?: unknown;
       feature_flags?: Record<string, unknown> | null;
@@ -142,11 +154,15 @@ export async function authorizeGroupBookingBoundary(args: {
     if (
       salon.profile_complete !== true ||
       !isReleaseFeatureEnabled({ feature_flags: salon.feature_flags }, "group_booking")
-    ) return { ok: false, code: "booking_unavailable" };
+    ) {
+      logGroupBookingFailure("salon_gate", "not_available");
+      return { ok: false, code: "booking_unavailable" };
+    }
     const phoneOtpEnabled = salon.phone_otp_enabled === true;
     if (!args.requireOtp || !phoneOtpEnabled) return { ok: true, phoneOtpEnabled };
     const sessionId = args.otpSessionId?.trim();
     if (!sessionId) return { ok: false, code: "otp_required" };
+    stage = "otp_read";
     const { data: valid, error: otpError } = await client.rpc(
       "validate_phone_otp_session" as never,
       {
@@ -155,9 +171,11 @@ export async function authorizeGroupBookingBoundary(args: {
         p_phone: args.organizerPhone,
       } as never,
     );
+    if (otpError) logGroupBookingFailure("otp_read", "dependency_error", otpError.code);
     if (otpError || valid !== true) return { ok: false, code: "otp_invalid" };
     return { ok: true, phoneOtpEnabled };
   } catch {
+    logGroupBookingFailure(stage, "dependency_exception");
     return { ok: false, code: "booking_unavailable" };
   }
 }
@@ -187,15 +205,26 @@ async function resolveVoucher(
 ): Promise<{ ok: true; id: string | null; code: string | null } | { ok: false; code: "voucher_invalid" | "quote_unavailable" }> {
   if (!voucherCode) return { ok: true, id: null, code: null };
   const code = voucherCode.trim().toUpperCase();
-  const { data, error } = await createServiceRoleClient()
-    .from("vouchers" as never)
-    .select("id")
-    .eq("salon_id" as never, salonId)
-    .eq("code" as never, code)
-    .maybeSingle();
-  if (error) return { ok: false, code: "quote_unavailable" };
-  if (!data) return { ok: false, code: "voucher_invalid" };
-  return { ok: true, id: String((data as { id: string }).id), code };
+  let stage: "client_configuration" | "voucher_read" = "client_configuration";
+  try {
+    const client = createServiceRoleClient({ timeoutMs: 4_000 });
+    stage = "voucher_read";
+    const { data, error } = await client
+      .from("vouchers" as never)
+      .select("id")
+      .eq("salon_id" as never, salonId)
+      .eq("code" as never, code)
+      .maybeSingle();
+    if (error) {
+      logGroupBookingFailure("voucher_read", "dependency_error", error.code);
+      return { ok: false, code: "quote_unavailable" };
+    }
+    if (!data) return { ok: false, code: "voucher_invalid" };
+    return { ok: true, id: String((data as { id: string }).id), code };
+  } catch {
+    logGroupBookingFailure(stage, "dependency_exception");
+    return { ok: false, code: "quote_unavailable" };
+  }
 }
 
 export async function resolveGroupBookingQuote(input: unknown): Promise<GroupQuoteResult> {
@@ -205,22 +234,44 @@ export async function resolveGroupBookingQuote(input: unknown): Promise<GroupQuo
   const organizer = request.bookings[0];
   const voucher = await resolveVoucher(request.salonId, request.voucherCode);
   if (!voucher.ok) return voucher;
-  const { data, error } = await createServiceRoleClient().rpc(
-    "quote_group_booking" as never,
-    {
-      p_salon_id: request.salonId,
-      p_bookings: toRpcBookings(request.bookings),
-      p_voucher_id: voucher.id,
-      p_client_phone: organizer.clientPhone!,
-      p_client_email: organizer.clientEmail ?? null,
-      p_apply_email_discount: request.applyEmailDiscount && Boolean(organizer.clientEmail),
-    } as never,
-  );
-  if (error || data == null) return { ok: false, code: "quote_unavailable" };
+  let receipt;
+  let stage: "client_configuration" | "pricing_read" = "client_configuration";
+  try {
+    const client = createServiceRoleClient({ timeoutMs: 4_000 });
+    stage = "pricing_read";
+    receipt = await client.rpc(
+      "quote_group_booking" as never,
+      {
+        p_salon_id: request.salonId,
+        p_bookings: toRpcBookings(request.bookings),
+        p_voucher_id: voucher.id,
+        p_client_phone: organizer.clientPhone!,
+        p_client_email: organizer.clientEmail ?? null,
+        p_apply_email_discount: request.applyEmailDiscount && Boolean(organizer.clientEmail),
+      } as never,
+    );
+  } catch {
+    logGroupBookingFailure(stage, "dependency_exception");
+    return { ok: false, code: "quote_unavailable" };
+  }
+  const { data, error } = receipt;
+  if (error || data == null) {
+    logGroupBookingFailure("pricing_read", error ? "dependency_error" : "missing_receipt", error?.code);
+    return { ok: false, code: "quote_unavailable" };
+  }
   const raw = Array.isArray(data) ? data[0] : data;
   if (raw && typeof raw === "object" && (raw as { success?: unknown }).success === false) {
-    if ((raw as { code?: unknown }).code === "slot_conflict") {
+    const code = (raw as { code?: unknown }).code;
+    logGroupBookingFailure("pricing_validation", "business_rejection", code);
+    if (code === "slot_conflict" || code === "invalid_time" || code === "outside_hours") {
       return { ok: false, code: "slot_conflict" };
+    }
+    if (code === "invalid_input" || code === "invalid_group_size" || code === "invalid_booking_data" || code === "invalid_email") {
+      return { ok: false, code: "invalid_request" };
+    }
+    if (code === "invalid_service" || code === "invalid_staff" || code === "invalid_staff_capability" ||
+      code === "invalid_resource" || code === "invalid_combo" || code === "invalid_addons" || code === "invalid_addon" || code === "invalid_reference") {
+      return { ok: false, code: "selection_invalid" };
     }
     return {
       ok: false,
@@ -230,6 +281,7 @@ export async function resolveGroupBookingQuote(input: unknown): Promise<GroupQuo
     };
   }
   const quote = parseGroupBookingPricingQuote(raw, { voucherCode: voucher.code });
+  if (!quote) logGroupBookingFailure("pricing_validation", "invalid_receipt");
   return quote ? { ok: true, quote } : { ok: false, code: "pricing_invalid" };
 }
 

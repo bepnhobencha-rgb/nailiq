@@ -346,6 +346,7 @@ export function BookingGroupFlow({
   const [pricingQuoteKey, setPricingQuoteKey] = useState<string | null>(null);
   const [pricingLoading, setPricingLoading] = useState(false);
   const [pricingError, setPricingError] = useState<string | null>(null);
+  const [pricingRetry, setPricingRetry] = useState(0);
 
   // Organizer recognition — when the primary-contact phone is valid we
   // look the customer up (same `/api/customer/[phone]` endpoint the
@@ -657,8 +658,13 @@ export function BookingGroupFlow({
           }),
         });
         const data = await response.json().catch(() => null) as Record<string, unknown> | null;
-        if (!data || data.ok !== true) {
-          return { quote: null, error: data?.code === "voucher_invalid" ? "invalid" : "generic" };
+        if (!response.ok || !data || data.ok !== true) {
+          const error = data?.code === "voucher_invalid" ? "invalid"
+            : data?.code === "slot_conflict" ? "slot_conflict"
+            : data?.code === "invalid_request" ? "invalid_request"
+            : data?.code === "selection_invalid" ? "selection_invalid"
+            : response.status === 429 ? "rate_limited" : "generic";
+          return { quote: null, error };
         }
         const quote = parseGroupBookingPricingQuote(data.quote, {
           voucherCode: request.voucherCode,
@@ -679,6 +685,13 @@ export function BookingGroupFlow({
   useEffect(() => {
     if (step !== 5 || !pricingRequest || !currentPricingKey) return;
     const controller = new AbortController();
+    const timeout = setTimeout(() => {
+      controller.abort();
+      setPricingQuote(null);
+      setPricingQuoteKey(null);
+      setPricingError("generic");
+      setPricingLoading(false);
+    }, 15_000);
     setPricingLoading(true);
     setPricingError(null);
     void requestPricingQuote(pricingRequest, controller.signal)
@@ -695,10 +708,14 @@ export function BookingGroupFlow({
       })
       .catch(() => {})
       .finally(() => {
+        clearTimeout(timeout);
         if (!controller.signal.aborted) setPricingLoading(false);
       });
-    return () => controller.abort();
-  }, [currentPricingKey, pricingRequest, requestPricingQuote, step]);
+    return () => {
+      clearTimeout(timeout);
+      controller.abort();
+    };
+  }, [currentPricingKey, pricingRequest, requestPricingQuote, step, pricingRetry]);
   /* eslint-enable react-hooks/set-state-in-effect */
 
   // Apply a voucher by requesting a complete authoritative re-quote.
@@ -2070,6 +2087,7 @@ export function BookingGroupFlow({
       ) : null}
       {step === 5 && !otpPanelOpen ? (
         <ConfirmStep
+          language={language}
           t={t}
           groupCopy={groupCopy}
           arrangement={
@@ -2098,6 +2116,15 @@ export function BookingGroupFlow({
           pricingQuote={pricingReady ? pricingQuote : null}
           pricingLoading={pricingLoading}
           pricingError={pricingError}
+          onPricingRetry={() => {
+            if (pricingLoading || submitting) return;
+            setPricingLoading(true);
+            setPricingRetry((attempt) => attempt + 1);
+          }}
+          onPricingEdit={() => {
+            if (pricingError === "selection_invalid") router.refresh();
+            goToStep(2);
+          }}
           maxMinutes={totals.maxMinutes}
           size={size}
           // P1 #18 / #19 (QA re-sweep 2026-05-12) — disable Confirm
@@ -3909,6 +3936,7 @@ function AlternativeCard({
 // ─── STEP 5 — Confirm ────────────────────────────────────────────
 
 function ConfirmStep({
+  language,
   t,
   groupCopy,
   arrangement,
@@ -3929,6 +3957,8 @@ function ConfirmStep({
   pricingQuote,
   pricingLoading,
   pricingError,
+  onPricingRetry,
+  onPricingEdit,
   maxMinutes,
   size,
   contactReady,
@@ -3956,6 +3986,7 @@ function ConfirmStep({
   onApplyVoucher,
   onRemoveVoucher,
 }: {
+  language: "en" | "vi";
   t: BookingMessages;
   groupCopy: NonNullable<BookingMessages["groupBooking"]>;
   arrangement: GroupArrangement | null;
@@ -3978,6 +4009,8 @@ function ConfirmStep({
   pricingQuote: GroupBookingPricingQuote | null;
   pricingLoading: boolean;
   pricingError: string | null;
+  onPricingRetry: () => void;
+  onPricingEdit: () => void;
   maxMinutes: number;
   size: number;
   /** Computed by parent — phone ≥ 10 digits AND email empty-or-valid. */
@@ -4188,14 +4221,38 @@ function ConfirmStep({
             );
           })}
         </ul>
-        {pricingLoading ? (
-          <p className="mt-3 text-xs text-[var(--booking-text-muted)]" role="status">
-            Refreshing the party total…
+        {pricingLoading || (!pricingError && !pricingQuote && contactReady) ? (
+          <p className="mt-3 text-xs text-[var(--booking-text-muted)]" role="status" data-testid="group-pricing-loading">
+            {language === "vi" ? "Đang kiểm tra tổng tiền của nhóm…" : "Refreshing the party total…"}
           </p>
         ) : pricingError || !pricingQuote ? (
-          <p className="mt-3 text-xs text-nq-error" role="alert" data-testid="group-pricing-unavailable">
-            We couldn&apos;t verify the party total. Please try again.
-          </p>
+          <div className="mt-3 space-y-3" data-testid="group-pricing-unavailable">
+            <p className="border-l-2 border-nq-error pl-3 text-sm text-[var(--booking-text)]" role="alert">
+              {pricingError === "slot_conflict"
+                ? language === "vi" ? "Giờ này không còn phù hợp cho cả nhóm. Vui lòng chọn lại giờ." : "This time is no longer available for the whole party. Please choose another time."
+                : pricingError === "selection_invalid"
+                  ? language === "vi" ? "Dịch vụ hoặc thợ đã thay đổi. Vui lòng kiểm tra lại lựa chọn của nhóm." : "A service or staff option has changed. Please review your party's selections."
+                : pricingError === "invalid_request"
+                  ? language === "vi" ? "Vui lòng kiểm tra tên và thông tin của các khách trong nhóm." : "Please check the names and contact details for your party."
+                  : pricingError === "rate_limited"
+                    ? language === "vi" ? "Bạn vừa thử nhiều lần. Vui lòng đợi 5 phút rồi thử lại." : "There have been several attempts. Please wait 5 minutes, then try again."
+                    : language === "vi" ? "Chưa thể xác minh tổng tiền. Thông tin nhóm vẫn được giữ; vui lòng thử lại." : "We couldn't verify the party total. Your details are still here; please try again."}
+            </p>
+            <Button
+              variant="secondary"
+              size="lg"
+              className="border-[var(--booking-border)] bg-[var(--booking-bg-card)] text-[var(--booking-text)]"
+              disabled={submitting}
+              onClick={pricingError === "slot_conflict" ? onStaleRefresh : pricingError === "invalid_request" || pricingError === "selection_invalid" ? onPricingEdit : onPricingRetry}
+              data-testid="group-pricing-recover"
+            >
+              {pricingError === "slot_conflict"
+                ? language === "vi" ? "Chọn lại giờ" : "Choose another time"
+                : pricingError === "invalid_request" || pricingError === "selection_invalid"
+                  ? language === "vi" ? "Kiểm tra thông tin" : "Check details"
+                  : language === "vi" ? "Thử lại" : "Try again"}
+            </Button>
+          </div>
         ) : (
           <div className="mt-4 space-y-1 border-t border-[var(--booking-border)] pt-3 text-sm" data-testid="group-authoritative-receipt">
             {pricingQuote.discountLines.map((line) => (
