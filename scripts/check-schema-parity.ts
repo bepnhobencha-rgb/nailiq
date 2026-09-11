@@ -185,6 +185,10 @@ import { execFileSync } from "node:child_process";
  * The 20260905204123 false-waitlist guard adds one PII-free service-role-only
  * decision table with 18 columns, three database guard functions, one insert
  * trigger, and three primary/lookup indexes.
+ * The 20260911040747 card-delivery-truth migration adds two service-only
+ * event/customer-claim tables, 50 columns, 22 functions (including preserved
+ * legacy wrappers), six triggers and five indexes. These are the rehearsed
+ * forward-release shape, not a claim that this migration is in Production.
  * Refresh these
  * with each schema-changing forward migration — they
  * are a tripwire, not a spec.
@@ -192,7 +196,7 @@ import { execFileSync } from "node:child_process";
 const PRODUCTION = {
   // +1 PII-free Twilio terminal-receipt inbox.
   // +25 private TurnIQ policy, ledger, replay, group, check-in, offline, and rollout tables.
-  tables: 235,
+  tables: 237,
   // +2 from 20260815190000_add_salon_closure_notice.sql: closure_notice
   // added to both salons (base table) and public_salon_profiles (view) —
   // both count as columns in information_schema.
@@ -254,7 +258,7 @@ const PRODUCTION = {
   // +53 TurnIQ multi-technician handoff plan, performer, and item columns.
   // +28 TurnIQ staff PIN credential and immutable receipt columns.
   // +18 PII-free individual waitlist capacity-decision evidence columns.
-  columns: 3608,
+  columns: 3658,
   // The upsell migration replaces two legacy member-write policies with one
   // service-role-only immutable claim policy. The staff-lifecycle hardening
   // removes the browser DELETE policy so hard deletion cannot bypass the
@@ -327,7 +331,7 @@ const PRODUCTION = {
   // +3 TurnIQ staff PIN tenant assertion, configuration, and shift functions.
   // +1 server-only Waitlist source-provenance normalization function.
   // +3 individual waitlist capacity evaluator, insert guard, and v2 RPC functions.
-  functions: 517,
+  functions: 539,
   // +4 pending-receipt correlation triggers across notification/staff INSERT
   // and provider-SID transitions.
   // +1 V1 terminal-booking policy trigger.
@@ -351,7 +355,7 @@ const PRODUCTION = {
   // +5 TurnIQ staff PIN tenant and immutable-receipt triggers.
   // +1 Waitlist source-provenance normalization trigger.
   // +1 fail-closed individual waitlist insert trigger.
-  triggers: 152,
+  triggers: 158,
   // Transition/capability PKs, unique keys and focused due/salon indexes.
   // The refund inbox and customer identity map each add PK, unique, and two
   // focused indexes.
@@ -380,7 +384,7 @@ const PRODUCTION = {
   // +28 TurnIQ handoff primary, unique, tenant, foreign-key, and lookup indexes.
   // +13 TurnIQ staff PIN primary, foreign-key, and lookup indexes.
   // +3 PII-free capacity-decision primary and lookup indexes.
-  indexes: 968,
+  indexes: 973,
 } as const;
 
 /**

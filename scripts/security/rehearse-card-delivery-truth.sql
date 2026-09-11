@@ -252,4 +252,53 @@ BEGIN
  EXCEPTION WHEN raise_exception THEN IF SQLERRM<>'card_delivery_history_is_immutable' THEN RAISE; END IF; END;
  RAISE NOTICE 'PASS: card delivery SQL scenarios, leases, receipt truth, recovery, grants and append-only history';
 END; $$;
+DO $$
+DECLARE salon uuid:='55630000-0000-4000-8000-000000000001'; booking uuid; cap uuid;
+ op jsonb; first_claim jsonb; next_claim jsonb; result jsonb; i integer;
+ consent jsonb:=jsonb_build_object('policyVersion','nsp_'||repeat('a',64),'scope','booking_member',
+   'policyEn','Synthetic policy','policyVi','Synthetic policy');
+BEGIN
+ FOR i IN 1..2 LOOP
+   booking:=('55630000-0000-4000-8000-'||lpad((200+i)::text,12,'0'))::uuid;
+   INSERT INTO public.bookings(id,salon_id,service_id,staff_id,client_name,client_email,client_phone,
+     start_time_utc,end_time_utc,status,price_cents,noshow_card_required,noshow_fee_cents)
+   VALUES(booking,salon,'55630000-0000-4000-8000-000000000002','55630000-0000-4000-8000-000000000003',
+     'Synthetic Contact Correction','original@example.test',CASE WHEN i=2 THEN '+16045550198' END,
+     now()+interval '5 days'+make_interval(hours=>i),now()+interval '5 days 30 minutes'+make_interval(hours=>i),
+     'confirmed',5000,true,1000);
+   cap:=(public.mint_booking_management_capability(salon,booking,'card_manage',now()+interval '25 minutes')->>'token_id')::uuid;
+   op:=public.claim_booking_card_save_operation(cap,extensions.gen_random_uuid(),'square','save_card',repeat('c',64));
+   PERFORM public.prepare_booking_card_save_dispatch((op->>'operation_id')::uuid,(op->>'attempt_token')::uuid,now(),consent);
+   UPDATE public.booking_card_save_operations SET expected_merchant_id='merchant_qa',expected_environment='sandbox',
+     customer_delivery_version=1 WHERE id=(op->>'operation_id')::uuid;
+   first_claim:=public.claim_square_card_customer((op->>'operation_id')::uuid,(op->>'attempt_token')::uuid);
+   PERFORM pg_temp.check_card_truth(first_claim->>'code'='claimed','initial customer lease');
+   result:=public.complete_square_card_customer((op->>'operation_id')::uuid,(op->>'attempt_token')::uuid,
+     (first_claim->>'claim_id')::uuid,(first_claim->>'lease_token')::uuid,'not_dispatched',NULL);
+   PERFORM pg_temp.check_card_truth(result->>'code'='ready','search failure proves no customer dispatch');
+   PERFORM public.complete_booking_card_save_operation((op->>'operation_id')::uuid,(op->>'attempt_token')::uuid,
+     'failed',NULL,NULL,NULL,NULL,NULL,NULL,NULL,'square_customer_search_failed');
+   UPDATE public.bookings SET client_email='corrected@example.com' WHERE id=booking;
+   cap:=(public.recover_booking_card_management(cap)->>'token_id')::uuid;
+   op:=public.claim_booking_card_save_operation(cap,extensions.gen_random_uuid(),'square','save_card',repeat('d',64));
+   PERFORM pg_temp.check_card_truth(op->>'code'='claimed' AND op->'provider_material'->>'client_email'='corrected@example.com',
+     'fresh attempt uses corrected contact after proven pre-create failure');
+   PERFORM public.prepare_booking_card_save_dispatch((op->>'operation_id')::uuid,(op->>'attempt_token')::uuid,now(),consent);
+   UPDATE public.booking_card_save_operations SET expected_merchant_id='merchant_qa',expected_environment='sandbox',
+     customer_delivery_version=1 WHERE id=(op->>'operation_id')::uuid;
+   next_claim:=public.claim_square_card_customer((op->>'operation_id')::uuid,(op->>'attempt_token')::uuid);
+   PERFORM pg_temp.check_card_truth(next_claim->'request_material'->>'client_email'='corrected@example.com'
+     AND next_claim->>'allow_create'='true','customer request refreshes before first dispatch');
+   IF i=2 THEN
+     PERFORM pg_temp.check_card_truth(next_claim->>'claim_id'=first_claim->>'claim_id'
+       AND next_claim->>'idempotency_key'=first_claim->>'idempotency_key'
+       AND next_claim->>'reference_id'=first_claim->>'reference_id','same phone preserves customer claim identity');
+   ELSE
+     PERFORM pg_temp.check_card_truth(next_claim->>'claim_id'<>first_claim->>'claim_id','changed email fingerprint has no prior creation');
+   END IF;
+   PERFORM pg_temp.check_card_truth((SELECT dispatch_prepared_at IS NULL FROM public.square_card_customer_claims
+     WHERE id=(first_claim->>'claim_id')::uuid),'no provider mutation was prepared');
+ END LOOP;
+ RAISE NOTICE 'PASS: two corrected-contact recovery scenarios before customer dispatch';
+END; $$;
 ROLLBACK;

@@ -169,6 +169,29 @@ describe.skipIf(!enabled)("Disposable PostgreSQL + real operation helpers + simu
     expect(network.calls.filter(c=>c.path==="/v2/customers"&&c.method==="POST")).toHaveLength(1);
     expect((await bookingState(second.booking)).card_protection_status).toBe("saved");
   });
+  it.each([false,true])("fresh contact is recoverable before customer dispatch (same phone: %s)",async(samePhone)=>{
+    const input=await fixture({phone:samePhone?`+1604555${String(7000+sequence).padStart(4,"0")}`:null,email:"original@example.test"});
+    const failedNetwork=transport("search_timeout");
+    expect((await saveCardWithManagementCapability(input)).ok).toBe(false);
+    expect(failedNetwork.customerRequests).toHaveLength(0);
+    const prior=await operation(input.booking);
+    const claimId=prior.customer_claim_id as string;
+    const identity=sql(`SELECT idempotency_key||'|'||reference_id FROM public.square_card_customer_claims WHERE id='${claimId}'`);
+    expect(sql(`SELECT dispatch_prepared_at IS NULL FROM public.square_card_customer_claims WHERE id='${claimId}'`)).toBe("t");
+    sql(`UPDATE public.bookings SET client_email='corrected@example.com' WHERE id='${input.booking}';`);
+    const cap=await rpc("recover_booking_card_management",{p_token_id:input.tokenId});expect(cap.ok).toBe(true);
+    const recoveredNetwork=transport("success");
+    expect((await saveCardWithManagementCapability({...input,tokenId:cap.token_id,requestId:randomUUID(),sourceToken:"PRIVATE_FRESH_SOURCE"})).ok).toBe(true);
+    const current=await operation(input.booking);
+    expect(current.provider_material.client_email).toBe("corrected@example.com");
+    expect(sql(`SELECT request_material->>'client_email' FROM public.square_card_customer_claims WHERE id='${current.customer_claim_id}'`)).toBe("corrected@example.com");
+    expect(recoveredNetwork.customerRequests).toHaveLength(1);
+    if(samePhone) {
+      expect(current.customer_claim_id).toBe(claimId);
+      expect(sql(`SELECT idempotency_key||'|'||reference_id FROM public.square_card_customer_claims WHERE id='${claimId}'`)).toBe(identity);
+    } else expect(current.customer_claim_id).not.toBe(claimId);
+    expect((await bookingState(input.booking)).card_protection_status).toBe("saved");
+  });
   it("customer empty-read exhaustion preserves the exact first key/body and rejects a stale lease",async()=>{
     const phone=`+1604555${String(6000+sequence).padStart(4,"0")}`;
     const first=await fixture({phone,name:"Synthetic Initial",email:"initial@example.test"});
