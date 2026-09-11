@@ -1,6 +1,6 @@
 # P0 Square Card-on-File Delivery Truth — QA và chuẩn bị Preview
 
-Ngày kiểm tra: 2026-09-11 UTC. **Local/QA và Square Sandbox: PASS trong phạm vi mục 12. Phát hành: FAIL / NOT READY** vì chưa có Preview được duyệt và chưa chốt hosted schema/parity. Mục 11 giữ checkpoint trước khi được phép chạy provider; mục 12 thay thế trạng thái backend/SDK còn thiếu ở checkpoint đó. Báo cáo này không phải phê duyệt triển khai.
+Ngày kiểm tra: 2026-09-11 UTC. **Đã sửa, commit/push nhánh riêng và mở [draft PR #1397](https://github.com/bepnhobencha-rgb/nailiq/pull/1397) theo phê duyệt của Huy. Local/QA, Square Sandbox và các flow Preview nêu ở mục 15: PASS. Chưa merge hoặc triển khai Production.** Trạng thái CI mới nhất nằm trên PR. Mục 1–14 giữ bằng chứng audit và các checkpoint trước đó; mục 15 cập nhật kết quả hosted QA/Preview và các sửa lỗi CI. Các số test ở checkpoint cũ không cộng dồn. Việc phát hành Production vẫn cần chốt ảnh hưởng lên thẻ lịch sử, parity và phương án chạy migration; báo cáo này không phải phê duyệt triển khai.
 
 ## 1. Nguyên nhân gốc và giới hạn bằng chứng
 
@@ -45,10 +45,10 @@ Bản mới lưu stage, operation/booking/salon/provider, HTTP status nếu đã
 
 - Checkout gốc `/Users/huytran/nailiq`: branch `fix/embed-closure-banner`, SHA `0d9651082ba15916f2e31f804399b1ee3b573e5c`; giữ nguyên ba tài liệu TurnIQ chưa tracked.
 - Isolated worktree `/Users/huytran/nailiq-square-card-delivery-truth-20260911`.
-- Branch sửa `fix/square-card-delivery-truth-20260911`; base/HEAD `15fe1091fd71eda4a67704d08e5ab535967e5904`; chưa commit.
+- Branch sửa `fix/square-card-delivery-truth-20260911`; base/HEAD tại audit trước sửa là `15fe1091fd71eda4a67704d08e5ab535967e5904`. Nay đã commit/push vào PR #1397; xem HEAD hiện tại trên PR.
 - Production `/api/version` và origin/main cùng SHA trên **tại audit đầu task**. Đây không phải bằng chứng deploy hotfix.
-- Migration mới: `supabase/migrations/20260911040747_square_card_delivery_truth.sql`.
-- Hosted continuation function khớp `20260827224306`, chưa khớp `20260911023439`. Cần kiểm tra parity trước release; không tự apply mọi migration đang chờ.
+- Migration trong nhánh: `20260911023439_close_terminal_card_continuations.sql`, `20260911040747_square_card_delivery_truth.sql`, `20260911104137_refresh_undispatched_card_customer_contact.sql`. Cả ba chỉ được áp dụng vào QA.
+- Tại audit, hosted continuation function khớp `20260827224306`, chưa khớp `20260911023439`. QA đã cập nhật các migration được duyệt; Production chưa được thay đổi.
 
 | Nhóm | Thay đổi |
 | --- | --- |
