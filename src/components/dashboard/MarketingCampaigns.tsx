@@ -16,6 +16,7 @@ import { Modal } from "@/components/ui/Modal";
 import { SetupToast, type SetupToastPayload } from "@/components/ui/Toast";
 import { useUserLanguage } from "@/shared/lib/useUserLanguage";
 import { cn } from "@/shared/lib/cn";
+import { BulkEmailCampaignComposer } from "@/components/dashboard/BulkEmailCampaignComposer";
 import {
   sendReoptinTestAction,
   sendReoptinCampaignAction,
@@ -57,12 +58,29 @@ export function MarketingCampaigns({
   timezone,
   stats,
   schedules,
+  bulkCampaigns,
 }: {
   slug: string;
   salonName: string;
   timezone: string;
   stats: Stats;
   schedules: Schedule[];
+  bulkCampaigns: {
+    available: boolean;
+    campaigns: Array<{
+      id: string;
+      name: string;
+      subject: string;
+      status: "draft" | "prepared" | "approved" | "sending" | "completed" | "cancelled";
+      audienceCount: number;
+      excludedNoConsent: number;
+      excludedInvalidEmail: number;
+      excludedOptout: number;
+      excludedProviderSuppression: number;
+      excludedDuplicate: number;
+      createdAt: string;
+    }>;
+  };
 }) {
   const { language } = useUserLanguage();
   const vi = language === "vi";
@@ -166,6 +184,13 @@ export function MarketingCampaigns({
           {t("Reach your customers with one-tap campaigns.", "Chạy chiến dịch tới khách hàng chỉ bằng một chạm.")}
         </p>
       </header>
+
+      <BulkEmailCampaignComposer
+        slug={slug}
+        salonName={salonName}
+        available={bulkCampaigns.available}
+        campaigns={bulkCampaigns.campaigns}
+      />
 
       <section className="rounded-2xl border border-nq-border bg-nq-surface p-5">
         <div className="flex items-center gap-2">

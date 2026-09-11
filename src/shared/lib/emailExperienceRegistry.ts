@@ -161,6 +161,12 @@ export const EMAIL_EXPERIENCE_REGISTRY = {
     deliveryTruth: "registered_webhook",
     sourceModules: ["src/shared/reoptin/reoptinCampaign.ts"],
   },
+  bulk_marketing_campaign: {
+    audience: "customer",
+    consent: "marketing",
+    deliveryTruth: "registered_webhook",
+    sourceModules: ["src/shared/marketing/bulkEmailCampaignDelivery.ts"],
+  },
   platform_announcement: {
     audience: "owner",
     consent: "system",

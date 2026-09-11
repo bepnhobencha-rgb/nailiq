@@ -185,6 +185,11 @@ import { execFileSync } from "node:child_process";
  * The 20260905204123 false-waitlist guard adds one PII-free service-role-only
  * decision table with 18 columns, three database guard functions, one insert
  * trigger, and three primary/lookup indexes.
+ * The 20260911153229 bulk email campaign foundation adds three private
+ * service-role-only campaign/recipient/event tables, 54 columns, nine
+ * service-only or immutable-ledger functions, three restrictive deny policies,
+ * one append-only trigger, and fourteen primary/unique/lookup/FK indexes. Dispatch is
+ * absent/OFF by default and browser roles gain no table or RPC privilege.
  * The 20260911040747 card-delivery-truth migration adds two service-only
  * event/customer-claim tables, 50 columns, 22 functions (including preserved
  * legacy wrappers), six triggers and five indexes. These are the rehearsed
@@ -198,7 +203,7 @@ import { execFileSync } from "node:child_process";
 const PRODUCTION = {
   // +1 PII-free Twilio terminal-receipt inbox.
   // +25 private TurnIQ policy, ledger, replay, group, check-in, offline, and rollout tables.
-  tables: 238,
+  tables: 241,
   // +2 from 20260815190000_add_salon_closure_notice.sql: closure_notice
   // added to both salons (base table) and public_salon_profiles (view) —
   // both count as columns in information_schema.
@@ -260,7 +265,8 @@ const PRODUCTION = {
   // +53 TurnIQ multi-technician handoff plan, performer, and item columns.
   // +28 TurnIQ staff PIN credential and immutable receipt columns.
   // +18 PII-free individual waitlist capacity-decision evidence columns.
-  columns: 3672,
+  // +54 private bulk-email campaign, recipient-claim, and event columns.
+  columns: 3726,
   // The upsell migration replaces two legacy member-write policies with one
   // service-role-only immutable claim policy. The staff-lifecycle hardening
   // removes the browser DELETE policy so hard deletion cannot bypass the
@@ -277,7 +283,8 @@ const PRODUCTION = {
   // +1 restrictive browser-deny policy on the Waitlist-owner outbox.
   // +2 restrictive browser-deny policies on TurnIQ rollout state/history.
   // +2 restrictive browser-deny policies on controlled SHADOW activation state.
-  policies: 218,
+  // +3 restrictive browser-deny policies on bulk email campaign state.
+  policies: 221,
   /**
    * APP functions only — refreshed after the rehearsed forward migrations.
    *
@@ -333,7 +340,9 @@ const PRODUCTION = {
   // +3 TurnIQ staff PIN tenant assertion, configuration, and shift functions.
   // +1 server-only Waitlist source-provenance normalization function.
   // +3 individual waitlist capacity evaluator, insert guard, and v2 RPC functions.
-  functions: 545,
+  // +9 bulk email role, immutable-event, draft/audience/approval, claim,
+  // completion, final-material, and signed-receipt functions.
+  functions: 554,
   // +4 pending-receipt correlation triggers across notification/staff INSERT
   // and provider-SID transitions.
   // +1 V1 terminal-booking policy trigger.
@@ -357,7 +366,8 @@ const PRODUCTION = {
   // +5 TurnIQ staff PIN tenant and immutable-receipt triggers.
   // +1 Waitlist source-provenance normalization trigger.
   // +1 fail-closed individual waitlist insert trigger.
-  triggers: 159,
+  // +1 bulk email append-only event trigger.
+  triggers: 160,
   // Transition/capability PKs, unique keys and focused due/salon indexes.
   // The refund inbox and customer identity map each add PK, unique, and two
   // focused indexes.
@@ -386,7 +396,8 @@ const PRODUCTION = {
   // +28 TurnIQ handoff primary, unique, tenant, foreign-key, and lookup indexes.
   // +13 TurnIQ staff PIN primary, foreign-key, and lookup indexes.
   // +3 PII-free capacity-decision primary and lookup indexes.
-  indexes: 975,
+  // +14 bulk email primary, unique, claim, delivery, timeline, and FK indexes.
+  indexes: 989,
 } as const;
 
 /**
@@ -552,6 +563,9 @@ const CRITICAL_TABLES = [
   "booking_late_cancellation_fee_reviews",
   "booking_late_cancellation_fee_approval_receipts",
   "square_payment_webhook_inbox",
+  "marketing_email_campaigns",
+  "marketing_email_campaign_recipients",
+  "marketing_email_campaign_events",
 ] as const;
 
 const NO_SHOW_FEE_SERVICE_ONLY_TABLES = [
@@ -594,6 +608,15 @@ const CRITICAL_FUNCTIONS = [
   "create_public_capacity_rescue_request_v2",
   "evaluate_individual_waitlist_capacity",
   "reject_false_individual_waitlist_entry",
+  "marketing_email_campaign_caller_is_service_role",
+  "reject_marketing_email_campaign_event_mutation",
+  "create_marketing_email_campaign_draft",
+  "prepare_marketing_email_campaign",
+  "approve_marketing_email_campaign",
+  "claim_marketing_email_campaign_recipients",
+  "complete_marketing_email_campaign_recipient",
+  "load_marketing_email_campaign_delivery_material",
+  "record_marketing_email_campaign_delivery_event",
   "guard_complex_capacity_rescue_autonomy",
   "compute_no_show_risk",
   "claim_ai_execution_jobs",
@@ -991,9 +1014,11 @@ function main() {
   // TurnIQ adds thirty-three private tables reachable only by service_role. Neither
   // browser role gains direct table reachability.
   // The 20260911040747 card-delivery migration adds exactly two service-only
-  // tables; legacy verification adds one more private read-check table. Check each table's browser denial and FORCE RLS below as well as
-  // the exact count; public/authenticated reachability must remain unchanged.
-  const GRANTS = { anon: 56, authenticated: 78, service_role: 225 } as const;
+  // tables; legacy verification adds one more private read-check table. Check
+  // each table's browser denial and FORCE RLS below as well as the exact count;
+  // public/authenticated reachability must remain unchanged. Bulk email adds
+  // three more service-role-only tables.
+  const GRANTS = { anon: 56, authenticated: 78, service_role: 228 } as const;
   for (const [role, want] of Object.entries(GRANTS)) {
     const got = num(
       `select count(distinct table_name) from (
