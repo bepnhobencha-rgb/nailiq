@@ -188,7 +188,7 @@ import { execFileSync } from "node:child_process";
  * The 20260911153229 bulk email campaign foundation adds three private
  * service-role-only campaign/recipient/event tables, 54 columns, nine
  * service-only or immutable-ledger functions, three restrictive deny policies,
- * one append-only trigger, and nine primary/unique/lookup indexes. Dispatch is
+ * one append-only trigger, and fourteen primary/unique/lookup/FK indexes. Dispatch is
  * absent/OFF by default and browser roles gain no table or RPC privilege.
  * Refresh these
  * with each schema-changing forward migration — they
@@ -390,8 +390,8 @@ const PRODUCTION = {
   // +28 TurnIQ handoff primary, unique, tenant, foreign-key, and lookup indexes.
   // +13 TurnIQ staff PIN primary, foreign-key, and lookup indexes.
   // +3 PII-free capacity-decision primary and lookup indexes.
-  // +9 bulk email primary, unique, claim, delivery, and timeline indexes.
-  indexes: 977,
+  // +14 bulk email primary, unique, claim, delivery, timeline, and FK indexes.
+  indexes: 982,
 } as const;
 
 /**

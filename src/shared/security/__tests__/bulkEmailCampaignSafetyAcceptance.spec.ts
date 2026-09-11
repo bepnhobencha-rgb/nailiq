@@ -7,6 +7,10 @@ const migration = readFileSync(
   join(root, "supabase/migrations/20260911153229_add_bulk_email_campaign_delivery_foundation.sql"),
   "utf8",
 );
+const fkIndexesMigration = readFileSync(
+  join(root, "supabase/migrations/20260911164500_add_bulk_email_campaign_fk_indexes.sql"),
+  "utf8",
+);
 const delivery = readFileSync(join(root, "src/shared/marketing/bulkEmailCampaignDelivery.ts"), "utf8");
 const registry = readFileSync(join(root, "src/shared/lib/emailExperienceRegistry.ts"), "utf8");
 const webhook = readFileSync(join(root, "src/app/api/webhooks/resend/route.ts"), "utf8");
@@ -45,5 +49,14 @@ describe("bulk email campaign safety acceptance", () => {
     expect(migration).toContain("append-only");
     expect(migration).toContain("record_marketing_email_campaign_delivery_event");
     expect(webhook).toContain('registeredMaterial.emailKey === "bulk_marketing_campaign"');
+  });
+
+  it("covers every campaign-ledger foreign key reported by the database advisor", () => {
+    expect(fkIndexesMigration).toContain("marketing_email_campaigns_created_by_idx");
+    expect(fkIndexesMigration).toContain("marketing_email_campaigns_approved_by_idx");
+    expect(fkIndexesMigration).toContain("marketing_email_campaign_recipients_client_profile_idx");
+    expect(fkIndexesMigration).toContain("marketing_email_campaign_events_salon_idx");
+    expect(fkIndexesMigration).toContain("marketing_email_campaign_events_actor_idx");
+    expect(fkIndexesMigration).not.toMatch(/GRANT|feature_flags|email_outbound_enabled/i);
   });
 });
