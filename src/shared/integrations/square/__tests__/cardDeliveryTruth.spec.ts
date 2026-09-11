@@ -10,7 +10,7 @@ vi.mock("../cardCustomerClaim", async () => {
 });
 import { SquareProvider } from "../../payments/square";
 import { CardDeliveryError } from "../../payments/cardDeliveryFailure";
-import { ensureSquareCustomer, findSquareCustomerByPhone, listCardsByReferenceId, saveCardOnFile, type SquareConfig } from "../client";
+import { readSquareCardById, ensureSquareCustomer, findSquareCustomerByPhone, listCardsByReferenceId, saveCardOnFile, type SquareConfig } from "../client";
 const operation = "55630000-0000-4000-8000-000000000050";
 const customerOperation = { operationId:operation,attemptToken:"55630000-0000-4000-8000-000000000051" };
 const reference = `nq-card:${operation}`;
@@ -120,5 +120,26 @@ describe("Square card delivery and safe receipt truth", () => {
   it("preserves disabled matches for explicit receipt validation, not an empty result",async()=>{
     fetchMock(response({cards:[{...receipt,enabled:false}]}));
     expect(await listCardsByReferenceId(cfg,reference)).toMatchObject([{enabled:false}]);
+  });
+});
+
+describe("Exact legacy card GET", () => {
+  it("accepts a legacy card without reference and only returns bounded receipt fields",async()=>{
+    const fetcher=fetchMock(response({card:{...receipt,reference_id:undefined,billing_address:"PRIVATE_PII",exp_year:2030}}));
+    const value=await readSquareCardById(cfg,"card_qa","customer_qa");
+    expect(value.cardId).toBe("card_qa");expect(value.referenceId).toBe("");
+    expect(JSON.stringify(value)).not.toMatch(/PRIVATE_PII|exp_year/);
+    const call=fetcher.mock.calls[0] as unknown as [string,RequestInit];
+    expect(call[0]).toBe("https://connect.squareupsandbox.com/v2/cards/card_qa");expect(call[1].method).toBe("GET");
+  });
+  it.each([{enabled:false},{id:"wrong_card"},{customer_id:"wrong_customer"},{merchant_id:"wrong_merchant"},{last_4:""},{card_brand:"UNKNOWN"}])("rejects incomplete or foreign exact-card receipt %j",async(patch)=>{
+    const fetcher=fetchMock(response({card:{...receipt,...patch}}));
+    await expect(readSquareCardById(cfg,"card_qa","customer_qa")).rejects.toMatchObject({failure:{stage:"reconciliation",code:"reconciliation_invalid_card"}});
+    expect(fetcher).toHaveBeenCalledTimes(1);
+  });
+  it("read timeout has its own safe stage and never turns into card not found",async()=>{
+    const fetcher=fetchMock(new TypeError("PRIVATE_TOKEN timeout"));
+    await expect(readSquareCardById(cfg,"card_qa","customer_qa")).rejects.toMatchObject({failure:{stage:"reconciliation",code:"reconciliation_read_failed"}});
+    expect(fetcher).toHaveBeenCalledTimes(1);
   });
 });

@@ -189,6 +189,8 @@ import { execFileSync } from "node:child_process";
  * event/customer-claim tables, 50 columns, 22 functions (including preserved
  * legacy wrappers), six triggers and five indexes. These are the rehearsed
  * forward-release shape, not a claim that this migration is in Production.
+ * The 20260911121118 legacy verification adds one private read-check table,
+ * 14 columns, six functions, one immutability trigger and two indexes.
  * Refresh these
  * with each schema-changing forward migration — they
  * are a tripwire, not a spec.
@@ -196,7 +198,7 @@ import { execFileSync } from "node:child_process";
 const PRODUCTION = {
   // +1 PII-free Twilio terminal-receipt inbox.
   // +25 private TurnIQ policy, ledger, replay, group, check-in, offline, and rollout tables.
-  tables: 237,
+  tables: 238,
   // +2 from 20260815190000_add_salon_closure_notice.sql: closure_notice
   // added to both salons (base table) and public_salon_profiles (view) —
   // both count as columns in information_schema.
@@ -258,7 +260,7 @@ const PRODUCTION = {
   // +53 TurnIQ multi-technician handoff plan, performer, and item columns.
   // +28 TurnIQ staff PIN credential and immutable receipt columns.
   // +18 PII-free individual waitlist capacity-decision evidence columns.
-  columns: 3658,
+  columns: 3672,
   // The upsell migration replaces two legacy member-write policies with one
   // service-role-only immutable claim policy. The staff-lifecycle hardening
   // removes the browser DELETE policy so hard deletion cannot bypass the
@@ -331,7 +333,7 @@ const PRODUCTION = {
   // +3 TurnIQ staff PIN tenant assertion, configuration, and shift functions.
   // +1 server-only Waitlist source-provenance normalization function.
   // +3 individual waitlist capacity evaluator, insert guard, and v2 RPC functions.
-  functions: 539,
+  functions: 545,
   // +4 pending-receipt correlation triggers across notification/staff INSERT
   // and provider-SID transitions.
   // +1 V1 terminal-booking policy trigger.
@@ -355,7 +357,7 @@ const PRODUCTION = {
   // +5 TurnIQ staff PIN tenant and immutable-receipt triggers.
   // +1 Waitlist source-provenance normalization trigger.
   // +1 fail-closed individual waitlist insert trigger.
-  triggers: 158,
+  triggers: 159,
   // Transition/capability PKs, unique keys and focused due/salon indexes.
   // The refund inbox and customer identity map each add PK, unique, and two
   // focused indexes.
@@ -384,7 +386,7 @@ const PRODUCTION = {
   // +28 TurnIQ handoff primary, unique, tenant, foreign-key, and lookup indexes.
   // +13 TurnIQ staff PIN primary, foreign-key, and lookup indexes.
   // +3 PII-free capacity-decision primary and lookup indexes.
-  indexes: 973,
+  indexes: 975,
 } as const;
 
 /**
@@ -491,6 +493,7 @@ const CRITICAL_TABLES = [
   "booking_card_management_continuations",
   "booking_card_delivery_events",
   "square_card_customer_claims",
+  "booking_legacy_card_checks",
   "waitlist_claim_action_state",
   "waitlist_claim_capabilities",
   "waitlist_claim_action_receipts",
@@ -988,9 +991,9 @@ function main() {
   // TurnIQ adds thirty-three private tables reachable only by service_role. Neither
   // browser role gains direct table reachability.
   // The 20260911040747 card-delivery migration adds exactly two service-only
-  // tables. Check each table's browser denial and FORCE RLS below as well as
+  // tables; legacy verification adds one more private read-check table. Check each table's browser denial and FORCE RLS below as well as
   // the exact count; public/authenticated reachability must remain unchanged.
-  const GRANTS = { anon: 56, authenticated: 78, service_role: 224 } as const;
+  const GRANTS = { anon: 56, authenticated: 78, service_role: 225 } as const;
   for (const [role, want] of Object.entries(GRANTS)) {
     const got = num(
       `select count(distinct table_name) from (
@@ -1020,6 +1023,7 @@ function main() {
     ...NO_SHOW_FEE_SERVICE_ONLY_TABLES,
     "booking_card_delivery_events",
     "square_card_customer_claims",
+  "booking_legacy_card_checks",
   ]) {
     const browserReachable = num(
       `select count(*) from (

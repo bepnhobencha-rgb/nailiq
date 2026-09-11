@@ -32,6 +32,7 @@ on:
       - "scripts/security/rehearse-v1-terminal-booking-policy.sql"
       - "scripts/security/rehearse-card-continuation-terminal-outcomes.sql"
       - "scripts/security/rehearse-card-delivery-truth.sql"
+      - "scripts/security/rehearse-legacy-card-verification.sql"
       - "scripts/verify-schema-dump.ts"
       - "supabase/bootstrap/**"
       - "supabase/migration-history/**"
@@ -292,6 +293,7 @@ jobs:
             -f scripts/security/rehearse-card-continuation-terminal-outcomes.sql
           psql "$DB_URL" -v ON_ERROR_STOP=1 -q \
             -f scripts/security/rehearse-card-delivery-truth.sql
+          psql "$DB_URL" -X -v ON_ERROR_STOP=1 -f scripts/security/rehearse-legacy-card-verification.sql
           psql "$DB_URL" -v ON_ERROR_STOP=1 -q \
             -f scripts/security/preflight-booking-payment-operation-rollout.sql
           psql "$DB_URL" -v ON_ERROR_STOP=1 -q \

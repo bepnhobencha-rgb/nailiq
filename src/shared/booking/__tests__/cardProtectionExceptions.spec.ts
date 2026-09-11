@@ -49,3 +49,11 @@ describe("Card protection exception access and minimal disclosure",()=>{
     expect(a.retryPath).toBe(`/booking/save-card?token=${token}`);expect(b).toEqual(a);expect(mocks.client().rpc).not.toHaveBeenCalled();
   });
 });
+
+it("owner can mark a legacy booking reviewed without any save operation",async()=>{
+  result={bookings:{id:booking}};
+  expect((await actOnCardProtectionException("qa",booking,"reviewed")).ok).toBe(true);
+  expect(mocks.client().rpc).toHaveBeenCalledWith("mark_booking_card_protection_reviewed",expect.objectContaining({p_booking_id:booking,p_salon_id:salon}));
+  expect(mocks.reconcile).not.toHaveBeenCalled();
+  expect(queries.some(q=>q.table==="booking_card_save_operations")).toBe(false);
+});

@@ -10,6 +10,9 @@ export const CARD_PROTECTION_COPY = {
   en: {
     title: "Card management", policyLanguage: "en", policyLabel: "Cancellation and no-show policy",
     consentLabel: "I agree to this policy and authorize this salon to keep my card on file.",
+    legacyPending: "Your appointment and existing card are kept. Please confirm the policy so we can verify the card and activate protection.",
+    verifyExisting: "Confirm policy and verify existing card",
+    verificationFailed: "We could not verify the card yet. Your appointment is kept. Please try again or ask the salon for help.",
     refreshConsent: "Confirm policy and activate protection",
     reserved: "Appointment reserved", active: "Card protection active",
     pending: "Your appointment is reserved, but your card has not been saved. Please try again to activate late cancellation/no-show protection.",
@@ -24,6 +27,9 @@ export const CARD_PROTECTION_COPY = {
   vi: {
     title: "Quản lý thẻ", policyLanguage: "vi", policyLabel: "Chính sách hủy trễ và no-show",
     consentLabel: "Tôi đồng ý chính sách này và cho phép salon lưu thẻ của tôi.",
+    legacyPending: "Lịch hẹn và thẻ cũ vẫn được giữ. Vui lòng xác nhận chính sách để chúng tôi xác minh thẻ và kích hoạt bảo vệ.",
+    verifyExisting: "Xác nhận chính sách và xác minh thẻ cũ",
+    verificationFailed: "Chưa xác minh được thẻ. Lịch hẹn vẫn được giữ. Vui lòng thử lại hoặc nhờ salon hỗ trợ.",
     refreshConsent: "Xác nhận chính sách và kích hoạt bảo vệ",
     reserved: "Lịch hẹn đã được giữ", active: "Bảo vệ hủy trễ/no-show đã kích hoạt",
     pending: "Lịch hẹn đã được giữ, nhưng thẻ chưa được lưu. Vui lòng thử lại để kích hoạt bảo vệ hủy trễ/no-show.",

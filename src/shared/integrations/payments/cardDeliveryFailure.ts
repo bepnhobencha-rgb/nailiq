@@ -56,7 +56,7 @@ export function squareFailureStage(method: string, path: string): CardFailureSta
   if (path === "/customers/search") return "customer_search";
   if (path === "/customers" && method === "POST") return "customer_create";
   if (path === "/cards" && method === "POST") return "card_create";
-  if (path.startsWith("/cards?reference_id=")) return "reconciliation";
+  if (path.startsWith("/cards?reference_id=") || (method === "GET" && /^\/cards\/[^/]+$/.test(path))) return "reconciliation";
   return null;
 }
 

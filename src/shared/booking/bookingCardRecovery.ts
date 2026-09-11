@@ -4,7 +4,7 @@ import { isCardProtectionStatus, type CardProtectionStatus } from "./cardProtect
 
 export type CardRecoveryContext = {
   bookingId: string; salonId: string; protectionStatus: CardProtectionStatus;
-  canRetry: boolean; canRefreshConsent: boolean; cancelled: boolean; operationId: string | null; expiresAt: string;
+  canRetry: boolean; canRefreshConsent: boolean; canVerifyExistingCard: boolean; cancelled: boolean; operationId: string | null; expiresAt: string;
 };
 const UUID = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
 export async function inspectCardRecovery(token: string): Promise<
@@ -24,7 +24,7 @@ export async function inspectCardRecovery(token: string): Promise<
       return { ok: false, code: "management_unavailable" };
     }
     return { ok: true, context: { bookingId: value.booking_id, salonId: value.salon_id,
-      protectionStatus: value.protection_status, canRetry: value.can_retry, canRefreshConsent: value.can_refresh_consent === true, cancelled: value.cancelled,
+      protectionStatus: value.protection_status, canRetry: value.can_retry, canRefreshConsent: value.can_refresh_consent === true, canVerifyExistingCard: value.can_verify_existing_card === true, cancelled: value.cancelled,
       operationId: typeof value.operation_id === "string" ? value.operation_id : null, expiresAt: value.expires_at } };
   } catch { return { ok: false, code: "management_unavailable" }; }
 }

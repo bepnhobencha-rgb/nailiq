@@ -19,6 +19,8 @@ vi.mock("@/shared/integrations/square/client", async (original) => ({
     return cfg;
   },
 }));
+import { verifyLegacyBookingCard } from "../verifyLegacyBookingCard";
+import { loadCardRecoveryConsent, inspectCardRecovery } from "../bookingCardRecovery";
 import { saveCardWithManagementCapability } from "../bookingCardManagement";
 import { reconcileBookingCardSaveOperations } from "../reconcileBookingCardSaveOperations";
 import type { SquareConfig } from "@/shared/integrations/square/client";
@@ -27,14 +29,15 @@ const enabled = process.env.NAILIQ_CARD_TRUTH_DISPOSABLE_QA === "1";
 const url = process.env.NEXT_PUBLIC_SUPABASE_URL ?? "http://127.0.0.1:55631";
 const dbUrl = process.env.DB_URL ?? "";
 const db = createClient(url, process.env.SUPABASE_SERVICE_ROLE_KEY ?? "unused-qa-key", { auth:{persistSession:false,autoRefreshToken:false} });
-const salon = "55630000-0000-4000-8000-000000000010";
-const service = "55630000-0000-4000-8000-000000000011";
-const staff = "55630000-0000-4000-8000-000000000012";
+const salon = randomUUID();
+const service = randomUUID();
+const staff = randomUUID();
 const cfg: SquareConfig = { salonId:salon,merchantId:"merchant_qa",locationId:"location_qa",applicationId:"sandbox-qa",
   environment:"sandbox",currency:"CAD",accessToken:"PRIVATE_FAKE_KEY",sync:{pullCreate:false,pullUpdate:false,pullCancel:false,pushCreate:false,pushUpdate:false,pushCancel:false} };
 const nativeFetch = globalThis.fetch;
 function sql(query:string) {
-  if (!enabled || url !== "http://127.0.0.1:55631" || new URL(dbUrl).hostname !== "127.0.0.1" || new URL(dbUrl).port !== "55632") throw new Error("disposable_qa_only");
+  if (!enabled || !["http://127.0.0.1:55631","http://127.0.0.1:55634"].includes(url) || new URL(dbUrl).hostname !== "127.0.0.1" || new URL(dbUrl).port !== "55632" ||
+      (url.endsWith(":55634") && new URL(dbUrl).pathname !== "/card_truth_ci_20260911")) throw new Error("disposable_qa_only");
   try { return execFileSync("/opt/homebrew/bin/psql",[dbUrl,"-X","-qAt","-v","ON_ERROR_STOP=1","-c",query],{encoding:"utf8",stdio:["ignore","pipe","pipe"]}).trim(); }
   catch { throw new Error("qa_sql_failed"); }
 }
@@ -74,7 +77,7 @@ function transport(mode:Mode) {
   vi.stubGlobal("fetch",async(input:RequestInfo|URL,init?:RequestInit)=>{
     const address=typeof input==="string"?input:input instanceof URL?input.href:input.url;
     const u=new URL(address);const method=init?.method??"GET";
-    if(u.origin==="http://127.0.0.1:55631") {
+    if(u.origin===url) {
       if(u.pathname.endsWith("/rpc/complete_booking_card_save_operation") && !completionLost && mode.startsWith("db_")) {
         completionLost=true;
         if(mode==="db_after") await nativeFetch(input,init);
@@ -117,7 +120,7 @@ describe.skipIf(!enabled)("Disposable PostgreSQL + real operation helpers + simu
     sequence=Number(sql(`SELECT count(*) FROM public.bookings WHERE salon_id='${salon}'`));
     sql(`INSERT INTO public.service_categories(slug,name_en,name_vi) VALUES('card-delivery-integration','QA','QA') ON CONFLICT DO NOTHING;
       INSERT INTO public.salons(id,slug,name,phone,timezone,currency_code,profile_complete,noshow_protection_enabled,cancellation_policy)
-      VALUES('${salon}','card-delivery-integration','Synthetic Card Delivery','+16045550100','America/Vancouver','CAD',true,true,'{"en":"Cancel with 24 hours notice.","vi":"Báo trước 24 giờ khi hủy."}') ON CONFLICT DO NOTHING;
+      VALUES('${salon}','card-delivery-${salon}','Synthetic Card Delivery','+16045550100','America/Vancouver','CAD',true,true,'{"en":"Cancel with 24 hours notice.","vi":"Báo trước 24 giờ khi hủy."}') ON CONFLICT DO NOTHING;
       INSERT INTO public.services(id,salon_id,name,price_cents,duration_minutes,category) VALUES('${service}','${salon}','QA Service',5000,30,'card-delivery-integration') ON CONFLICT DO NOTHING;
       INSERT INTO public.staff(id,salon_id,name,status) VALUES('${staff}','${salon}','QA Staff','active') ON CONFLICT DO NOTHING;`);
   });
@@ -339,4 +342,51 @@ describe.skipIf(!enabled)("Disposable PostgreSQL + real operation helpers + simu
     const {data:events}=await db.from("booking_card_delivery_events").select("reconciliation_outcome").eq("operation_id",op.id);
     expect(events).toContainEqual({reconciliation_outcome:"disabled_card"});
   });
+  async function legacyFixture() {
+    const f=await fixture();
+    sql(`INSERT INTO public.square_integrations(salon_id,merchant_id,location_id,application_id,access_token,environment,enabled)
+      VALUES('${salon}','merchant_qa','location_qa','app_qa','synthetic-unused','sandbox',true) ON CONFLICT(salon_id) DO NOTHING;
+      UPDATE public.bookings SET noshow_card_id='card_legacy',noshow_customer_id='customer_qa',noshow_card_brand='VISA',noshow_card_last4='4242',
+        noshow_consent_at=now()-interval '1 day',noshow_consent_meta='{"source":"legacy"}' WHERE id='${f.booking}';`);
+    const context=await inspectCardRecovery(f.tokenId);
+    if(!context.ok) throw new Error('legacy_context_unavailable');
+    expect(context.context.canVerifyExistingCard).toBe(true);expect(context.context.canRetry).toBe(false);
+    const policy=await loadCardRecoveryConsent(context.context);
+    if(!policy?.version) throw new Error('legacy_policy_unavailable');
+    return {...f,policyVersion:policy.version};
+  }
+  function legacyTransport(loss=false) {
+    const calls:string[]=[];let lost=false;
+    vi.stubGlobal('fetch',async(input:RequestInfo|URL,init?:RequestInit)=>{
+      const address=typeof input==='string'?input:input instanceof URL?input.href:input.url;
+      const u=new URL(address);
+      if(u.origin===url) {
+        const result=await nativeFetch(input,init);
+        if(loss&&!lost&&u.pathname.endsWith('/rpc/confirm_booking_legacy_card_verification')) {lost=true;throw new TypeError('PRIVATE_DB_RESPONSE_LOST');}
+        return result;
+      }
+      if(u.origin!=='https://connect.squareupsandbox.com'||init?.method!=='GET'||u.pathname!=='/v2/cards/card_legacy') throw new Error('network_boundary_denied');
+      calls.push(u.pathname);
+      return new Response(JSON.stringify({card:{id:'card_legacy',customer_id:'customer_qa',merchant_id:'merchant_qa',enabled:true,card_brand:'VISA',last_4:'4242'}}),{status:200});
+    });return calls;
+  }
+  it('20 racing legacy reads commit one receipt and keep the original card and booking',async()=>{
+    const f=await legacyFixture();const calls=legacyTransport();
+    const results=await Promise.all(Array.from({length:20},()=>verifyLegacyBookingCard(f.tokenId,f.policyVersion)));
+    expect(results.some(result=>result.ok)).toBe(true);expect(calls.length).toBeGreaterThan(0);
+    expect(sql(`SELECT count(*) FROM public.booking_card_save_operations WHERE booking_id='${f.booking}'`)).toBe('1');
+    expect(await bookingState(f.booking)).toMatchObject({status:'confirmed',card_protection_status:'saved',noshow_card_id:'card_legacy',noshow_customer_id:'customer_qa'});
+    expect((await operation(f.booking)).dispatch_prepared_at).toBeNull();
+    expect((await inspectCardRecovery(f.tokenId))).toMatchObject({ok:true,context:{protectionStatus:'saved',canRetry:false,canVerifyExistingCard:false}});
+  });
+  it('legacy completion response loss reloads the committed receipt without repeating a save operation',async()=>{
+    const f=await legacyFixture();const calls=legacyTransport(true);
+    expect((await verifyLegacyBookingCard(f.tokenId,f.policyVersion)).ok).toBe(false);
+    expect((await inspectCardRecovery(f.tokenId))).toMatchObject({ok:true,context:{protectionStatus:'saved'}});
+    expect((await verifyLegacyBookingCard(f.tokenId,f.policyVersion)).ok).toBe(false);
+    expect(calls).toHaveLength(1); // Already protected inspect prevents another provider read.
+    expect(sql(`SELECT count(*) FROM public.booking_card_save_operations WHERE booking_id='${f.booking}'`)).toBe('1');
+    expect(sql(`SELECT code FROM public.booking_legacy_card_checks WHERE booking_id='${f.booking}' ORDER BY created_at DESC LIMIT 1`)).toBe('database_completion_uncertain');
+  });
+
 });

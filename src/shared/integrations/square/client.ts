@@ -1,3 +1,4 @@
+import { assertCardCaptureActive } from "@/shared/booking/cardCapturePause";
 /**
  * Square REST client for NailIQ imports (customers, catalog, bookings).
  *
@@ -541,6 +542,7 @@ export async function saveCardOnFile(
     verificationToken?: string;
   },
 ): Promise<{ cardId: string; last4: string; brand: string }> {
+  assertCardCaptureActive();
   const json = await squareReq(cfg, "POST", "/cards", {
     idempotency_key: opts.idempotencyKey,
     source_id: opts.sourceId,
@@ -709,6 +711,22 @@ export async function listCardsByReferenceId(cfg: SquareConfig, referenceId: str
     unique.set(card.cardId, card);
   }
   return [...unique.values()];
+}
+
+/** Retrieve the exact legacy card; a missing reference is allowed only here.
+ * Never return Square's raw payload (which includes billing/expiry data). */
+export async function readSquareCardById(cfg: SquareConfig, cardId: string, customerId: string): Promise<SquareCardReceipt> {
+  if (!squareId(cardId) || !squareId(customerId)) {
+    throw cardFailure("reconciliation", "reconciliation_invalid_card", "manual_review");
+  }
+  const json = await squareReq(cfg, "GET", `/cards/${encodeURIComponent(cardId)}`);
+  const raw = json.card;
+  const candidate = raw && typeof raw === "object" && !Array.isArray(raw) ? { ...raw, reference_id: (raw as Record<string, unknown>).reference_id ?? "" } : raw;
+  const card = parseSquareCard(candidate);
+  if (!card || !card.enabled || card.cardId !== cardId || card.customerId !== customerId || card.merchantId !== cfg.merchantId) {
+    throw cardFailure("reconciliation", "reconciliation_invalid_card", "manual_review", responseHttpStatus.get(json) ?? null);
+  }
+  return card;
 }
 
 /** Disable (remove) a saved card on file. Square has no hard delete — a

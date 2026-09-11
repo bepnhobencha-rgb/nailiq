@@ -1,14 +1,22 @@
 "use server";
+import { isCardCapturePaused } from "./cardCapturePause";
+import { verifyLegacyBookingCard } from "./verifyLegacyBookingCard";
 import { inspectCardRecovery, loadCardRecoveryConsent } from "./bookingCardRecovery";
 import { reconcileBookingCardSaveOperations } from "./reconcileBookingCardSaveOperations";
 import { createServiceRoleClient } from "@/shared/lib/supabase/serviceRole";
 import { durableRateLimitKey, isOverRateLimit } from "@/shared/lib/inAppRateLimit";
 
 export async function recoverBookingCardAction(token: string, consent?: { accepted: true; policyVersion: string }): Promise<{ ok: boolean; managementToken?: string }> {
+  if (isCardCapturePaused()) return { ok: false };
   if (typeof token !== "string" || token.length !== 36) return { ok: false };
   if (await isOverRateLimit(durableRateLimitKey("card-recovery", token), 6, 300, { failureMode: "block" })) return { ok: false };
   let inspected = await inspectCardRecovery(token);
   if (!inspected.ok || inspected.context.cancelled) return { ok: false };
+  if (inspected.context.protectionStatus === "saved") return { ok: true };
+  if (inspected.context.canVerifyExistingCard) {
+    return consent?.accepted === true && typeof consent.policyVersion === "string"
+      ? verifyLegacyBookingCard(token, consent.policyVersion) : { ok: false };
+  }
   if (inspected.context.operationId) {
     // The token authorizes this exact booking only. No batch/other-tenant read.
     await reconcileBookingCardSaveOperations(1, inspected.context.operationId);

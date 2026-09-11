@@ -1,3 +1,4 @@
+import { isCardCapturePaused } from "@/shared/booking/cardCapturePause";
 import "server-only";
 
 import { createHash } from "node:crypto";
@@ -329,7 +330,7 @@ export async function saveCardWithManagementCapability(input: {
   sourceToken: string;
   verificationToken?: string;
 }): Promise<CardOperationResult> {
-  if (process.env.NAILIQ_CARD_SAVE_DISPATCH_DISABLED === "true") return { ok:false,code:"card_capture_paused" };
+  if (isCardCapturePaused()) return { ok: false, code: "card_capture_paused" };
   if (!UUID_RE.test(input.tokenId) || !UUID_RE.test(input.requestId) ||
       !input.sourceToken.trim() || input.sourceToken.length > 2048) return { ok: false, code: "invalid_request" };
   const claim = await claimSave({
@@ -444,7 +445,7 @@ export async function createStripeSetupWithManagementCapability(input: {
   tokenId: string;
   requestId: string;
 }): Promise<CardOperationResult & { clientSecret?: string }> {
-  if (process.env.NAILIQ_CARD_SAVE_DISPATCH_DISABLED === "true") return { ok:false,code:"card_capture_paused" };
+  if (isCardCapturePaused()) return { ok: false, code: "card_capture_paused" };
   const claim = await claimSave({
     tokenId: input.tokenId,
     requestId: input.requestId,

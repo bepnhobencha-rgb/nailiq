@@ -1,3 +1,4 @@
+import { assertCardCaptureActive } from "@/shared/booking/cardCapturePause";
 import "server-only";
 import { createHash } from "node:crypto";
 import {
@@ -65,6 +66,7 @@ export class SquareProvider implements PaymentProvider {
     beforeCardDispatch?: (binding: CardDispatchBinding) => Promise<void>;
     beforeCustomerWork?: (identity: Omit<CardDispatchBinding, "customerId">) => Promise<void>;
   }) {
+  assertCardCaptureActive();
     await input.beforeCustomerWork?.({ merchantId: this.cfg.merchantId, environment: this.cfg.environment });
     if (!input.customerOperation) throw cardFailure("customer_search","square_customer_search_failed","safe_retry");
     const customerId = await resolveSquareCardCustomer(this.cfg,input.customerOperation);

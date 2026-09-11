@@ -43,7 +43,7 @@ export function CardProtectionExceptions({ slug, result, timezone }: {
     <div className="mt-4 space-y-3">{result.items.map((item) => <article key={item.bookingId} className="rounded-xl border border-nq-border p-3">
       <p className="font-semibold text-nq-text">{item.clientLabel} · {item.service}</p>
       <p className="mt-1 text-sm text-nq-muted">{date(item.startTime)}</p>
-      <p className="mt-2 text-sm font-medium text-nq-warning">{vi ? "Yêu cầu thẻ — chưa lưu" : "Card required — not saved"}</p>
+      <p className="mt-2 text-sm font-medium text-nq-warning">{item.hasExistingCard ? vi ? "Thẻ cũ — cần xác minh" : "Existing card — verification required" : vi ? "Yêu cầu thẻ — chưa lưu" : "Card required — not saved"}</p>
       <p className="mt-1 text-sm text-nq-muted">{({awaiting_card: ["Awaiting card", "Chờ lưu thẻ"], saving: ["Saving", "Đang lưu"],
         reconciliation_pending: ["Reconciliation pending", "Đang đối soát"], retry_required: ["Retry required", "Cần thử lại"],
         manual_review: ["Manual review", "Cần salon kiểm tra"], saved:["Active","Đã kích hoạt"],not_required:["Not required","Không yêu cầu"]})[item.status][vi ? 1 : 0]}</p>
@@ -53,8 +53,8 @@ export function CardProtectionExceptions({ slug, result, timezone }: {
       <div className="mt-3 flex flex-wrap gap-2">
         <a className={button} href={`/dashboard/${encodeURIComponent(slug)}/center?booking=${encodeURIComponent(item.bookingId)}`}>{vi ? "Mở lịch hẹn" : "Open booking"}</a>
         <Button variant="secondary" size="lg" className={button} disabled={pending !== null} onClick={() => void act(item,"retry_link")}>{vi ? "Tạo liên kết thử lại" : "Generate secure retry link"}</Button>
-        {["saving","reconciliation_pending","manual_review"].includes(item.status) ? <Button variant="secondary" size="lg" className={button} disabled={pending !== null} onClick={() => void act(item,"reconcile")}>{vi ? "Đối soát lại" : "Reconcile again"}</Button> : null}
-        <Button variant="secondary" size="lg" className={button} disabled={pending !== null || !!item.reviewedAt || !item.lastAttemptAt} onClick={() => void act(item,"reviewed")}>{vi ? "Đánh dấu đã xem" : "Mark reviewed"}</Button>
+        {item.canReconcile ? <Button variant="secondary" size="lg" className={button} disabled={pending !== null} onClick={() => void act(item,"reconcile")}>{vi ? "Đối soát lại" : "Reconcile again"}</Button> : null}
+        <Button variant="secondary" size="lg" className={button} disabled={pending !== null || !!item.reviewedAt} onClick={() => void act(item,"reviewed")}>{vi ? "Đánh dấu đã xem" : "Mark reviewed"}</Button>
       </div>
       {retry?.bookingId === item.bookingId ? <a href={retry.path} referrerPolicy="no-referrer" className="mt-3 inline-flex min-h-11 items-center text-sm text-nq-text underline">{vi ? "Mở liên kết quản lý thẻ an toàn" : "Open secure card management link"}</a> : null}
     </article>)}</div>
