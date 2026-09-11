@@ -1,3 +1,4 @@
+import { assertCardCaptureActive } from "@/shared/booking/cardCapturePause";
 import "server-only";
 import { createHash } from "node:crypto";
 import {
@@ -60,6 +61,7 @@ export class SquareProvider implements PaymentProvider {
     idempotencyKey: string;
     cardReferenceId: string;
   }) {
+  assertCardCaptureActive();
     const customerId = await ensureSquareCustomer(this.cfg, {
       name: input.customer.name ?? null,
       phone: input.customer.phone ?? null,

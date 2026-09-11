@@ -1,3 +1,4 @@
+import { assertCardCaptureActive } from "@/shared/booking/cardCapturePause";
 /**
  * Square REST client for NailIQ imports (customers, catalog, bookings).
  *
@@ -480,6 +481,7 @@ export async function saveCardOnFile(
     verificationToken?: string;
   },
 ): Promise<{ cardId: string; last4: string; brand: string }> {
+  assertCardCaptureActive();
   const json = await squareReq(cfg, "POST", "/cards", {
     idempotency_key: opts.idempotencyKey,
     source_id: opts.sourceId,

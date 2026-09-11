@@ -1,3 +1,4 @@
+import { isCardCapturePaused } from "@/shared/booking/cardCapturePause";
 /**
  * No-show fee via Square card-on-file (Option C).
  *
@@ -281,6 +282,7 @@ export async function saveNoShowCardForBooking(
   consent: boolean,
   verificationToken?: string,
 ): Promise<{ ok: boolean; reason: string; last4?: string }> {
+  if (isCardCapturePaused()) return { ok: false, reason: "card_capture_paused" };
   if (!consent) return { ok: false, reason: "consent required" };
   const db = looseServiceClient();
   const { data } = await db
@@ -387,6 +389,7 @@ export async function reuseNoShowCardForBooking(
   otpSessionId: string,
   consent: boolean,
 ): Promise<{ ok: boolean; reason: string; last4?: string }> {
+  if (isCardCapturePaused()) return { ok: false, reason: "card_capture_paused" };
   if (!consent) return { ok: false, reason: "consent required" };
   if (!otpSessionId) return { ok: false, reason: "otp required" };
 
@@ -509,6 +512,7 @@ export async function reuseNoShowCardForBooking(
 export async function autoAttachReturningCard(
   bookingId: string,
 ): Promise<{ attached: boolean; reason: string; last4?: string }> {
+  if (isCardCapturePaused()) return { attached: false, reason: "card_capture_paused" };
   try {
     const db = looseServiceClient();
     const { data } = await db

@@ -1,4 +1,5 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
+vi.mock("server-only", () => ({}));
 import { getCustomer, type SquareConfig } from "../client";
 
 const config: SquareConfig = {
