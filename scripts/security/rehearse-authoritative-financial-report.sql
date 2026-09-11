@@ -122,9 +122,12 @@ BEGIN
 
   -- Historical report fixtures may contain pre-gate in-flight no-show rows.
   -- Bypass only the synthetic INSERT trigger while seeding that legacy state;
-  -- the approval gate is re-enabled before the report is queried.
+  -- both approval and card-delivery gates are re-enabled before querying.
+  -- Legacy report rows must stay visible even though new unprotected dispatch is denied.
   ALTER TABLE public.booking_payment_operations
     DISABLE TRIGGER booking_payment_operations_no_show_approval_insert;
+  ALTER TABLE public.booking_payment_operations
+    DISABLE TRIGGER booking_payment_card_delivery_guard;
   INSERT INTO public.booking_payment_operations(
     id,salon_id,booking_id,request_id,operation_kind,provider,
     provider_account_fingerprint,amount_cents,currency,material_fingerprint,
@@ -148,6 +151,11 @@ BEGIN
   );
   ALTER TABLE public.booking_payment_operations
     ENABLE TRIGGER booking_payment_operations_no_show_approval_insert;
+  ALTER TABLE public.booking_payment_operations
+    ENABLE TRIGGER booking_payment_card_delivery_guard;
+  IF EXISTS(SELECT 1 FROM pg_trigger WHERE tgname IN ('booking_payment_card_delivery_guard',
+    'booking_payment_operations_no_show_approval_insert') AND tgenabled<>'O') THEN
+    RAISE EXCEPTION 'fixture left a fee dispatch gate disabled'; END IF;
   INSERT INTO public.booking_payment_operations(
     id,salon_id,booking_id,request_id,operation_kind,provider,
     provider_account_fingerprint,amount_cents,currency,material_fingerprint,

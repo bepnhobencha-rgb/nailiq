@@ -121,7 +121,9 @@ function StripeCardForm({
   feeLabel,
   t,
   onSaved,
+  onSettled,
 }: {
+  onSettled?: () => Promise<void>;
   managementToken: string;
   feeLabel: string;
   t: BookingMessages;
@@ -137,13 +139,14 @@ function StripeCardForm({
     if (!stripe || !elements || !consented || status === "saving") return;
     setStatus("saving");
     setErrorMsg(null);
+    try {
     const { error, setupIntent } = await stripe.confirmSetup({
       elements,
       redirect: "if_required",
     });
     if (error) {
       setStatus("error");
-      setErrorMsg(error.message ?? t.noShowCardError ?? "Could not save the card.");
+      setErrorMsg(t.cardVerificationError ?? t.noShowCardError ?? "Could not save the card.");
       return;
     }
     const pmId =
@@ -155,7 +158,6 @@ function StripeCardForm({
       setErrorMsg(t.noShowCardError ?? "Could not save the card.");
       return;
     }
-    try {
       const res = await fetch("/api/booking/square-save-card", {
         method: "POST",
         headers: { "Content-Type": "application/json" },
@@ -172,13 +174,15 @@ function StripeCardForm({
         }),
       });
       const j = (await res.json()) as { ok?: boolean };
-      if (j.ok) {
+      if (res.ok && j.ok) {
         onSaved();
       } else {
         setStatus("error");
         setErrorMsg(t.noShowCardError ?? "Could not save the card.");
       }
+      await onSettled?.();
     } catch {
+      await onSettled?.();
       setStatus("error");
       setErrorMsg(t.noShowCardError ?? "Could not save the card.");
     }
@@ -236,6 +240,7 @@ function StripeCardForm({
 }
 
 export function NoShowCardCaptureStripe({
+  onSettled,
   bookingId,
   managementToken,
   clientSecret,
@@ -245,6 +250,7 @@ export function NoShowCardCaptureStripe({
   savedCard,
   otpSessionId,
 }: {
+  onSettled?: () => Promise<void>;
   bookingId: string;
   managementToken: string;
   clientSecret: string;
@@ -290,7 +296,7 @@ export function NoShowCardCaptureStripe({
         feeLabel={feeLabel}
         t={t}
         onUseDifferent={() => setUseDifferentCard(true)}
-        onSaved={() => setSaved(true)}
+        onSaved={() => { if (onSettled) void onSettled(); else setSaved(true); }}
       />
     );
   }
@@ -300,10 +306,11 @@ export function NoShowCardCaptureStripe({
   return (
     <Elements stripe={stripePromise} options={{ clientSecret }}>
       <StripeCardForm
+        onSettled={onSettled}
         managementToken={managementToken}
         feeLabel={feeLabel}
         t={t}
-        onSaved={() => setSaved(true)}
+        onSaved={() => { if (onSettled) void onSettled(); else setSaved(true); }}
       />
     </Elements>
   );

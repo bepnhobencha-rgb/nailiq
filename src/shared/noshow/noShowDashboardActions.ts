@@ -246,7 +246,7 @@ export async function loadNoShowDashboard(slug: string): Promise<{
         .from("bookings" as never)
         .select("id", { count: "exact", head: true })
         .eq("salon_id", salonId)
-        .not("noshow_card_id", "is", null)
+        .eq("card_protection_status" as never, "saved")
         .in("status", ["pending", "confirmed"])
         .gte("start_time_utc", now),
     ]);

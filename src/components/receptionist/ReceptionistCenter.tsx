@@ -2442,8 +2442,8 @@ function ReceptionistCenterInner({
       depositsEnabled: data.salon.depositsEnabled,
       // No-show card-on-file (charge only on no-show) — surface the protection
       // at the desk. Data already loaded on the booking row.
-      cardOnFile: !!b.noshow_card_id,
-      noshowCardRequired: b.noshow_card_required === true,
+      cardOnFile: b.card_protection_status === "saved",
+      noshowCardRequired: b.card_protection_status !== "saved" && (b.noshow_card_required === true || !!b.noshow_card_id || ["saving", "reconciliation_pending", "retry_required", "manual_review"].includes(b.card_protection_status ?? "")),
       noshowFeeLine:
         b.noshow_fee_cents != null
           ? formatCurrency(b.noshow_fee_cents, data.salon.currencyCode)

@@ -18,6 +18,7 @@ function booking(overrides: Partial<Parameters<typeof evaluateLateCancellationPo
     startTimeUtc: "2026-08-09T12:00:00.000Z",
     noShowFeeCents: 4_000,
     noShowCardId: "card_test",
+    cardProtectionStatus: "saved" as const,
     noShowConsentAt: "2026-08-01T12:00:00.000Z",
     noShowChargeStatus: "saved",
     selfCancelFeeLockedAt: null,
@@ -27,6 +28,14 @@ function booking(overrides: Partial<Parameters<typeof evaluateLateCancellationPo
 }
 
 describe("late cancellation policy", () => {
+  it("does not make a card ID and consent alone chargeable", () => {
+    for (const status of [undefined, "awaiting_card", "retry_required", "manual_review", "reconciliation_pending"] as const) {
+      const result = evaluateLateCancellationPolicy({ booking: booking({
+        cardProtectionStatus: status, startTimeUtc: "2026-08-08T11:59:59.000Z" }), salon, nowMs: NOW });
+      expect(result.hasChargeableCard).toBe(false);
+      expect(result.willCharge).toBe(false);
+    }
+  });
   it("keeps the exact 24-hour boundary fee-free", () => {
     const result = evaluateLateCancellationPolicy({
       booking: booking({ startTimeUtc: "2026-08-08T12:00:00.000Z" }),

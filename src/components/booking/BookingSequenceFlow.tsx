@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useMemo, useRef, useState } from "react";
+import { useRouter } from "next/navigation";
 
 import {
   ConfirmStepCardCapture,
@@ -109,6 +110,7 @@ export function BookingSequenceFlow({
   const [cardSourceId, setCardSourceId] = useState<string | null>(null);
   const [cardVerificationToken, setCardVerificationToken] = useState<string | null>(null);
   const [cardManagementPending, setCardManagementPending] = useState(false);
+  const router = useRouter();
   const [capacityRescueEligible, setCapacityRescueEligible] = useState(false);
   const [capacityRescueJoined, setCapacityRescueJoined] = useState(false);
   const [capacityRescueSubmitting, setCapacityRescueSubmitting] = useState(false);
@@ -475,6 +477,7 @@ export function BookingSequenceFlow({
         code?: string;
         quote?: BookingSequenceQuote;
         cardManagementPending?: boolean;
+        cardManagementToken?: string | null;
       };
       if (result.code === "pricing_changed" && result.quote) {
         setQuote(result.quote);
@@ -491,6 +494,7 @@ export function BookingSequenceFlow({
       if (!result.quote) throw new Error("receipt");
       setQuote(result.quote);
       setCardManagementPending(result.cardManagementPending === true);
+      if (result.cardManagementToken) router.replace(`/booking/save-card?token=${encodeURIComponent(result.cardManagementToken)}`);
       setDone(true);
       setReconfirmRequired(false);
       if (storageKey) sessionStorage.removeItem(storageKey);
@@ -506,7 +510,7 @@ export function BookingSequenceFlow({
   if (done && quote) {
     return (
       <section data-testid="booking-sequence-done" className="rounded-2xl border border-[var(--booking-border)] bg-[var(--booking-bg-card)] p-5">
-        <h2 className="text-xl font-semibold">{vi ? "Đã đặt chuỗi dịch vụ" : "Sequence booked"}</h2>
+        <h2 className="text-xl font-semibold">{cardManagementPending ? t.cardProtection.reserved : vi ? "Đã đặt chuỗi dịch vụ" : "Sequence booked"}</h2>
         <ol className="mt-4 space-y-3">
           {quote.lines.map((line, index) => (
             <li key={line.lineId} className="rounded-xl bg-[var(--booking-bg-input)] p-3">

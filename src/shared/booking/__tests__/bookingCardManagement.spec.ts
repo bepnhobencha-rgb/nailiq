@@ -60,7 +60,7 @@ function saveClaim(
       fee_cents: 2500,
       currency: "CAD",
       salon_name: "QA Salon",
-      cancellation_policy: "24 hours",
+      cancellation_policy: { en: "Cancel with 24 hours notice.", vi: "Báo trước 24 giờ khi hủy." },
     },
   };
 }
@@ -98,6 +98,19 @@ describe("durable card-management provider boundary", () => {
     expect(mocks.resolveProvider).not.toHaveBeenCalled();
     expect(mocks.removeSavedCard).not.toHaveBeenCalled();
     expect(mocks.saveCardOnFile).not.toHaveBeenCalled();
+  });
+
+  it("pauses new capture before claiming or contacting either provider", async () => {
+    vi.stubEnv("NAILIQ_CARD_SAVE_DISPATCH_DISABLED", "true");
+    try {
+      await expect(saveCardWithManagementCapability({ tokenId: TOKEN, requestId: REQUEST,
+        provider: "square", sourceToken: "cnon:qa" })).resolves.toEqual({ ok: false, code: "card_capture_paused" });
+      await expect(createStripeSetupWithManagementCapability({ tokenId: TOKEN, requestId: REQUEST }))
+        .resolves.toEqual({ ok: false, code: "card_capture_paused" });
+      expect(mocks.rpc).not.toHaveBeenCalled();
+      expect(mocks.resolveProvider).not.toHaveBeenCalled();
+      expect(mocks.setupCreate).not.toHaveBeenCalled();
+    } finally { vi.unstubAllEnvs(); }
   });
 
   it("does not redispatch a replayed in-flight card save before reconciliation", async () => {
@@ -264,14 +277,16 @@ describe("durable card-management provider boundary", () => {
     });
     mocks.rpc
       .mockResolvedValueOnce({ data: saveClaim("square", "save_card"), error: null })
-      .mockResolvedValueOnce({ data: null, error: new Error("write uncertain") });
+      .mockResolvedValueOnce({ data: null, error: new Error("write uncertain") })
+      .mockResolvedValueOnce({ data: { ok: true }, error: null })
+      .mockResolvedValueOnce({ data: { ok: false, code: "save_failed" }, error: null });
 
     await expect(saveCardWithManagementCapability({
       tokenId: TOKEN,
       requestId: REQUEST,
       provider: "square",
       sourceToken: "cnon:card-nonce-ok",
-    })).resolves.toMatchObject({ ok: false, code: "dispatch_prepare_uncertain" });
+    })).resolves.toMatchObject({ ok: false, code: "save_failed" });
     expect(mocks.saveCardOnFile).not.toHaveBeenCalled();
   });
 });

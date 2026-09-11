@@ -256,6 +256,7 @@ BEGIN
 END
 $rehearsal$;
 
+\ir fixture-historical-card-receipt.sql
 DO $late_cancel$
 DECLARE
   v_salon uuid := '15150000-0000-4000-8000-000000000001';
@@ -279,6 +280,7 @@ BEGIN
     now()+interval '3 days',now()+interval '3 days 30 minutes','confirmed',
     'pm_late_cancel_qa','cus_late_cancel_qa',now(),'saved',1500
   );
+  PERFORM pg_temp.seed_historical_card_receipt(v_booking);
   UPDATE public.bookings SET status='cancelled' WHERE id=v_booking;
   v_result:=public.load_booking_payment_operation_material(
     v_salon,v_booking,'late_cancel_charge',1500

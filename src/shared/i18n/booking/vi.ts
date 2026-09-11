@@ -9,10 +9,12 @@
  * receptionist-side calendar can still render English day labels
  * if the booking surface is rendered EN.
  */
+import { CARD_PROTECTION_COPY } from "@/shared/booking/cardProtection";
 import { PHONE_INPUT_PLACEHOLDER_NANP } from "@/shared/lib/phoneFormat";
 import type { BookingMessages } from "./en";
 
 export const bookingVi: BookingMessages = {
+  cardProtection: CARD_PROTECTION_COPY.vi,
   errorBoundary: {
     title: "Không thể hiển thị trang đặt lịch.",
     detail: "Nếu bạn vừa gửi yêu cầu đặt lịch, hãy kiểm tra xác nhận hoặc liên hệ tiệm trước khi đặt lại.",
@@ -57,13 +59,16 @@ export const bookingVi: BookingMessages = {
   calendarLegendClosed: "Nghỉ",
   scarcityFewSlots: "Chỉ còn {n} giờ trống — ngày này sắp đầy.",
   scarcityFewSlotsSoonest: "Chỉ còn {n} giờ trống — sớm nhất {time}.",
-  noShowCardTitle: "Cần thẻ để xác nhận",
+  noShowCardTitle: "Bảo vệ no-show bằng thẻ",
   noShowCardDesc:
-    "Bạn cần liên kết thẻ để hoàn tất đặt lịch này. Chỉ bị thu {fee} nếu không đến — không trừ gì hôm nay.",
+    "Lưu thẻ để kích hoạt bảo vệ no-show. Theo chính sách, phí {fee} có thể áp dụng nếu bạn không đến. Không thu tiền hôm nay.",
   noShowCardSave: "Lưu thẻ",
   noShowCardSaving: "Đang lưu…",
   noShowCardSaved: "Đã lưu thẻ — chỉ thu {fee} nếu bạn không đến.",
   noShowCardError: "Không lưu được thẻ. Vui lòng kiểm tra lại thông tin.",
+  noShowCardLoading: "Đang tải biểu mẫu thẻ bảo mật…",
+  noShowCardLoadError: "Chưa tải được biểu mẫu thẻ. Vui lòng thử tải lại.",
+  noShowCardReload: "Tải lại biểu mẫu thẻ",
   cardManagementPendingNotice:
     "Lịch của bạn đã được xác nhận. Bước lưu thẻ no-show chưa hoàn tất. Đừng đặt lại; hãy liên hệ tiệm nếu bạn cần hỗ trợ.",
   cardVerificationError:

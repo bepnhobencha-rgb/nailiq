@@ -1,6 +1,7 @@
 "use client";
 
-import { useCallback, useState } from "react";
+import { useRouter } from "next/navigation";
+import { useCallback, useEffect, useState } from "react";
 import { QRCodeSVG } from "qrcode.react";
 import { Button } from "@/components/ui/Button";
 import type { BookingServiceItem } from "@/shared/booking/catalog";
@@ -73,6 +74,14 @@ export function BookingFlowDonePanel({
   loyaltyCard?: { stamps_current: number; rewards_earned: number; rewards_redeemed: number } | null;
   loyaltyProgram?: { stamps_required: number; color: string; name: string; reward_type: string; reward_percent_off: number | null; reward_amount_off_cents: number | null } | null;
 }) {
+  const router = useRouter();
+  useEffect(() => {
+    // Persist the recovery destination in the URL. Reload retains the committed
+    // booking's card status without keeping a source token or contact in storage.
+    if (cardManagementToken) {
+      router.replace(`/booking/save-card?token=${encodeURIComponent(cardManagementToken)}`);
+    }
+  }, [cardManagementToken, router]);
   const refLabel = formatNailiqBookingRef(bookingId);
   const [shareHint, setShareHint] = useState<string | null>(null);
   const [calendarHint, setCalendarHint] = useState<string | null>(null);
@@ -207,7 +216,7 @@ export function BookingFlowDonePanel({
           </svg>
         </div>
         <h2 className="mt-5 text-2xl font-semibold tracking-tight text-[var(--booking-text)] sm:text-3xl lg:text-[2.0625rem]">
-          {t.successHeading}
+          {cardManagementPending ? t.cardProtection.reserved : t.successHeading}
         </h2>
         {staffLine ? (
           <p className="mt-3 text-lg font-medium tracking-tight text-[var(--salon-primary)]">

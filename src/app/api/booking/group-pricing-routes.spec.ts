@@ -470,7 +470,11 @@ describe("public group pricing route boundaries", () => {
 
     const response = await createPost(request("group-create", body));
     expect(response.status).toBe(200);
-    await expect(response.json()).resolves.toMatchObject({ ok: true, cardManagementToken: null });
+    await expect(response.json()).resolves.toMatchObject({
+      ok: true,
+      cardManagementToken: "b1111111-1111-4111-8111-111111111111",
+      cardManagementPending: false,
+    });
     expect(mocks.saveCard).toHaveBeenCalledWith({
       tokenId: "b1111111-1111-4111-8111-111111111111",
       requestId: body.idempotencyKey,
@@ -542,7 +546,7 @@ describe("public group pricing route boundaries", () => {
         "91111111-1111-4111-8111-111111111111",
         "a1111111-1111-4111-8111-111111111111",
       ]),
-      cardManagementToken: null,
+      cardManagementToken: "b1111111-1111-4111-8111-111111111111",
       cardManagementPending: true,
       pricing: { authoritative: pricing },
     });
@@ -576,7 +580,7 @@ describe("public group pricing route boundaries", () => {
     expect(response.status).toBe(200);
     await expect(response.json()).resolves.toMatchObject({
       ok: true,
-      cardManagementToken: null,
+      cardManagementToken: "b1111111-1111-4111-8111-111111111111",
       cardManagementPending: true,
     });
     expect(mocks.recordCardPending).toHaveBeenLastCalledWith(expect.objectContaining({

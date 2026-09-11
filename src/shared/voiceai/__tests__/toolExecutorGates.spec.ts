@@ -400,6 +400,7 @@ describe("toolExecutor — late-cancellation payment consent", () => {
     client_phone: OWNER_PHONE,
     group_id: null,
     start_time_utc: new Date(Date.now() + 12 * 60 * 60_000).toISOString(),
+    card_protection_status: "saved",
     noshow_card_id: "card-1",
     noshow_consent_at: new Date().toISOString(),
     noshow_fee_cents: 3400,
@@ -408,6 +409,40 @@ describe("toolExecutor — late-cancellation payment consent", () => {
     self_cancel_fee_locked_cents: null,
     services: { name: "Head Spa" },
   };
+
+  it.each([undefined, "awaiting_card", "saving", "reconciliation_pending", "retry_required", "manual_review"])(
+    "does not treat legacy card fields as fee protection when projection is %s",
+    async (protectionStatus) => {
+      paymentMocks.charge.mockClear();
+      // Mirror the SQL receipt guard: an unprotected booking has no chargeable
+      // cancellation preview even if legacy card fields remain populated.
+      managementMocks.cancel.mockResolvedValueOnce({
+        ok: true,
+        result: {
+          scopeKind: "booking_own",
+          rsvpSemantic: null,
+          transitionVersion: 7,
+          cancelPreview: {
+            startPast: false, withinWindow: true, willCharge: false,
+            policyLockedByReschedule: false, feeCents: 0,
+            cardLast4: null, cardBrand: null, currency: "USD",
+          },
+        },
+      } as never);
+      const body = await call(
+        "cancel_booking",
+        { booking_id: BOOKING_ID },
+        { salons: chargeableSalon, bookings: { ...chargeableBooking, card_protection_status: protectionStatus } },
+        { callerVerifiedPhone: OWNER_PHONE },
+      );
+
+      expect(body.success).toBe(true);
+      expect(body.feeCharged).toBe(false);
+      expect(body.feeCents).toBe(0);
+      expect(body.paymentPending).toBe(false);
+      expect(paymentMocks.charge).not.toHaveBeenCalled();
+    },
+  );
 
   it("does not cancel or charge before the verified customer accepts the exact fee", async () => {
     const body = await call(

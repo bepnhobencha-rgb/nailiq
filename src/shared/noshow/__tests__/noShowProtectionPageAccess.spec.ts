@@ -13,6 +13,8 @@ const mocks = vi.hoisted(() => ({
 }));
 
 vi.mock("server-only", () => ({}));
+vi.mock("@/shared/booking/cardProtectionExceptionActions", () => ({ loadCardProtectionExceptions:vi.fn().mockResolvedValue({ok:true,items:[]}) }));
+vi.mock("@/components/dashboard/CardProtectionExceptions", () => ({ CardProtectionExceptions:() => "CARD_PROTECTION_EXCEPTIONS" }));
 vi.mock("next/navigation", () => ({
   redirect: mocks.redirect,
 }));

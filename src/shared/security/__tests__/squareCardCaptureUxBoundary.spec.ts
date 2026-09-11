@@ -26,16 +26,21 @@ describe("Square card-capture failure UX boundary", () => {
     );
   });
 
-  it("always offers an escape hatch after card verification fails", () => {
+  it("offers browser-switch guidance for detected webviews, not every form error", () => {
     const confirmCapture = read("src/components/booking/ConfirmStepCardCapture.tsx");
     const postBookingCapture = read("src/components/booking/NoShowCardCapture.tsx");
 
-    expect(confirmCapture).toMatch(
+    expect(confirmCapture).not.toMatch(
       /\{error && !inAppBrowser \? \(\s*<CardWebviewFallback\s+forceVisible/,
     );
-    expect(postBookingCapture).toMatch(
+    expect(postBookingCapture).not.toMatch(
       /\{errorMsg && !inAppBrowser \? \(\s*<CardWebviewFallback\s+forceVisible/,
     );
+    for (const source of [confirmCapture, postBookingCapture]) {
+      expect(source).toMatch(/\{inAppBrowser \? \(\s*<CardWebviewFallback\s+forceVisible/);
+      expect(source).toContain("t.noShowCardLoadError");
+      expect(source).toContain("t.noShowCardReload");
+    }
   });
 
   it("keeps the booking AI trigger above mobile browser chrome", () => {

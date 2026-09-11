@@ -1,4 +1,5 @@
 import { afterEach, describe, expect, it, vi } from "vitest";
+vi.mock("server-only", () => ({}));
 import {
   createSquareBooking,
   ensureSquareCustomer,
@@ -52,6 +53,33 @@ function createRequests(fetcher: ReturnType<typeof vi.fn>) {
 describe("Square customer create idempotency", () => {
   afterEach(() => vi.unstubAllGlobals());
 
+  it("reuses the exact email profile from an earlier no-phone fallback",async()=>{
+    const fetcher=vi.fn(async(rawUrl:string|URL|Request,init?:RequestInit)=>{
+      const path=new URL(String(rawUrl)).pathname;
+      expect(path).toBe("/v2/customers/search");
+      const filter=JSON.parse(String(init?.body)).query.filter;
+      return response(200,filter.email_address ? {customers:[{id:"prior-no-phone",email_address:"QA@NAILIQ.INVALID"}]} : {});
+    });
+    vi.stubGlobal("fetch",fetcher);
+    await expect(ensureSquareCustomer(config,{...customerInput,matchEmailFallback:true})).resolves.toBe("prior-no-phone");
+    expect(createRequests(fetcher)).toHaveLength(0);
+  });
+
+  it.each([
+    {customers:[{id:"other-phone",email_address:"qa@nailiq.invalid",phone_number:"+16045550199"}]},
+    {customers:[{id:"malformed-phone",email_address:"qa@nailiq.invalid",phone_number:"not-a-phone"}]},
+    {customers:[{id:"first",email_address:"qa@nailiq.invalid"},{id:"second",email_address:"qa@nailiq.invalid"}]},
+    {customers:[{id:"missing-email"}]},
+  ])("never chooses an ambiguous or conflicting email fallback: %j",async({customers})=>{
+    const fetcher=vi.fn(async(_rawUrl:string|URL|Request,init?:RequestInit)=>{
+      const filter=JSON.parse(String(init?.body)).query.filter;
+      return response(200,filter.email_address ? {customers} : {});
+    });
+    vi.stubGlobal("fetch",fetcher);
+    await expect(ensureSquareCustomer(config,{...customerInput,matchEmailFallback:true})).rejects.toMatchObject({failure:{stage:"customer_search",retryability:"manual_review"}});
+    expect(createRequests(fetcher)).toHaveLength(0);
+  });
+
   it("does not create a customer when the phone search outcome is unknown", async () => {
     for (const searchFailure of [
       new TypeError("connection reset during customer search"),
@@ -104,7 +132,7 @@ describe("Square customer create idempotency", () => {
       vi.stubGlobal("fetch", fetcher);
 
       await expect(ensureSquareCustomer(config, customerInput)).rejects.toThrow(
-        "Square SearchCustomers returned an invalid response",
+        "square_customer_search_failed",
       );
       expect(createRequests(fetcher)).toHaveLength(0);
       vi.unstubAllGlobals();
@@ -120,7 +148,7 @@ describe("Square customer create idempotency", () => {
     vi.stubGlobal("fetch", fetcher);
 
     await expect(ensureSquareCustomer(config, customerInput)).rejects.toThrow(
-      "connection reset after request write",
+      "square_customer_create_failed",
     );
 
     const creates = createRequests(fetcher);
@@ -200,7 +228,7 @@ describe("Square customer create idempotency", () => {
     vi.stubGlobal("fetch", fetcher);
 
     await expect(ensureSquareCustomer(config, customerInput)).rejects.toThrow(
-      "Square CreateCustomer returned no id",
+      "square_customer_create_failed",
     );
     expect(createRequests(fetcher)).toHaveLength(1);
   });

@@ -1297,7 +1297,7 @@ export function BookingDetailDrawer({
                   ) : null}
                   {model.cardOnFile ? (
                     <span className="inline-flex items-center gap-1 rounded-full border border-emerald-400/40 bg-emerald-400/10 px-2 py-0.5 text-[11px] font-medium text-emerald-400" data-testid="drawer-card-on-file-badge">
-                      💳 {model.language === "vi" ? "Đã lưu thẻ" : "Card on file"}
+                      💳 {model.language === "vi" ? "Bảo vệ bằng thẻ đã kích hoạt" : "Card protection active"}
                       {model.noshowFeeLine
                         ? (model.language === "vi"
                             ? ` · phí no-show ${model.noshowFeeLine}`
@@ -1306,7 +1306,7 @@ export function BookingDetailDrawer({
                     </span>
                   ) : model.noshowCardRequired ? (
                     <span className="inline-flex items-center gap-1 rounded-full border border-amber-400/40 bg-amber-400/10 px-2 py-0.5 text-[11px] font-medium text-amber-400" data-testid="drawer-card-needed-badge">
-                      ⚠ {model.language === "vi" ? "Cần lưu thẻ — chưa có" : "Needs card — none yet"}
+                      ⚠ {model.language === "vi" ? "Yêu cầu thẻ — chưa lưu" : "Card required — not saved"}
                     </span>
                   ) : null}
                   {model.smsFailedAt ? (

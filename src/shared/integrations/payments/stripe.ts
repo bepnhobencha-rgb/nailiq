@@ -1,3 +1,4 @@
+import { assertCardCaptureActive } from "@/shared/booking/cardCapturePause";
 import "server-only";
 import type Stripe from "stripe";
 import type { PaymentProvider } from "./types";
@@ -39,6 +40,7 @@ export class StripeProvider implements PaymentProvider {
     idempotencyKey: string;
     cardReferenceId: string;
   }) {
+  assertCardCaptureActive();
     // Reuse an existing customer by exact email (immediate, no search lag); else
     // create one. Dedupe by email keeps a returning client's cards together.
     let customerId: string | null = null;

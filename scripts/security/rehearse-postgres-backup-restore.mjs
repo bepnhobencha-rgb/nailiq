@@ -83,13 +83,15 @@ function quoteIdent(value) {
   return `"${value.replaceAll('"', '""')}"`;
 }
 
+// PostgreSQL retains empty backend-specific temp namespaces after sessions end.
+// pg_dump omits them; they are not durable application schema or backup loss.
 function schemaManifest(url) {
   const manifest = query(
     url,
     `WITH schema_objects AS (
        SELECT 'schema' kind,n.nspname object_name,'' material
          FROM pg_catalog.pg_namespace n
-        WHERE n.nspname NOT IN ('pg_catalog','information_schema') AND n.nspname !~ '^pg_toast'
+        WHERE n.nspname NOT IN ('pg_catalog','information_schema') AND n.nspname !~ '^pg_toast' AND n.nspname !~ '^pg_temp_[0-9]+$'
        UNION ALL
        SELECT 'extension',e.extname,
               concat_ws('|',e.extversion,n.nspname)
@@ -105,7 +107,7 @@ function schemaManifest(url) {
          LEFT JOIN pg_catalog.pg_attrdef d ON d.adrelid=a.attrelid AND d.adnum=a.attnum
          LEFT JOIN pg_catalog.pg_collation coll ON coll.oid=a.attcollation AND a.attcollation<>0
         WHERE a.attnum>0 AND NOT a.attisdropped
-          AND n.nspname NOT IN ('pg_catalog','information_schema') AND n.nspname !~ '^pg_toast'
+          AND n.nspname NOT IN ('pg_catalog','information_schema') AND n.nspname !~ '^pg_toast' AND n.nspname !~ '^pg_temp_[0-9]+$'
           AND c.relkind IN ('r','p','v','m','S')
        UNION ALL
        SELECT 'constraint',n.nspname || '.' || c.relname || '.' || con.conname,
@@ -114,13 +116,13 @@ function schemaManifest(url) {
          FROM pg_catalog.pg_constraint con
          JOIN pg_catalog.pg_class c ON c.oid=con.conrelid
          JOIN pg_catalog.pg_namespace n ON n.oid=c.relnamespace
-        WHERE n.nspname NOT IN ('pg_catalog','information_schema') AND n.nspname !~ '^pg_toast'
+        WHERE n.nspname NOT IN ('pg_catalog','information_schema') AND n.nspname !~ '^pg_toast' AND n.nspname !~ '^pg_temp_[0-9]+$'
        UNION ALL
        SELECT 'index',n.nspname || '.' || c.relname,
               pg_catalog.pg_get_indexdef(c.oid)
          FROM pg_catalog.pg_class c JOIN pg_catalog.pg_namespace n ON n.oid=c.relnamespace
         WHERE c.relkind='i' AND n.nspname NOT IN ('pg_catalog','information_schema')
-          AND n.nspname !~ '^pg_toast'
+          AND n.nspname !~ '^pg_toast' AND n.nspname !~ '^pg_temp_[0-9]+$'
        UNION ALL
        SELECT 'trigger',n.nspname || '.' || c.relname || '.' || t.tgname,
               concat_ws('|',t.tgenabled,pg_catalog.pg_get_triggerdef(t.oid,true))
@@ -128,19 +130,19 @@ function schemaManifest(url) {
          JOIN pg_catalog.pg_class c ON c.oid=t.tgrelid
          JOIN pg_catalog.pg_namespace n ON n.oid=c.relnamespace
         WHERE NOT t.tgisinternal AND n.nspname NOT IN ('pg_catalog','information_schema')
-          AND n.nspname !~ '^pg_toast'
+          AND n.nspname !~ '^pg_toast' AND n.nspname !~ '^pg_temp_[0-9]+$'
        UNION ALL
        SELECT 'view',n.nspname || '.' || c.relname,
               pg_catalog.pg_get_viewdef(c.oid,true)
          FROM pg_catalog.pg_class c JOIN pg_catalog.pg_namespace n ON n.oid=c.relnamespace
         WHERE c.relkind IN ('v','m') AND n.nspname NOT IN ('pg_catalog','information_schema')
-          AND n.nspname !~ '^pg_toast'
+          AND n.nspname !~ '^pg_toast' AND n.nspname !~ '^pg_temp_[0-9]+$'
        UNION ALL
        SELECT 'enum',n.nspname || '.' || t.typname || '.' || e.enumlabel,
               e.enumsortorder::text
          FROM pg_catalog.pg_enum e JOIN pg_catalog.pg_type t ON t.oid=e.enumtypid
          JOIN pg_catalog.pg_namespace n ON n.oid=t.typnamespace
-        WHERE n.nspname NOT IN ('pg_catalog','information_schema') AND n.nspname !~ '^pg_toast'
+        WHERE n.nspname NOT IN ('pg_catalog','information_schema') AND n.nspname !~ '^pg_toast' AND n.nspname !~ '^pg_temp_[0-9]+$'
        UNION ALL
        SELECT 'publication',p.pubname,
               concat_ws('|',p.pubinsert,p.pubupdate,p.pubdelete,p.pubtruncate,p.pubviaroot)
@@ -164,7 +166,7 @@ function dataManifest(url) {
        JOIN pg_catalog.pg_namespace n ON n.oid=c.relnamespace
       WHERE c.relkind IN ('r','p')
         AND n.nspname NOT IN ('pg_catalog','information_schema')
-        AND n.nspname !~ '^pg_toast'
+        AND n.nspname !~ '^pg_toast' AND n.nspname !~ '^pg_temp_[0-9]+$'
       ORDER BY n.nspname,c.relname`,
   );
   const rows = relationRows ? relationRows.split("\n") : [];
@@ -187,6 +189,7 @@ function dataManifest(url) {
     `SELECT schemaname || E'\\t' || sequencename
        FROM pg_catalog.pg_sequences
       WHERE schemaname NOT IN ('pg_catalog','information_schema')
+        AND schemaname !~ '^pg_temp_[0-9]+$'
       ORDER BY schemaname,sequencename`,
   );
   for (const row of sequenceRows ? sequenceRows.split("\n") : []) {
@@ -256,6 +259,10 @@ function applicationManifest(url) {
 
 let restoreCreated = false;
 try {
+  // Reproduce a completed SQL rehearsal session before measuring the backup.
+  // Its temporary row/table disappear with this connection; the namespace may
+  // remain in pg_namespace and must not create a false schema-drift failure.
+  query(sourceUrl, "CREATE TEMP TABLE nailiq_backup_session_probe (id integer); INSERT INTO nailiq_backup_session_probe VALUES (1)");
   const server = query(maintenanceUrl, "SELECT current_setting('server_version_num') || '|' || current_database()");
   run(pgDump, ["--format=custom", "--compress=6", "--file", archive, sourceUrl.toString()]);
   run(pgRestore, ["--list", archive]);

@@ -152,9 +152,14 @@ describe("card_manage exposure and replay boundary", () => {
     forbidPattern(individualCreate, /throw new Error\(["']card_management_pending["']\)/, "post-commit card work can still reverse the booking result");
     forbidPattern(individualFlow, /card_management_pending/, "individual flow still sends a committed booking back to Confirm");
     requirePattern(individualCardSettlement, /card-capability[\s\S]{0,900}idempotencyKey:\s*input\.createIdempotencyKey/, "exchange does not carry the exact create key");
-    requirePattern(individualCardSettlement, /square-save-card[\s\S]{0,1300}cardManagementToken:\s*null,[\s\S]{0,120}cardManagementPending:\s*true/, "ambiguous card save does not become a non-retriable pending state");
+    requirePattern(individualCardSettlement, /square-save-card[\s\S]{0,1500}return \{ cardManagementToken, cardManagementPending: true \}/, "ambiguous card save loses its scoped recovery link");
     forbidPattern(individualCardSettlement, /square-save-card[\s\S]{0,1800}square-save-card/, "ambiguous card save can be blindly dispatched twice");
-    requirePattern(cardManagement, /attempt_replay[\s\S]{0,9000}attemptReplay[\s\S]{0,700}reconciliation_required[\s\S]{0,900}resolvePaymentProvider/, "a replayed in-flight card claim can reach the provider before reconciliation");
+    const saveFlow = cardManagement.slice(cardManagement.indexOf("export async function saveCardWithManagementCapability"),
+      cardManagement.indexOf("export async function createStripeSetupWithManagementCapability"));
+    const replayGuard = saveFlow.indexOf("if (claim.attemptReplay)");
+    const providerResolve = saveFlow.indexOf("await resolvePaymentProvider");
+    expect(replayGuard >= 0 && providerResolve > replayGuard).toBe(true);
+    requirePattern(saveFlow.slice(replayGuard, providerResolve), /return\s*\{[\s\S]*code:\s*["']reconciliation_required["']/, "a replayed in-flight card claim can reach the provider before reconciliation");
     requirePattern(individualFlow, /await acknowledgePublicBookingRequestId[\s\S]{0,1600}cardManagementPending:\s*result\.cardManagementPending[\s\S]{0,300}setStep\(["']done["']\)/, "committed booking identity is not acknowledged before the card-pending success view");
     requirePattern(individualFlow, /cardManagementPending:\s*result\.cardManagementPending[\s\S]{0,300}setStep\(["']done["']\)/, "committed booking does not carry card pending into Done");
     requirePattern(individualDone, /booking-card-pending-notice[\s\S]{0,400}cardManagementPendingNotice/, "Done does not explain the card-only pending state");

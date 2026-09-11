@@ -12,6 +12,7 @@ describe("Square card-on-file buyer verification boundary", () => {
       const source = readFileSync(path, "utf8");
 
       expect(source).toContain('intent: "STORE"');
+      expect(source).toMatch(/billingContact:\s*(\{\}|buildSquareStoreBillingContact\()/);
       expect(source).toContain("customerInitiated: true");
       expect(source).toContain("sellerKeyedIn: false");
       expect(source).not.toContain("verifyBuyer(");

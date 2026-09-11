@@ -1,5 +1,7 @@
 import "server-only";
 
+import { safeCardFailure } from "@/shared/integrations/payments/cardDeliveryFailure";
+
 import {
   getSquareConfig,
   listCardsByReferenceId,
@@ -13,6 +15,9 @@ type DueOperation = {
   salonId: string;
   provider: "square" | "stripe";
   providerReferenceKey: string;
+  expectedCustomerId: string | null;
+  expectedMerchantId: string | null;
+  expectedEnvironment: string | null;
 };
 
 const UUID_RE = /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i;
@@ -37,17 +42,21 @@ function parseDue(value: unknown): DueOperation | null {
   if (!UUID_RE.test(operationId) || !UUID_RE.test(attemptToken) ||
       !UUID_RE.test(salonId) || !provider ||
       providerReferenceKey !== `nq-card:${operationId}`) return null;
-  return { operationId, attemptToken, salonId, provider, providerReferenceKey };
+  return { operationId, attemptToken, salonId, provider, providerReferenceKey,
+    expectedCustomerId: typeof item?.expected_customer_id === "string" ? item.expected_customer_id : null,
+    expectedMerchantId: typeof item?.expected_merchant_id === "string" ? item.expected_merchant_id : null,
+    expectedEnvironment: typeof item?.expected_environment === "string" ? item.expected_environment : null };
 }
 
 async function complete(input: DueOperation & {
-  outcome: "found" | "not_found" | "manual_review";
+  outcome: "found" | "not_found" | "manual_review" | "multiple_matches" | "invalid_card" | "disabled_card" | "read_failed" | "config_unavailable";
   cardId?: string;
   customerId?: string;
   brand?: string;
   last4?: string;
 }): Promise<boolean> {
-  const { data, error } = await createServiceRoleClient().rpc(
+  try {
+    const { data, error } = await createServiceRoleClient().rpc(
     "complete_booking_card_save_reconciliation" as never,
     {
       p_operation_id: input.operationId,
@@ -60,7 +69,16 @@ async function complete(input: DueOperation & {
     } as never,
   );
   const result = record(Array.isArray(data) ? data[0] : data);
-  return !error && result?.ok === true;
+    if (!error) return result?.ok === true && (input.outcome !== "found" || result.code === "reconciled_saved");
+  } catch { /* Database response loss is not a provider read failure. */ }
+  try {
+    await createServiceRoleClient().rpc("record_booking_card_delivery_failure" as never, {
+      p_operation_id: input.operationId, p_attempt_token: input.attemptToken,
+      p_stage: "database_completion", p_code: "database_completion_uncertain", p_http_status: null,
+      p_square_codes: [], p_square_categories: [], p_retryability: "reconcile_first",
+    } as never);
+  } catch { /* Durable lease remains the retry boundary when DB is unavailable. */ }
+  return false;
 }
 
 /**
@@ -68,7 +86,7 @@ async function complete(input: DueOperation & {
  * token in this worker and no path to CreateCard, so response loss cannot
  * produce a duplicate card or booking.
  */
-export async function reconcileBookingCardSaveOperations(limit = 10): Promise<{
+export async function reconcileBookingCardSaveOperations(limit = 10, operationId?: string): Promise<{
   ok: boolean;
   processed: number;
   reconciled: number;
@@ -76,17 +94,18 @@ export async function reconcileBookingCardSaveOperations(limit = 10): Promise<{
 }> {
   const db = createServiceRoleClient();
   const { data, error } = await db.rpc(
-    "reconcile_stale_booking_card_save_operations" as never,
-    { p_limit: Math.min(Math.max(limit, 0), 10) } as never,
+    (operationId ? "claim_booking_card_save_reconciliation" : "reconcile_stale_booking_card_save_operations") as never,
+    (operationId ? { p_operation_id: operationId } : { p_limit: Math.min(Math.max(limit, 0), 10) }) as never,
   );
-  if (error || !Array.isArray(data)) {
+  const rows = operationId ? [data] : data;
+  if (error || !Array.isArray(rows)) {
     return { ok: false, processed: 0, reconciled: 0, unresolved: 1 };
   }
 
   let processed = 0;
   let reconciled = 0;
   let unresolved = 0;
-  for (const raw of data) {
+  for (const raw of rows) {
     const item = parseDue(raw);
     if (!item) {
       unresolved += 1;
@@ -99,35 +118,58 @@ export async function reconcileBookingCardSaveOperations(limit = 10): Promise<{
       continue;
     }
 
+    let cfg: Awaited<ReturnType<typeof getSquareConfig>>;
     try {
-      const cfg = await getSquareConfig(looseServiceClient(), item.salonId);
-      const cards = (await listCardsByReferenceId(cfg, item.providerReferenceKey))
-        .filter((card) => card.referenceId === item.providerReferenceKey);
-      if (cards.length === 0) {
-        if (await complete({ ...item, outcome: "not_found" })) unresolved += 1;
-        else unresolved += 1;
-        continue;
-      }
-      const card = cards.length === 1 ? cards[0] : null;
-      if (!card || !card.enabled || !card.cardId || !card.customerId ||
-          !card.brand || !/^\d{4}$/.test(card.last4)) {
-        await complete({ ...item, outcome: "manual_review" });
-        unresolved += 1;
-        continue;
-      }
-      const saved = await complete({
-        ...item,
-        outcome: "found",
-        cardId: card.cardId,
-        customerId: card.customerId,
-        brand: card.brand,
-        last4: card.last4,
-      });
-      if (saved) reconciled += 1;
-      else unresolved += 1;
+      cfg = await getSquareConfig(looseServiceClient(), item.salonId);
+      if ((item.expectedMerchantId && cfg.merchantId !== item.expectedMerchantId) ||
+          (item.expectedEnvironment && cfg.environment !== item.expectedEnvironment)) throw new Error("binding_changed");
     } catch {
-      // Provider/config read failed. Do not advance the durable attempt or
-      // mutate at the provider; a later cron invocation may safely read again.
+      await complete({ ...item, outcome: "config_unavailable" });
+      unresolved += 1;
+      continue;
+    }
+    try {
+      const cards = await listCardsByReferenceId(cfg, item.providerReferenceKey);
+      if (cards.some((card) => card.referenceId !== item.providerReferenceKey)) {
+        await complete({ ...item, outcome: "invalid_card" });
+      } else if (cards.length === 0) {
+        await complete({ ...item, outcome: "not_found" });
+      } else if (cards.length > 1) {
+        await complete({ ...item, outcome: "multiple_matches" });
+      } else {
+        const card = cards[0];
+        if (!card.cardId || !card.customerId || !card.brand || !/^\d{4}$/.test(card.last4) ||
+            (item.expectedCustomerId && card.customerId !== item.expectedCustomerId)) {
+          await complete({ ...item, outcome: "invalid_card" });
+        } else if (!card.enabled) {
+          // An exact, fully bound disabled receipt closes this attempted card
+          // lifecycle. Legacy/unbound or malformed reads never unlock re-entry.
+          const bound = item.expectedCustomerId === card.customerId &&
+            !!item.expectedMerchantId && item.expectedMerchantId === cfg.merchantId &&
+            card.merchantId === item.expectedMerchantId &&
+            !!item.expectedEnvironment && item.expectedEnvironment === cfg.environment;
+          await complete({ ...item, outcome: bound ? "disabled_card" : "invalid_card",
+            cardId: card.cardId, customerId: card.customerId, brand: card.brand, last4: card.last4 });
+        } else if (await complete({ ...item, outcome: "found", cardId: card.cardId,
+          customerId: card.customerId, brand: card.brand, last4: card.last4 })) {
+          reconciled += 1;
+          continue;
+        }
+      }
+      unresolved += 1;
+    } catch (error) {
+      const failure = safeCardFailure(error, "reconciliation");
+      // Separate failed provider reads from complete negative searches. Preserve
+      // the safe transport detail before releasing the lease, with no raw logs.
+      try {
+        await db.rpc("record_booking_card_delivery_failure" as never, {
+          p_operation_id: item.operationId, p_attempt_token: item.attemptToken,
+          p_stage: failure.stage, p_code: failure.code, p_http_status: failure.httpStatus,
+          p_square_codes: failure.squareCodes, p_square_categories: failure.squareCategories,
+          p_retryability: failure.retryability,
+        } as never);
+        await complete({ ...item, outcome: failure.code === "reconciliation_invalid_card" ? "invalid_card" : "read_failed" });
+      } catch { /* A lost completion acknowledgment leaves the lease to expire. */ }
       unresolved += 1;
     }
   }

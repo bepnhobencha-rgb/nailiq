@@ -95,6 +95,7 @@ DO $behavior$
 DECLARE v_confirm uuid; v_reschedule uuid; v_cancel uuid; v_past uuid; v_fee_cap uuid; v_short uuid;
   v_group uuid; v_result jsonb; v_replay jsonb; v_before bigint; v_after bigint;
   v_member_confirm uuid; v_member_cancel uuid; v_org_confirm uuid;
+  v_card_consent jsonb:=jsonb_build_object('policyVersion','nsp_'||repeat('a',64),'scope','booking_member','policyEn','QA consent','policyVi','QA consent','feeCents',0);
   v_card uuid; v_card_claim jsonb; v_card_save uuid; v_card_setup uuid; v_card_finalize uuid;
   v_card_exchange uuid;
   v_wait_token uuid; v_near_reschedule uuid;
@@ -361,29 +362,35 @@ BEGIN
      OR v_replay->>'provider_idempotency_key'<>v_card_claim->>'provider_idempotency_key' THEN
     RAISE EXCEPTION 'card save response-loss attempt is not replayable: %',v_replay;
   END IF;
-  UPDATE public.booking_card_save_operations SET created_at=transaction_timestamp()-interval '10 minutes'
+  PERFORM public.prepare_booking_card_save_dispatch((v_card_claim->>'operation_id')::uuid,
+    (v_card_claim->>'attempt_token')::uuid,transaction_timestamp(),v_card_consent);
+  PERFORM public.bind_booking_card_save_dispatch((v_card_claim->>'operation_id')::uuid,
+    (v_card_claim->>'attempt_token')::uuid,'customer_saved_d600','merchant_qa','sandbox');
+  UPDATE public.booking_card_save_operations SET next_reconcile_at=transaction_timestamp()-interval '1 minute',
+    created_at=transaction_timestamp()-interval '10 minutes'
   WHERE id=(v_card_claim->>'operation_id')::uuid;
   SELECT r INTO v_replay FROM public.reconcile_stale_booking_card_save_operations(10) r
   WHERE r->>'operation_id'=v_card_claim->>'operation_id' LIMIT 1;
-  IF v_replay->>'code'<>'reconcile_required'
-     OR v_replay->>'provider_idempotency_key'<>v_card_claim->>'provider_idempotency_key' THEN
+  IF v_replay->>'provider_reference_key' IS DISTINCT FROM 'nq-card:'||(v_card_claim->>'operation_id')
+     OR v_replay->>'expected_customer_id' IS DISTINCT FROM 'customer_saved_d600'
+     OR v_replay->>'attempt_token' IS NULL THEN
     RAISE EXCEPTION 'stale save operation was terminalized instead of recoverable: %',v_replay;
   END IF;
   v_result:=public.complete_booking_card_save_operation(
     (v_card_claim->>'operation_id')::uuid,(v_card_claim->>'attempt_token')::uuid,
-    'succeeded','square-card-create-d600','card_saved_d600','customer_saved_d600','visa','4242',
+    'succeeded','card_saved_d600','card_saved_d600','customer_saved_d600','VISA','4242',
     transaction_timestamp(),NULL,NULL);
   IF v_result->>'code'<>'invalid_completion' THEN
     RAISE EXCEPTION 'square save accepted missing consent material: %',v_result;
   END IF;
   v_result:=public.complete_booking_card_save_operation(
     (v_card_claim->>'operation_id')::uuid,(v_card_claim->>'attempt_token')::uuid,
-    'succeeded','square-card-create-d600','card_saved_d600','customer_saved_d600','visa','4242',
-    transaction_timestamp(),jsonb_build_object('policyText','QA consent','feeCents',0),NULL);
+    'succeeded','card_saved_d600','card_saved_d600','customer_saved_d600','VISA','4242',
+    transaction_timestamp(),v_card_consent,NULL);
   v_replay:=public.complete_booking_card_save_operation(
     (v_card_claim->>'operation_id')::uuid,(v_card_claim->>'attempt_token')::uuid,
-    'succeeded','square-card-create-d600','card_saved_d600','customer_saved_d600','visa','4242',
-    transaction_timestamp(),jsonb_build_object('policyText','QA consent','feeCents',0),NULL);
+    'succeeded','card_saved_d600','card_saved_d600','customer_saved_d600','VISA','4242',
+    transaction_timestamp(),v_card_consent,NULL);
   IF v_result->>'code'<>'saved' OR v_replay->>'idempotent'<>'true'
      OR (SELECT noshow_card_id||':'||noshow_card_last4 FROM public.bookings
        WHERE id='d6000000-0000-4000-8000-000000000013')<>'card_saved_d600:4242' THEN
@@ -419,10 +426,12 @@ BEGIN
   IF v_card_claim->>'code'<>'claimed' OR v_card_claim->>'mode'<>'save_card' THEN
     RAISE EXCEPTION 'stripe finalize pre-provider claim failed: %',v_card_claim;
   END IF;
+  PERFORM public.prepare_booking_card_save_dispatch((v_card_claim->>'operation_id')::uuid,
+    (v_card_claim->>'attempt_token')::uuid,transaction_timestamp(),v_card_consent);
   v_result:=public.complete_booking_card_save_operation(
     (v_card_claim->>'operation_id')::uuid,(v_card_claim->>'attempt_token')::uuid,
-    'succeeded','pm_d600','pm_d600','cus_d600','visa','4242',transaction_timestamp(),
-    jsonb_build_object('policyText','QA consent','feeCents',0),NULL);
+    'succeeded','pm_d600','pm_d600','cus_d600','VISA','4242',transaction_timestamp(),
+    v_card_consent,NULL);
   IF v_result->>'code'<>'saved' OR v_result->>'provider'<>'stripe'
      OR (SELECT noshow_card_id||':'||noshow_card_last4 FROM public.bookings
        WHERE id='d6000000-0000-4000-8000-000000000015')<>'pm_d600:4242' THEN
