@@ -3,6 +3,7 @@ import { expect, test } from "@playwright/test";
 import { cleanupTestSalon, getGroupBookingStamps } from "../helpers/db";
 import {
   fillMemberCard,
+  enterGroupConfirmAndAwaitQuote,
   gotoGroupFlow,
   nextOpenDateYmd,
   pickDateInCalendar,
@@ -22,7 +23,7 @@ test.describe("Group booking — happy path", () => {
   test("2-person group, BEST arrangement, successful submit", async ({
     page,
   }) => {
-    await gotoGroupFlow(page, SLUG);
+    await gotoGroupFlow(page, SLUG, { phone: "16045551234" });
 
     // ── STEP 1 — size ─────────────────────────────────────────
     await page.getByTestId("group-size-2").click();
@@ -67,19 +68,27 @@ test.describe("Group booking — happy path", () => {
     await expect(bestCard).toBeVisible({ timeout: 20_000 });
     await bestCard.click();
     await expect(bestCard).toHaveAttribute("aria-pressed", "true");
-    await page.getByTestId("group-arrangement-next").click();
+    await enterGroupConfirmAndAwaitQuote(page);
 
     // ── STEP 5 — confirm ─────────────────────────────────────
     await page
       .getByTestId("group-step-confirm-panel")
       .waitFor({ state: "visible" });
-    await page.getByTestId("group-primary-phone").fill("+16045551234");
+    await expect(page.getByTestId("group-primary-phone")).toHaveValue(
+      /604.*555.*1234/,
+    );
     // group-sms-consent only renders when consent was NOT already given at the
     // phone gate. gotoGroupFlow now checks the gate consent, so it may be absent.
     const groupSmsConsent = page.getByTestId("group-sms-consent");
     if (await groupSmsConsent.isVisible()) {
       await groupSmsConsent.check();
     }
+    await expect(page.getByTestId("group-authoritative-receipt")).toBeVisible({
+      timeout: 15_000,
+    });
+    await expect(page.getByTestId("group-confirm")).toBeEnabled({
+      timeout: 15_000,
+    });
     await page.getByTestId("group-confirm").click();
 
     // ── SUCCESS ─────────────────────────────────────────────
