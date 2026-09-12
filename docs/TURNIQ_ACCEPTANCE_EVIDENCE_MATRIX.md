@@ -50,8 +50,13 @@ gates. Existing live salons remain out of scope until separately approved.
 
 ## Verification snapshot for this local change
 
-- Current focused TurnIQ unit/invariant/security/component suite: **76 files,
-  430 tests PASS**.
+Fresh local rerun: **2026-09-05** on source SHA
+`8b0dc4a4e3a675a9f299cf112c3ce5e7c5e6a09d`. Hosted Preview and disposable-QA
+items below are retained as historical evidence from their original run; they
+are not presented as a current QA environment.
+
+- Current focused TurnIQ unit/invariant/security/component suite: **79 files,
+  454 tests PASS**.
 - TypeScript: **PASS**.
 - Focused ESLint for all touched executable files: **PASS**.
 - Next.js production build: **PASS**.
@@ -63,18 +68,31 @@ gates. Existing live salons remain out of scope until separately approved.
   QR lifecycle, customer check-in, rush-hour trust flow and supervised group
   timing. The two skipped cached-shell outage cases remain assigned to the
   mandatory physical-device gate.
-- Staff PIN migration plus additive FK-index hotfix: **applied to disposable QA
-  only**. RLS/ACL, role denial, five-attempt lockout, rotation, exact retry, and
+- Historical hosted Preview + disposable-QA SHADOW full-story check: **PASS in
+  the original verification run; not freshly repeatable on 2026-09-05 because
+  the referenced disposable-QA project no longer exists**. One newly
+  created synthetic waiting customer (no phone, email, card, payment, or
+  notification request) produced exactly one immutable shadow decision and one
+  matched comparison through the authenticated Receptionist Center. A second
+  identical page observation produced no duplicate. The test added zero TurnIQ
+  assignments/events and zero owner, staff-action, or customer-confirmation
+  outbox rows. The synthetic booking was retired, the QA copy was restored to
+  `supervised`, and the temporary receptionist session count returned to zero.
+- Historical Staff PIN migration plus additive FK-index hotfix evidence:
+  **applied to the former disposable QA only; not freshly repeatable on
+  2026-09-05**. RLS/ACL, role denial, five-attempt lockout, rotation, exact retry, and
   concurrent check-in evidence passed. A separate 12-staff QA transaction
   verified ordered positions 1–12, approved break/return position preservation,
   14 durable PIN receipts and 14 immutable events, then rolled back with zero
-  test rows remaining. Production is untouched.
-- Ten existing TurnIQ SQL lifecycle fixtures: **PASS on disposable QA inside
-  self-rolling-back transactions**. Coverage includes atomic group and staggered
+  test rows remaining. That historical QA run did not mutate Production.
+- Historical ten-fixture TurnIQ SQL lifecycle run: **PASS on the former
+  disposable QA inside self-rolling-back transactions; not freshly repeatable
+  on 2026-09-05**. Coverage includes atomic group and staggered
   group plans, business-day rollover, consented swaps, customer check-in,
   dispute/exception commands, multi-technician handoff, redo/repair, refusal
   safety, and privacy-safe skip reviews.
-- Supabase QA advisors after verification: **zero TurnIQ WARNING/ERROR findings**.
+- Historical Supabase QA advisors after verification: **zero TurnIQ
+  WARNING/ERROR findings in that run; not freshly repeatable on 2026-09-05**.
   Existing TurnIQ advisor entries are INFO-level hardening/performance guidance
   and are not treated as proof of pilot readiness.
 - Physical device and salon pilot: **not run**.
