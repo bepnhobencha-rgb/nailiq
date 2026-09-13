@@ -13,6 +13,7 @@ import {
 import { loadPublicBookingSequenceReadiness } from "@/shared/booking/bookingSequenceReadiness";
 import { sendBookingConfirmationEmail } from "@/shared/booking/sendBookingConfirmationEmail";
 import { settleCommittedBookingCardManagement } from "@/shared/booking/settleCommittedBookingCardManagement";
+import { committedCardRecoveryHref } from "@/shared/booking/committedCardRecovery";
 import { clientIp } from "@/shared/lib/inAppRateLimit";
 import { createServiceRoleClient } from "@/shared/lib/supabase/serviceRole";
 import { v1AllowsNoShowCardOnFile } from "@/shared/release/v1IntegrationScope";
@@ -256,7 +257,15 @@ async function finishSequenceCreate(
       }),
     );
   }
-  return json({ ...result, ...cardManagement }, 200);
+  const cardManagementRecoveryHref = cardManagement.cardManagementPending && !cardManagement.cardManagementToken
+    ? committedCardRecoveryHref({
+        salonId: intent.salonId,
+        bookingId: result.bookingId,
+        idempotencyKey: intent.requestId,
+        pricingFingerprint: result.quote.pricingFingerprint,
+      })
+    : null;
+  return json({ ...result, ...cardManagement, cardManagementRecoveryHref }, 200);
 }
 
 function sequenceCreateFailure(
@@ -265,6 +274,7 @@ function sequenceCreateFailure(
   const status = result.code === "invalid_request"
     ? 400
     : result.code === "otp_required" ||
+        result.code === "phone_verification_required" ||
         result.code === "invalid_otp_session" ||
         result.code === "otp_session_used" ||
         result.code === "otp_not_required"

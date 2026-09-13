@@ -6,7 +6,7 @@ import { trackAnthropicFetch } from "@/shared/ai/usageLedger";
 import { AI_TEXT_BACKGROUND_TIMEOUT_MS } from "@/shared/ai/anthropicProviderPolicy";
 import { inferReturnCadenceDays } from "@/shared/booking/returnRhythm";
 import { getSalonDisplayName } from "@/shared/dashboard/salonClientName";
-import { isFrontDeskRole } from "@/shared/lib/salonMemberRole";
+import { isFrontDeskRole, canViewClientSpend } from "@/shared/lib/salonMemberRole";
 import { loadSalonVipProfileIds } from "@/shared/dashboard/salonVipStatus";
 
 // ---------------------------------------------------------------------------
@@ -39,9 +39,9 @@ export type ClientProfile360 = {
     preferredStaffName: string | null;
   };
   stats: {
-    lifetimeSpentCents: number;
+    lifetimeSpentCents: number | null;
     visitCount: number;
-    avgTicketCents: number;
+    avgTicketCents: number | null;
     firstVisitAt: string | null;
     lastVisitAt: string | null;
     upcomingCount: number;
@@ -164,6 +164,7 @@ export async function loadClientProfile360(
   const ctx = await requireDeskRole(slug);
   if (!ctx) return { ok: false, error: "unauthorized" };
 
+  const canViewSpend = canViewClientSpend(ctx.role);
   const salonId = ctx.salon.id;
   const supabase = createServiceRoleClient();
 
@@ -270,6 +271,7 @@ export async function loadClientProfile360(
       .from("staff")
       .select("name")
       .eq("id", preferredStaffId)
+      .eq("salon_id", salonId)
       .maybeSingle();
     preferredStaffName =
       (stfRow as { name?: string | null } | null)?.name?.trim() ?? null;
@@ -332,7 +334,7 @@ export async function loadClientProfile360(
       serviceName: svcName,
       staffName,
       priceCents:
-        typeof b.price_cents === "number" ? b.price_cents : null,
+        canViewSpend && typeof b.price_cents === "number" ? b.price_cents : null,
       status: b.status,
       channel: b.booking_channel ?? null,
     };
@@ -384,7 +386,7 @@ export async function loadClientProfile360(
   // Prefer REAL money paid (synced from Square Payments) over the sum of booking
   // list-prices, which ignores tips, discounts, no-shows, walk-in upsells, etc.
   let spentCents = lifetimeSpentCents;
-  if (profileRow?.id) {
+  if (canViewSpend && profileRow?.id) {
     const { data: spendRow } = await supabase
       .from("salon_client_spend" as never)
       .select("total_spend_cents")
@@ -410,9 +412,9 @@ export async function loadClientProfile360(
   }
 
   const stats: ClientProfile360["stats"] = {
-    lifetimeSpentCents: spentCents,
+    lifetimeSpentCents: canViewSpend ? spentCents : null,
     visitCount,
-    avgTicketCents,
+    avgTicketCents: canViewSpend ? avgTicketCents : null,
     firstVisitAt,
     lastVisitAt,
     upcomingCount: upcoming.length,
@@ -728,7 +730,7 @@ export async function loadClientProfile360(
   //   ensures we only return a cached summary if it was generated in the
   //   requested language; otherwise null forces a fresh generation.
   let aiSummary: ClientProfile360["aiSummary"] = null;
-  if (clientProfileId) {
+  if (canViewSpend && clientProfileId) {
     const { data: summaryRow } = await supabase
       .from("client_ai_summaries" as never)
       .select("summary_text, next_action, visit_count, computed_at, lang")
@@ -775,7 +777,7 @@ export async function loadClientProfile360(
     timeline,
     upcoming,
     preferences,
-    pattern,
+    pattern: pattern && !canViewSpend ? { ...pattern, usualTotalCents: null } : pattern,
     loyalty,
     vouchers,
     reviews,
@@ -798,8 +800,8 @@ const HAIKU_MODEL = "claude-haiku-4-5-20251001";
  * for a client using Claude Haiku. Result is cached in the salon-scoped
  * `client_ai_summaries` table (PK salon_id + client_profile_id).
  *
- * Auth: same as loadClientProfile360 (owner/senior/admin/receptionist;
- * nail_tech denied).
+ * Auth: owner/senior/admin only. Summaries contain spend and share one
+ * salon cache, so receptionists cannot read or generate this financial text.
  *
  * @param lang - Language for the summary. Defaults to "vi". The model is
  *   instructed to respond in the requested language; the result is stored with
@@ -815,7 +817,7 @@ export async function generateClient360Summary(
 ): Promise<GenerateClient360SummaryResult> {
   // Auth gate
   const ctx = await requireDeskRole(slug);
-  if (!ctx) return { ok: false, error: "unauthorized" };
+  if (!ctx || !canViewClientSpend(ctx.role)) return { ok: false, error: "unauthorized" };
 
   const salonId = ctx.salon.id;
 

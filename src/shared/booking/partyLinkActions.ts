@@ -99,11 +99,11 @@ export type CreatePartyLinkResult =
 
 export type ClaimPartySlotResult =
   | { ok: true }
-  | { ok: false; reason: "not_found" | "expired" | "already_claimed" | "invalid_input" | "server_error" };
+  | { ok: false; reason: "not_found" | "expired" | "already_claimed" | "invalid_input" | "contact_change_requires_card_review" | "server_error" };
 
 export type EditPartyClaimResult =
   | { ok: true }
-  | { ok: false; reason: "not_found" | "expired" | "not_claimed" | "invalid_input" | "server_error" };
+  | { ok: false; reason: "not_found" | "expired" | "not_claimed" | "invalid_input" | "contact_change_requires_card_review" | "server_error" };
 
 export type SubmitPartyChangeResult =
   | { ok: true; changeRequestId: string }
@@ -487,6 +487,7 @@ export async function claimPartySlot(params: {
     if (code === "not_found") return { ok: false, reason: "not_found" };
     if (code === "expired") return { ok: false, reason: "expired" };
     if (code === "already_claimed") return { ok: false, reason: "already_claimed" };
+    if (code === "contact_change_requires_card_review") return { ok: false, reason: code };
     return { ok: false, reason: "server_error" };
   }
 
@@ -548,6 +549,7 @@ export async function editPartyClaimDetails(params: {
     if (code === "not_found")    return { ok: false, reason: "not_found" };
     if (code === "expired")      return { ok: false, reason: "expired" };
     if (code === "not_claimed")  return { ok: false, reason: "not_claimed" };
+    if (code === "contact_change_requires_card_review") return { ok: false, reason: code };
     return { ok: false, reason: "server_error" };
   }
 

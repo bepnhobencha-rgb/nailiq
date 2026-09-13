@@ -261,8 +261,8 @@ describe("MQA-0063..0075 authoritative payment acceptance", () => {
   it("validates but does not consume the salon-bound OTP session before taking a deposit", () => {
     requirePattern(depositRoute, /otpSessionId/, "deposit request must carry the already-verified OTP session");
     requirePattern(depositRoute, /phone_otp_enabled/, "OTP enforcement must come from the authoritative salon row");
-    requirePattern(depositRoute, /validate_phone_otp_session/, "deposit route must validate session, salon, and canonical phone together");
-    const validateAt = depositRoute.indexOf("validate_phone_otp_session");
+    requirePattern(depositRoute, /validate_booking_otp_session/, "deposit route must validate session, salon, and canonical phone together");
+    const validateAt = depositRoute.indexOf("validate_booking_otp_session");
     const materialAt = depositRoute.indexOf("claim_public_deposit_payment_operation");
     expect(validateAt, "OTP validation must exist").toBeGreaterThanOrEqual(0);
     expect(materialAt, "canonical deposit claim must exist").toBeGreaterThan(validateAt);

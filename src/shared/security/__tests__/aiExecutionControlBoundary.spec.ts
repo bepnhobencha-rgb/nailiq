@@ -1,3 +1,4 @@
+import { assertReleaseSchemaContract } from "@/shared/security/__tests__/releaseSchemaContract";
 import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
 import { describe, expect, it } from "vitest";
@@ -61,7 +62,7 @@ describe("AI execution control boundary", () => {
   });
 
   it("makes the recovery RPC a production-parity critical object", () => {
-    expect(parityCheck).toContain("functions: 560");
+    assertReleaseSchemaContract(parityCheck);
     expect(parityCheck).toContain('"control_ai_execution_job"');
   });
 });

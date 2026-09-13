@@ -3,6 +3,8 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 
 const mocks = vi.hoisted(() => ({
   createServiceRoleClient: vi.fn(),
+  loadCardProtectionExceptions: vi.fn(),
+  loadOwnerCardRemovalExceptions: vi.fn(),
   getDashboardWriteClient: vi.fn(),
   isReleaseFeatureVisible: vi.fn(),
   loadNoShowDashboard: vi.fn(),
@@ -13,7 +15,9 @@ const mocks = vi.hoisted(() => ({
 }));
 
 vi.mock("server-only", () => ({}));
-vi.mock("@/shared/booking/cardProtectionExceptionActions", () => ({ loadCardProtectionExceptions:vi.fn().mockResolvedValue({ok:true,items:[]}) }));
+vi.mock("@/shared/booking/cardProtectionExceptionActions", () => ({ loadCardProtectionExceptions:mocks.loadCardProtectionExceptions }));
+vi.mock("@/shared/booking/ownerCardRemovalActions", () => ({ loadOwnerCardRemovalExceptions:mocks.loadOwnerCardRemovalExceptions }));
+vi.mock("@/components/dashboard/OwnerCardRemovalExceptions", () => ({ OwnerCardRemovalExceptions:() => "CARD_REMOVAL_EXCEPTIONS" }));
 vi.mock("@/components/dashboard/CardProtectionExceptions", () => ({ CardProtectionExceptions:() => "CARD_PROTECTION_EXCEPTIONS" }));
 vi.mock("next/navigation", () => ({
   redirect: mocks.redirect,
@@ -98,6 +102,8 @@ function routeContext(
 describe("No-Show Protection page deep-link boundary", () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    mocks.loadCardProtectionExceptions.mockResolvedValue({ok:true,items:[]});
+    mocks.loadOwnerCardRemovalExceptions.mockResolvedValue({ok:true,items:[]});
     mocks.redirect.mockImplementation((href: string) => {
       throw new Error(`REDIRECT:${href}`);
     });
@@ -129,6 +135,8 @@ describe("No-Show Protection page deep-link boundary", () => {
       ).resolves.toBeTruthy();
       expect(mocks.createServiceRoleClient).toHaveBeenCalledOnce();
       expect(mocks.loadNoShowDashboard).toHaveBeenCalledWith("qa-salon");
+      expect(mocks.loadCardProtectionExceptions).toHaveBeenCalledWith("qa-salon");
+      expect(mocks.loadOwnerCardRemovalExceptions).toHaveBeenCalledWith("qa-salon");
     },
   );
 
@@ -154,12 +162,16 @@ describe("No-Show Protection page deep-link boundary", () => {
       });
       const html = renderToStaticMarkup(page);
 
+      expect(html).toContain("CARD_PROTECTION_EXCEPTIONS");
+      expect(html).toContain("CARD_REMOVAL_EXCEPTIONS");
       expect(html).toContain("GUIDED_POLICY_ONLY");
       expect(html).toContain("GUIDED_SETUP_RETURN");
       expect(html).not.toContain("LEGACY_NO_SHOW_HUB");
       expect(html).not.toContain("LEGACY_SQUARE_SYNC");
       expect(mocks.createServiceRoleClient).not.toHaveBeenCalled();
       expect(mocks.loadNoShowDashboard).not.toHaveBeenCalled();
+      expect(mocks.loadCardProtectionExceptions).toHaveBeenCalledWith("qa-salon");
+      expect(mocks.loadOwnerCardRemovalExceptions).toHaveBeenCalledWith("qa-salon");
     },
   );
 
@@ -172,6 +184,8 @@ describe("No-Show Protection page deep-link boundary", () => {
     });
     const html = renderToStaticMarkup(page);
 
+    expect(html).toContain("CARD_PROTECTION_EXCEPTIONS");
+    expect(html).toContain("CARD_REMOVAL_EXCEPTIONS");
     expect(html).toContain("LEGACY_NO_SHOW_HUB");
     expect(html).toContain("LEGACY_SQUARE_SYNC");
     expect(html).not.toContain("GUIDED_POLICY_ONLY");
@@ -191,6 +205,8 @@ describe("No-Show Protection page deep-link boundary", () => {
       ).rejects.toThrow("REDIRECT:/dashboard/qa-salon");
       expect(mocks.createServiceRoleClient).not.toHaveBeenCalled();
       expect(mocks.loadNoShowDashboard).not.toHaveBeenCalled();
+      expect(mocks.loadCardProtectionExceptions).not.toHaveBeenCalled();
+      expect(mocks.loadOwnerCardRemovalExceptions).not.toHaveBeenCalled();
     },
   );
 
@@ -209,6 +225,8 @@ describe("No-Show Protection page deep-link boundary", () => {
       ).rejects.toThrow("REDIRECT:/register");
       expect(mocks.createServiceRoleClient).not.toHaveBeenCalled();
       expect(mocks.loadNoShowDashboard).not.toHaveBeenCalled();
+      expect(mocks.loadCardProtectionExceptions).not.toHaveBeenCalled();
+      expect(mocks.loadOwnerCardRemovalExceptions).not.toHaveBeenCalled();
     },
   );
 });

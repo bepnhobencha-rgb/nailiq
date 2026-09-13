@@ -1,3 +1,4 @@
+import { assertReleaseSchemaContract } from "@/shared/security/__tests__/releaseSchemaContract";
 import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
 import { describe, expect, it } from "vitest";
@@ -107,9 +108,6 @@ describe("client-intelligence boundary", () => {
 
   it("updates the blank-database parity tripwire", () => {
     const parity = read("scripts/check-schema-parity.ts");
-    expect(parity).toContain("policies: 221");
-    expect(parity).toContain(
-      "const GRANTS = { anon: 56, authenticated: 78, service_role: 228 }",
-    );
+    assertReleaseSchemaContract(parity);
   });
 });

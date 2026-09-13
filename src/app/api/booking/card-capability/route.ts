@@ -1,6 +1,7 @@
 import { NextResponse } from "next/server";
 
-import { exchangePublicBookingCardManagementCapability } from "@/shared/booking/bookingManagementCapabilities";
+import { exchangePublicBookingCardManagementCapability, inspectBookingManagementCapability } from "@/shared/booking/bookingManagementCapabilities";
+import { parseCommittedBookingRecoveryReceipt, type CommittedBookingRecoveryReceipt } from "@/shared/booking/committedCardRecovery";
 import { ensureNoShowCardRequirement } from "@/shared/noshow/ensureNoShowCardRequirement";
 import { clientIp, durableRateLimitKey, isOverRateLimit } from "@/shared/lib/inAppRateLimit";
 import { readJsonObjectWithLimit } from "@/shared/security/readJsonObjectWithLimit";
@@ -70,6 +71,8 @@ export async function POST(request: Request) {
         : 503;
     return NextResponse.json({ ok: false, code: exchanged.code }, { status, headers: PRIVATE_HEADERS });
   }
+  const continuationScope = exchanged.capability.scopeKind === "organizer_own"
+    ? "group_organizer" : "individual";
   const requirement = await ensureNoShowCardRequirement(bookingId, { strict: true }).catch(() => null);
   if (!requirement) {
     await recordCommittedBookingCardPending({
@@ -77,11 +80,31 @@ export async function POST(request: Request) {
       bookingId,
       createIdempotencyKey: idempotencyKey,
       pricingFingerprint,
-      scope: "individual",
+      scope: continuationScope,
       stage: "assessment",
       reason: "assessment_unavailable",
     });
     return NextResponse.json({ ok: false, code: "management_unavailable" }, { status: 503, headers: PRIVATE_HEADERS });
+  }
+  let receipt: CommittedBookingRecoveryReceipt | null = null;
+  if (!requirement.required && body?.includeReceipt === true) {
+    // Read through the exchanged authority, never a public lookup by booking ID.
+    const inspected = await inspectBookingManagementCapability({
+      tokenId: exchanged.capability.tokenId, expectedAction: "card_manage",
+    }).catch(() => null);
+    if (inspected?.ok && inspected.inspection.context.bookingId.toLowerCase() === bookingId.toLowerCase() &&
+        inspected.inspection.context.salonId.toLowerCase() === salonId.toLowerCase() && inspected.inspection.booking.status === "confirmed") {
+      const booking = inspected.inspection.booking;
+      receipt = parseCommittedBookingRecoveryReceipt({
+        salonName: booking.salonName,
+        startTimeUtc: booking.startTimeUtc,
+        timezone: booking.salonTimezone,
+        services: booking.sequenceReceipt
+          ? booking.sequenceReceipt.segments.map((segment) => segment.serviceName)
+          : [booking.serviceName],
+      });
+    }
+    if (!receipt) return NextResponse.json({ ok: false, code: "management_unavailable" }, { status: 503, headers: PRIVATE_HEADERS });
   }
   if (requirement.required) {
     await recordCommittedBookingCardPending({
@@ -89,7 +112,7 @@ export async function POST(request: Request) {
       bookingId,
       createIdempotencyKey: idempotencyKey,
       pricingFingerprint,
-      scope: "individual",
+      scope: continuationScope,
       stage: "customer_action",
       reason: "card_required",
     });
@@ -99,7 +122,7 @@ export async function POST(request: Request) {
       bookingId,
       createIdempotencyKey: idempotencyKey,
       pricingFingerprint,
-      scope: "individual",
+      scope: continuationScope,
       reason: "card_not_required",
     });
   }
@@ -107,5 +130,6 @@ export async function POST(request: Request) {
     ok: true,
     required: requirement.required,
     token: requirement.required ? exchanged.capability.tokenId : null,
+    ...(receipt ? { receipt } : {}),
   }, { status: 200, headers: PRIVATE_HEADERS });
 }

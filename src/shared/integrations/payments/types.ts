@@ -36,6 +36,10 @@ export type CardDispatchBinding = {
   environment: "sandbox" | "production";
 };
 
+export type RemovalDispatchIdentity =
+  | { provider: "square"; merchantId: string; environment: "sandbox" | "production" }
+  | { provider: "stripe" };
+
 export interface ChargeResult {
   paymentId: string;
   status: string;
@@ -106,7 +110,10 @@ export interface PaymentProvider {
   /** Remove a saved card so it can never be charged again. Square disables the
    *  card; Stripe detaches the payment method. Required by the card networks'
    *  stored-credential rules (the cardholder must be able to cancel). */
-  removeSavedCard(input: { cardId: string; customerId: string }): Promise<{
+  removeSavedCard(input: { cardId: string; customerId: string;
+    /** Durable identity acknowledgment before any provider read/mutation. */
+    beforeRemovalDispatch?: (identity: RemovalDispatchIdentity) => Promise<void>;
+  }): Promise<{
     /** Exact provider object affected by the accepted removal. */
     providerReference: string;
   }>;

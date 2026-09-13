@@ -1,3 +1,4 @@
+import { assertReleaseSchemaContract } from "@/shared/security/__tests__/releaseSchemaContract";
 import { readFileSync } from "node:fs";
 import { describe, expect, it } from "vitest";
 
@@ -62,9 +63,6 @@ describe("reviews boundary", () => {
   it("updates blank-database parity tripwires", () => {
     const parity = read("scripts/check-schema-parity.ts");
     expect(parity).toContain("through 20260820105820");
-    expect(parity).toContain("policies: 221");
-    expect(parity).toContain(
-      "const GRANTS = { anon: 56, authenticated: 78, service_role: 228 }",
-    );
+    assertReleaseSchemaContract(parity);
   });
 });

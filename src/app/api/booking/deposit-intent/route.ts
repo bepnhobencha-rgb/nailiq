@@ -677,6 +677,11 @@ export async function POST(req: Request) {
   const clientEmail = body.clientEmail == null ? null : clean(body.clientEmail, 254);
   const comboId = nullableUuid(body.comboId);
   const voucherId = nullableUuid(body.voucherId);
+  const optionalOtpSessionId = body.otpSessionId == null || body.otpSessionId === ""
+    ? null
+    : typeof body.otpSessionId === "string" && UUID_RE.test(body.otpSessionId.trim())
+      ? body.otpSessionId.trim()
+      : undefined;
   const addonServiceIds = Array.isArray(body.addonServiceIds)
     ? body.addonServiceIds.map((value) => clean(value, 36))
     : [];
@@ -685,7 +690,8 @@ export async function POST(req: Request) {
     !startTimeUtc || !endTimeUtc || !Number.isFinite(Date.parse(startTimeUtc)) ||
     !Number.isFinite(Date.parse(endTimeUtc)) || Date.parse(endTimeUtc) <= Date.parse(startTimeUtc) ||
     !HASH_RE.test(expectedPricingFingerprint) || !clientPhone ||
-    comboId === undefined || voucherId === undefined || addonServiceIds.length > 20 ||
+    comboId === undefined || voucherId === undefined || optionalOtpSessionId === undefined ||
+    addonServiceIds.length > 20 ||
     addonServiceIds.some((id) => !UUID_RE.test(id)) ||
     (clientEmail !== null && (!clientEmail || !clientEmail.includes("@")))
   ) return noStore(400, { error: "bad_request" });
@@ -704,7 +710,7 @@ export async function POST(req: Request) {
     if (!UUID_RE.test(otpSessionId)) return noStore(401, { error: "deposit_not_authorized" });
     try {
       const { data: otpValid, error: otpError } = await db.rpc(
-        "validate_phone_otp_session",
+        "validate_booking_otp_session",
         { p_session_id: otpSessionId, p_salon_id: salonId, p_phone: clientPhone },
       );
       if (otpError || otpValid !== true) {
@@ -729,6 +735,7 @@ export async function POST(req: Request) {
     p_apply_email_discount: body.applyEmailDiscount === true,
     p_booking_idempotency_key: bookingRequestId,
     p_expected_pricing_fingerprint: expectedPricingFingerprint,
+    p_otp_session_id: optionalOtpSessionId,
   };
   let loaded: { data: unknown; error: unknown };
   try {
@@ -737,6 +744,8 @@ export async function POST(req: Request) {
     return noStore(503, { error: "deposit_unavailable" });
   }
   const loadedRow = rpcRow(loaded.data);
+  const phoneVerificationRequired = loadedRow?.success === false &&
+    loadedRow.code === "phone_verification_required";
   if (loaded.error) return noStore(503, { error: "deposit_unavailable" });
   let material = parsePublicDepositPaymentMaterial(
     loadedRow?.material,
@@ -762,6 +771,10 @@ export async function POST(req: Request) {
       return noStore(503, { error: "deposit_unavailable" });
     }
     const persisted = rpcRow(preclaimed.data);
+    if (!preclaimed.error && persisted?.success === false &&
+      persisted.code === "phone_verification_required") {
+      return noStore(403, { error: "phone_verification_required" });
+    }
     if (
       !preclaimed.error && persisted?.success === false &&
       persisted.code === "deposit_not_required"
@@ -801,10 +814,16 @@ export async function POST(req: Request) {
   if (claimed.error) return noStore(503, { error: "deposit_unavailable" });
   let claim = parseClaimedPublicDepositPaymentOperation(claimed.data);
   const claimRow = rpcRow(claimed.data);
+  if (claimRow?.success === false && claimRow.code === "phone_verification_required") {
+    return noStore(403, { error: "phone_verification_required" });
+  }
   if (
     !claim &&
     ["reconciliation_required", "in_flight", "intent_in_flight"].includes(String(claimRow?.code ?? ""))
   ) {
+    // Do not consume a reconciliation attempt/lease if this request cannot
+    // perform its provider read with the expired incentive authority.
+    if (phoneVerificationRequired) return noStore(503, { error: "deposit_pending" });
     const operationId = clean(claimRow?.operation_id, 36);
     if (!UUID_RE.test(operationId)) return noStore(503, { error: "deposit_unavailable" });
     try {
@@ -820,6 +839,9 @@ export async function POST(req: Request) {
     }
   }
   if (claim) {
+    // Existing unknown payment authority may be read/reconciled, but expired
+    // incentive proof cannot authorize a new intent/capability dispatch here.
+    if (phoneVerificationRequired) return noStore(503, { error: "deposit_pending" });
     return claim.material.provider === "square"
       ? issueSquarePaymentCapability(db, claim, paymentRequestId)
       : prepareStripeIntent(db, claim, paymentRequestId);
@@ -850,6 +872,10 @@ export async function POST(req: Request) {
         {},
         { stripeAccount: replayMaterial.providerMaterial.providerAccountId },
       );
+      if (phoneVerificationRequired &&
+        ["requires_payment_method", "requires_action"].includes(intent.status)) {
+        return noStore(403, { error: "phone_verification_required" });
+      }
       const finalizeToken = derivePublicDepositFinalizeToken(operationId, paymentRequestId);
       const resumed = await db.rpc("resume_public_deposit_customer_confirmation", {
         p_operation_id: operationId,

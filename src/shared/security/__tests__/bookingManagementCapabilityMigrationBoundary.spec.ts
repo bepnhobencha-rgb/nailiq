@@ -1,3 +1,4 @@
+import { assertReleaseSchemaContract } from "@/shared/security/__tests__/releaseSchemaContract";
 import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
 import { describe, expect, it } from "vitest";
@@ -85,11 +86,7 @@ describe("MQA-0099 database capability boundary", () => {
       "rehearse-booking-management-capabilities-concurrency.mjs",
       "rehearse-waitlist-claim-capabilities.sql",
       "rehearse-waitlist-claim-capabilities-concurrency.mjs"]) expect(workflow).toContain(proof);
-    expect(parity).toContain("tables: 241");
-    expect(parity).toContain("columns: 3734");
-    expect(parity).toContain("functions: 560");
-    expect(parity).toContain("indexes: 992");
-    expect(parity).toContain("service_role: 228");
+    assertReleaseSchemaContract(parity);
   });
 
   it("keeps the freed-slot auto-book fixture inside salon hours at every wall-clock time", () => {

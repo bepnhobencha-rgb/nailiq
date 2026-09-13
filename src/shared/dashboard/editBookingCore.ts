@@ -104,11 +104,8 @@ export type EditBookingError =
   | "server_error"
   /** Resource-mode salon: every bed/chair is occupied for the new time. */
   | "no_resource_available"
-  /** Caller's `salon_members.role` is not allowed to edit (e.g. `nail_tech`).
-   * Existing `EditBookingForm` switch falls through to the generic server-
-   * error message, which is fine — the UI already hides the form for that
-   * role; this code path only fires if a non-permitted caller hits the
-   * action directly (devtools / replayed request). */
+  /** Session or salon role no longer authorizes editing. An open form can
+   * outlive a membership change, so the UI must explain the access denial. */
   | "unauthorized";
 
 export type EditBookingResult =

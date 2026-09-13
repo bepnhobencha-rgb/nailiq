@@ -17,7 +17,8 @@ import {
  * configured Twilio-side, and leaning on Twilio for the fallback when Twilio's
  * SMS is the thing failing is fragile. So we mint + verify our own 6-digit code
  * and email it through Resend (the working channel). On success the caller mints
- * the SAME `phone_otp_sessions` row the SMS path creates — downstream unchanged.
+ * a booking-scoped `phone_otp_sessions` row with verified_channel=email.
+ * Email proof never grants phone ownership, saved-card reuse or profile access.
  *
  * Security: only the HMAC of the code is stored; codes expire in 10 min; max 5
  * attempts; sends are rate-limited per (salon, phone). Constant-time compare.
@@ -111,7 +112,7 @@ export async function createAndSendEmailOtp(args: {
     delivery_attempt_id: attempt.attemptId,
   } as never);
   if (insErr) {
-    console.error("[emailOtp] insert", insErr);
+    console.error("[emailOtp] otp_code_store_failed");
     await completeBookingOtpDeliveryAttempt({
       attemptId: attempt.attemptId,
       status: "failed",
@@ -188,56 +189,56 @@ export async function checkEmailOtp(args: {
   const signingSecret = secret();
   if (!signingSecret) return { ok: false, error: "server_misconfigured" };
   const supabase = createServiceRoleClient();
-  const { data } = await supabase
-    .from("email_otp_codes" as never)
-    .select("id, code_hash, attempts, expires_at, delivery_attempt_id")
-    .eq("salon_id", args.salonId)
-    .eq("phone", args.phone)
-    .eq("email", email)
-    .is("consumed_at", null)
-    .gt("expires_at", new Date().toISOString())
-    .order("created_at", { ascending: false })
-    .limit(1)
-    .maybeSingle();
-
-  const row = data as
-    | {
-        id: string;
-        code_hash: string;
-        attempts: number;
-        expires_at: string;
-        delivery_attempt_id?: string | null;
-      }
-    | null;
-  if (!row) return { ok: false, error: "expired_or_max_attempts" };
-
-  // Out of attempts → consume + reject.
-  if (row.attempts >= MAX_ATTEMPTS) {
-    await supabase
+  // Each request must win a conditional write before it can approve a code
+  // or count a wrong guess. Re-read after a competing verifier advances the
+  // counter; never lose increments or approve a zero-row/failed consumption.
+  for (let retry = 0; retry <= MAX_ATTEMPTS; retry++) {
+    const { data, error: readError } = await supabase
       .from("email_otp_codes" as never)
-      .update({ consumed_at: new Date().toISOString() } as never)
-      .eq("id", row.id);
-    return { ok: false, error: "expired_or_max_attempts" };
-  }
+      .select("id, code_hash, attempts, expires_at, delivery_attempt_id")
+      .eq("salon_id", args.salonId)
+      .eq("phone", args.phone)
+      .eq("email", email)
+      .is("consumed_at", null)
+      .gt("expires_at", new Date().toISOString())
+      .order("created_at", { ascending: false })
+      .limit(1)
+      .maybeSingle();
+    if (readError) return { ok: false, error: "server_error" };
+    const row = data as {
+      id: string;
+      code_hash: string;
+      attempts: number;
+      delivery_attempt_id?: string | null;
+    } | null;
+    if (!row || row.attempts >= MAX_ATTEMPTS) {
+      return { ok: false, error: "expired_or_max_attempts" };
+    }
 
-  const match = constantTimeEqual(row.code_hash, hashCode(code, signingSecret));
-  if (!match) {
-    await supabase
+    const match = constantTimeEqual(row.code_hash, hashCode(code, signingSecret));
+    const exhausted = !match && row.attempts + 1 >= MAX_ATTEMPTS;
+    const { data: written, error: writeError } = await supabase
       .from("email_otp_codes" as never)
-      .update({ attempts: row.attempts + 1 } as never)
-      .eq("id", row.id);
-    return { ok: false, error: "invalid_code" };
+      .update({
+        ...(!match ? { attempts: row.attempts + 1 } : {}),
+        ...(match || exhausted ? { consumed_at: new Date().toISOString() } : {}),
+      } as never)
+      .eq("id", row.id)
+      .eq("salon_id", args.salonId)
+      .eq("phone", args.phone)
+      .eq("email", email)
+      .eq("attempts", row.attempts)
+      .is("consumed_at", null)
+      .gt("expires_at", new Date().toISOString())
+      .select("id")
+      .maybeSingle();
+    if (writeError) return { ok: false, error: "server_error" };
+    if (!written) continue;
+    return match
+      ? { ok: true, deliveryAttemptId: row.delivery_attempt_id ?? undefined }
+      : { ok: false, error: "invalid_code" };
   }
-
-  // Success — consume so the code can't be reused.
-  await supabase
-    .from("email_otp_codes" as never)
-    .update({ consumed_at: new Date().toISOString() } as never)
-    .eq("id", row.id);
-  return {
-    ok: true,
-    deliveryAttemptId: row.delivery_attempt_id ?? undefined,
-  };
+  return { ok: false, error: "expired_or_max_attempts" };
 }
 
 /** The code email itself (big code, bilingual, CASL footer). */
@@ -329,7 +330,7 @@ async function sendOtpCodeEmail(input: {
       { idempotencyKey: `booking-otp/${input.deliveryAttemptId}` },
     );
     if (error) {
-      console.error("[emailOtp] resend", error);
+      console.error("[emailOtp] resend_rejected");
       return { ok: false, error: "resend_rejected", outcome: "failed_pre_acceptance" };
     }
     const providerMessageId = data?.id?.trim() ?? "";
@@ -337,8 +338,8 @@ async function sendOtpCodeEmail(input: {
       return { ok: false, error: "provider_response_unverified", outcome: "unknown" };
     }
     return { ok: true, providerMessageId, outcome: "accepted" };
-  } catch (e) {
-    console.error("[emailOtp] resend threw", e);
+  } catch {
+    console.error("[emailOtp] provider_response_unknown");
     return { ok: false, error: "provider_response_unknown", outcome: "unknown" };
   }
 }

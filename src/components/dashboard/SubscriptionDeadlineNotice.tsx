@@ -1,11 +1,15 @@
 "use client";
 
+import Link from "next/link";
+import { v1AllowsAutomatedSubscriptionBilling } from "@/shared/release/v1IntegrationScope";
+
 type Props = {
   salonName: string;
   offerUrl: string;
 };
 
 export function SubscriptionDeadlineNotice({ salonName, offerUrl }: Props) {
+  const automatedBilling = v1AllowsAutomatedSubscriptionBilling();
   return (
     <main className="fixed inset-0 z-[100] flex items-center justify-center bg-black/70 px-4 py-8 backdrop-blur-sm">
       <section
@@ -21,16 +25,19 @@ export function SubscriptionDeadlineNotice({ salonName, offerUrl }: Props) {
           Subscription required · Cần đăng ký để tiếp tục
         </h1>
         <p className="mt-4 text-sm leading-6 text-black/68">
-          Dashboard access is paused because the July 31 subscription deadline has passed. Complete secure payment to restore access automatically.
-          {" · "}
-          Dashboard đang tạm khóa vì hạn đăng ký ngày 31/07 đã qua. Hoàn tất thanh toán bảo mật để tự động mở lại.
+          {automatedBilling
+            ? "Dashboard access is paused. Complete secure payment to restore access automatically. · Dashboard đang tạm khóa. Hoàn tất thanh toán bảo mật để tự động mở lại."
+            : "Dashboard access is paused. Contact NailIQ to confirm your subscription and arrange access. Billing is handled with our team. · Dashboard đang tạm khóa. Liên hệ NailIQ để xác nhận gói và hỗ trợ quyền truy cập. Đội ngũ NailIQ hỗ trợ thanh toán trực tiếp."}
         </p>
-        <a
-          href={offerUrl}
+        <Link
+          href={automatedBilling ? offerUrl : "/contact"}
+          data-testid="subscription-deadline-next"
           className="mt-7 inline-flex min-h-12 w-full items-center justify-center rounded-xl bg-[#153e2a] px-5 py-3 font-semibold text-white"
         >
-          Review agreement &amp; pay · Xem hợp đồng và thanh toán
-        </a>
+          {automatedBilling
+            ? "Review agreement & pay · Xem hợp đồng và thanh toán"
+            : "Contact NailIQ · Liên hệ NailIQ"}
+        </Link>
         <p className="mt-4 text-center text-xs leading-5 text-black/45">
           Public website and customer booking remain available · Website và đặt lịch của khách vẫn hoạt động
         </p>

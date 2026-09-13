@@ -132,6 +132,10 @@ export async function POST(request: Request) {
   const body = await readJsonObjectWithLimit(request, 12_288);
   if (!body) return json({ success: false, code: "invalid_request" }, 400);
 
+  if (body.replayOnly !== undefined && typeof body.replayOnly !== "boolean") {
+    return json({ success: false, code: "invalid_request" }, 400);
+  }
+  const replayOnly = body.replayOnly === true;
   const salonId = string(body, "salonId", 36);
   const serviceId = string(body, "serviceId", 36);
   const staffId = string(body, "staffId", 36);
@@ -144,6 +148,7 @@ export async function POST(request: Request) {
   const resourceId = nullableString(body, "resourceId", 36);
   const comboId = nullableString(body, "comboId", 36);
   const voucherId = nullableString(body, "voucherId", 36);
+  const otpSessionId = nullableString(body, "otpSessionId", 36);
   const idempotencyKey = string(body, "idempotencyKey", 36);
   const pricingFingerprint = string(body, "pricingFingerprint", 64);
   const paymentOperationId = string(body, "paymentOperationId", 36);
@@ -163,6 +168,7 @@ export async function POST(request: Request) {
     (resourceId !== null && !UUID_RE.test(resourceId)) ||
     (comboId !== null && !UUID_RE.test(comboId)) ||
     (voucherId !== null && !UUID_RE.test(voucherId)) ||
+    (body.otpSessionId != null && (!otpSessionId || !UUID_RE.test(otpSessionId))) ||
     !idempotencyKey || !UUID_RE.test(idempotencyKey) ||
     !pricingFingerprint || !HASH_RE.test(pricingFingerprint) ||
     !paymentOperationId || !UUID_RE.test(paymentOperationId) ||
@@ -186,7 +192,9 @@ export async function POST(request: Request) {
 
   let result: { data: unknown; error: unknown };
   try {
-    result = await db.rpc("create_public_booking_with_deposit_payment", {
+    result = await db.rpc(replayOnly
+      ? "replay_public_booking_with_deposit_payment"
+      : "create_public_booking_with_deposit_payment", {
       p_salon_id: salonId,
       p_service_id: serviceId,
       p_staff_id: staffId,
@@ -207,6 +215,7 @@ export async function POST(request: Request) {
       p_payment_operation_id: paymentOperationId,
       p_payment_request_id: paymentRequestId,
       p_expected_payment_material_fingerprint: paymentMaterialFingerprint,
+      p_otp_session_id: otpSessionId,
     });
   } catch {
     return json({ success: false, code: "booking_unavailable" }, 503);
@@ -214,6 +223,16 @@ export async function POST(request: Request) {
   if (result.error) return json({ success: false, code: "booking_unavailable" }, 503);
   const resultRow = row(result.data);
   if (!resultRow) return json({ success: false, code: "booking_unavailable" }, 503);
+
+  // Recovery must remain replay-only even if a malformed backend result is
+  // returned. Never turn an unbound operation into create or compensation work.
+  if (replayOnly && (resultRow.success !== true || resultRow.idempotent !== true ||
+    resultRow.code !== "booking_payment_replay" ||
+    resultRow.operation_id !== paymentOperationId ||
+    resultRow.material_fingerprint !== paymentMaterialFingerprint ||
+    resultRow.payment_status !== "succeeded")) {
+    return json({ success: false, code: "booking_recovery_required" }, 409);
+  }
 
   if (resultRow.success === true) {
     const booking = row(resultRow.booking);
@@ -226,6 +245,11 @@ export async function POST(request: Request) {
       idempotent: resultRow.idempotent === true,
       booking_id: resultRow.booking_id,
       booking,
+      ...(replayOnly ? {
+        operation_id: resultRow.operation_id,
+        material_fingerprint: resultRow.material_fingerprint,
+        payment_status: resultRow.payment_status,
+      } : {}),
     }, 200);
   }
 

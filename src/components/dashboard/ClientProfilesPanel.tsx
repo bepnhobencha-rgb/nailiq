@@ -219,7 +219,7 @@ function ClientDetailBody({
           {messages.totalSpent}
         </span>{" "}
         <span className="font-medium text-nq-foreground">
-          {formatDollars(row.totalSpentCents)}
+          {row.totalSpentCents === null ? "—" : formatDollars(row.totalSpentCents)}
         </span>
       </p>
 
@@ -944,7 +944,7 @@ function ClientCard({
           <Stat label={messages.statVisits} value={String(row.visitCount)} />
           <Stat
             label={messages.statSpent}
-            value={formatDollarsCompact(row.totalSpentCents)}
+            value={row.totalSpentCents === null ? "—" : formatDollarsCompact(row.totalSpentCents)}
           />
           <Stat label={messages.statLastVisit} value={lastVisitDisplay} />
         </dl>
@@ -1185,7 +1185,7 @@ function ClientDetailsRow({
 
         {/* Spent */}
         <td className="px-4 py-3 text-right tabular-nums text-sm text-nq-foreground">
-          {formatDollarsCompact(row.totalSpentCents)}
+          {row.totalSpentCents === null ? "—" : formatDollarsCompact(row.totalSpentCents)}
         </td>
 
         {/* VIP */}

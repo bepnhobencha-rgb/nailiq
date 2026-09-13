@@ -405,6 +405,7 @@ describe("public group pricing route boundaries", () => {
       idempotent: true,
       cardManagementToken: null,
       cardManagementPending: false,
+      cardManagementRecoveryHref: null,
       pricing: { authoritative: pricing },
     });
     expect(mocks.serialize).toHaveBeenCalledWith(pricing);
@@ -475,6 +476,7 @@ describe("public group pricing route boundaries", () => {
       ok: true,
       cardManagementToken: "b1111111-1111-4111-8111-111111111111",
       cardManagementPending: false,
+      cardManagementRecoveryHref: null,
     });
     expect(mocks.saveCard).toHaveBeenCalledWith({
       tokenId: "b1111111-1111-4111-8111-111111111111",
@@ -485,16 +487,17 @@ describe("public group pricing route boundaries", () => {
     });
   });
 
-  it("acknowledges a committed booking when required card management is pending", async () => {
+  it.each(["rejected", "thrown"])("acknowledges a committed booking when card capability is %s", async (failure) => {
     mocks.create.mockResolvedValueOnce({
       ok: true,
       groupId: "81111111-1111-4111-8111-111111111111",
       bookingIds: ["91111111-1111-4111-8111-111111111111", "a1111111-1111-4111-8111-111111111111"],
       idempotent: true,
-      pricing: { receipt: "create" },
+      pricing: { receipt: "create", pricingFingerprint: "a".repeat(64) },
     });
     mocks.ensureCard.mockResolvedValueOnce({ required: true, feeCents: 2500 });
-    mocks.mintCard.mockResolvedValueOnce({ ok: false, code: "management_unavailable" });
+    if (failure === "thrown") mocks.mintCard.mockRejectedValueOnce(new Error("network"));
+    else mocks.mintCard.mockResolvedValueOnce({ ok: false, code: "management_unavailable" });
     const response = await createPost(request("group-create", {
       ...validBody,
       idempotencyKey: "61111111-1111-4111-8111-111111111111",
@@ -512,8 +515,10 @@ describe("public group pricing route boundaries", () => {
       idempotent: true,
       cardManagementToken: null,
       cardManagementPending: true,
-      pricing: { authoritative: { receipt: "create" } },
+      cardManagementRecoveryHref: `/booking/recover-card#recover=${validBody.salonId}.91111111-1111-4111-8111-111111111111.61111111-1111-4111-8111-111111111111.${"a".repeat(64)}`,
+      pricing: { authoritative: { receipt: "create", pricingFingerprint: "a".repeat(64) } },
     });
+    expect(mocks.recordCardPending).toHaveBeenLastCalledWith(expect.objectContaining({ scope: "group_organizer", stage: "capability", reason: "capability_unavailable" }));
     expect(mocks.saveCard).not.toHaveBeenCalled();
   });
 
@@ -564,7 +569,7 @@ describe("public group pricing route boundaries", () => {
       groupId: "81111111-1111-4111-8111-111111111111",
       bookingIds: ["91111111-1111-4111-8111-111111111111", "a1111111-1111-4111-8111-111111111111"],
       idempotent: false,
-      pricing: { receipt: "create" },
+      pricing: { receipt: "create", pricingFingerprint: "a".repeat(64) },
     });
     mocks.ensureCard.mockResolvedValueOnce({ required: true, feeCents: 2500 });
     mocks.saveCard.mockRejectedValueOnce(new Error("unexpected transport failure"));

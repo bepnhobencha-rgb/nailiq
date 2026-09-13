@@ -193,6 +193,7 @@ for (const lang of ["en", "vi"] as const) {
 
   test(`${lang}: a new email signup confirms and creates a private 14-day salon`, async ({
     page,
+    browser,
   }) => {
     const email = `e2e-signup-${randomUUID()}@example.com`;
     const password = `Aa1!${randomBytes(24).toString("base64url")}`;
@@ -347,6 +348,67 @@ for (const lang of ["en", "vi"] as const) {
       await expect(page.locator("main")).toBeVisible();
       expect(errors).toEqual([]);
       expect(setupHomePrefetches).toEqual([]);
+
+      // A new browser has no signup session. Returning owners must reach the
+      // same workspace without provisioning another salon or restarting trial.
+      const returning = await browser.newContext({
+        ...(test.info().project.name === "mobile" ? devices["iPhone 14"] : {}),
+        ignoreHTTPSErrors: true,
+        locale: "en-US",
+      });
+      await withLocalAuthCleanup(async () => {
+        await returning.addInitScript(
+          (language) => localStorage.setItem("nailiq-user-lang", language),
+          lang,
+        );
+        const login = await returning.newPage();
+        const loginErrors: string[] = [];
+        let loginPhase = "open_login";
+        login.on("pageerror", (error) => loginErrors.push(`${loginPhase}: ${error.message}`));
+        const workerRequests: Array<{ phase: string; event: string; status?: number; cancelled?: boolean }> = [];
+        login.on("response", (response) => {
+          if (new URL(response.url()).pathname === "/nailiq-sw.js") {
+            workerRequests.push({ phase: loginPhase, event: "response", status: response.status() });
+          }
+        });
+        login.on("requestfailed", (request) => {
+          if (new URL(request.url()).pathname === "/nailiq-sw.js") {
+            workerRequests.push({ phase: loginPhase, event: "requestfailed", cancelled: /cancel|abort/i.test(request.failure()?.errorText ?? "") });
+          }
+        });
+        await login.goto(localAuthHttpsOrigin + "/login");
+        await expect(login.getByTestId("password-signin-submit")).toBeEnabled();
+        await login.locator('input[inputmode="email"]').fill(email);
+        await login.locator('input[type="password"]').fill(password);
+        loginPhase = "submit_login";
+        await login.getByTestId("password-signin-submit").click();
+        await expect(login).toHaveURL(
+          new RegExp(`/dashboard/${registered.salon.slug}(?:[/?#]|$)`),
+        );
+        // Certify reload of a loaded dashboard. The URL changes before its
+        // document and background worker requests have finished loading.
+        await expect(login.locator("main")).toBeVisible();
+        await login.waitForLoadState("networkidle");
+        loginPhase = "reload_dashboard";
+        await login.reload();
+        await expect(login.locator("main")).toBeVisible();
+        await expect(login).toHaveURL(
+          new RegExp(`/dashboard/${registered.salon.slug}(?:[/?#]|$)`),
+        );
+        const afterLogin = await getRegisteredSalonForUser(user!.id);
+        expect(afterLogin.salon.id).toBe(registered.salon.id);
+        expect(afterLogin.memberRole).toBe("owner");
+        expect(afterLogin.salon.trial_started_at).toBe(registered.salon.trial_started_at);
+        expect(afterLogin.salon.trial_ends_at).toBe(registered.salon.trial_ends_at);
+        const memberships = await admin.from("salon_members")
+          .select("salon_id", { count: "exact" }).eq("user_id", user!.id);
+        expect(memberships.error).toBeNull();
+        expect(memberships.count).toBe(1);
+        await test.info().attach("returning-owner-worker-diagnostics", {
+          body: JSON.stringify(workerRequests), contentType: "application/json",
+        });
+        expect(loginErrors).toEqual([]);
+      }, () => returning.close());
     }, async () => {
       await test.info().attach("auth-browser-diagnostics", {
         body: JSON.stringify(browserDiagnostics),

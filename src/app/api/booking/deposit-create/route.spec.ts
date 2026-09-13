@@ -29,7 +29,7 @@ const PAYMENT_OP = "523e4567-e89b-42d3-a456-426614174000";
 const PAYMENT_REQUEST = "623e4567-e89b-42d3-a456-426614174000";
 const HASH = "a".repeat(64);
 
-function request(origin = "https://nailiq.test") {
+function request(origin = "https://nailiq.test", extra: Record<string, unknown> = {}) {
   return new Request("https://nailiq.test/api/booking/deposit-create", {
     method: "POST",
     headers: {
@@ -57,6 +57,7 @@ function request(origin = "https://nailiq.test") {
       paymentOperationId: PAYMENT_OP,
       paymentRequestId: PAYMENT_REQUEST,
       paymentMaterialFingerprint: HASH,
+      ...extra,
     }),
   });
 }
@@ -98,6 +99,51 @@ describe("POST /api/booking/deposit-create", () => {
     expect(response.status).toBe(200);
     expect(value.booking_id).toBe(CREATE_KEY);
     expect(value).not.toHaveProperty("provider_material");
+    expect(mocks.dispatch).not.toHaveBeenCalled();
+  });
+
+  it("recovers an exact committed paid booking through replay-only authority", async () => {
+    mocks.rpc.mockImplementation(async (name: string) => {
+      if (name === "rate_limit_hit") return { data: true, error: null };
+      if (name === "replay_public_booking_with_deposit_payment") return {
+        data: { success: true, code: "booking_payment_replay", idempotent: true,
+          operation_id: PAYMENT_OP, material_fingerprint: HASH, payment_status: "succeeded",
+          booking_id: CREATE_KEY, booking: { success: true, booking_id: CREATE_KEY },
+          provider_material: { secret: "must-not-return" } }, error: null,
+      };
+      throw new Error(`forbidden fresh dispatch ${name}`);
+    });
+    const response = await POST(request(undefined, { replayOnly: true, otpSessionId: PAYMENT_REQUEST }));
+    expect(response.status).toBe(200);
+    const recovered = await response.json();
+    expect(recovered).toMatchObject({ success: true, idempotent: true, booking_id: CREATE_KEY,
+      operation_id: PAYMENT_OP, material_fingerprint: HASH, payment_status: "succeeded" });
+    expect(recovered).not.toHaveProperty("provider_material");
+    expect(mocks.rpc).toHaveBeenCalledWith("replay_public_booking_with_deposit_payment",
+      expect.objectContaining({ p_otp_session_id: PAYMENT_REQUEST, p_payment_operation_id: PAYMENT_OP }));
+    expect(mocks.rpc.mock.calls.map(([name]) => name)).not.toContain("create_public_booking_with_deposit_payment");
+    expect(mocks.dispatch).not.toHaveBeenCalled();
+  });
+
+  it.each([
+    { success: false, code: "booking_recovery_required" },
+    { success: false, code: "booking_create_failed", booking: { success: false, code: "phone_verification_required" } },
+    { success: true, code: "booked_and_deposit_bound", idempotent: false, booking_id: CREATE_KEY },
+    { success: true, code: "booking_payment_replay", idempotent: true, booking_id: CREATE_KEY,
+      operation_id: CREATE_KEY, material_fingerprint: HASH, payment_status: "succeeded" },
+    { success: true, code: "booking_payment_replay", idempotent: true, booking_id: CREATE_KEY,
+      operation_id: PAYMENT_OP, material_fingerprint: "b".repeat(64), payment_status: "succeeded" },
+    { success: true, code: "booking_payment_replay", idempotent: true, booking_id: CREATE_KEY,
+      operation_id: PAYMENT_OP, material_fingerprint: HASH, payment_status: "compensated" },
+  ])("never creates or refunds when replay-only has no valid committed receipt: %j", async (data) => {
+    mocks.rpc.mockImplementation(async (name: string) => name === "rate_limit_hit"
+      ? { data: true, error: null } : { data, error: null });
+    const response = await POST(request(undefined, { replayOnly: true }));
+    expect(response.status).toBe(409);
+    expect(await response.json()).toEqual({ success: false, code: "booking_recovery_required" });
+    expect(mocks.rpc.mock.calls.map(([name]) => name)).toEqual([
+      "rate_limit_hit", "rate_limit_hit", "replay_public_booking_with_deposit_payment",
+    ]);
     expect(mocks.dispatch).not.toHaveBeenCalled();
   });
 

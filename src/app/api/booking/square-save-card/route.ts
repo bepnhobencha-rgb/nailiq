@@ -51,6 +51,7 @@ export async function POST(request: Request) {
     verificationToken,
   });
   const status = result.ok ? 200
+    : result.code === "save_failed" && result.failureKind === "card_rejected" ? 422
     : result.code === "invalid_request" ? 400
       : result.code === "invalid_token" || result.code === "expired_or_revoked" ? 404
         : result.code === "idempotency_mismatch" || result.code === "in_flight" || result.code === "operation_conflict" ? 409

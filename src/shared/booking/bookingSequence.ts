@@ -38,6 +38,7 @@ export type SequenceBookingIntent = {
   sameStaffForAll: boolean;
   voucherCode: string | null;
   applyEmailDiscount: boolean;
+  otpSessionId?: string | null;
   customer: {
     name: string;
     phone: string;
@@ -172,7 +173,7 @@ export function parseSequenceBookingIntent(value: unknown): SequenceBookingInten
         "applyEmailDiscount",
         "customer",
       ],
-      ["voucherCode"],
+      ["voucherCode", "otpSessionId"],
     ) ||
     !Array.isArray(value.lines) ||
     value.lines.length < BOOKING_SEQUENCE_MIN_LINES ||
@@ -186,6 +187,7 @@ export function parseSequenceBookingIntent(value: unknown): SequenceBookingInten
   }
   const salonId = uuid(value.salonId);
   const requestId = uuid(value.requestId);
+  const otpSessionId = value.otpSessionId == null ? null : uuid(value.otpSessionId);
   const requestedStartTimeUtc = canonicalizeUtcInstant(value.requestedStartTimeUtc);
   const name = boundedText(value.customer.name, 120);
   const phone = boundedText(value.customer.phone, 32);
@@ -200,6 +202,7 @@ export function parseSequenceBookingIntent(value: unknown): SequenceBookingInten
   if (
     !salonId ||
     !requestId ||
+    (value.otpSessionId != null && !otpSessionId) ||
     !requestedStartTimeUtc ||
     !name ||
     FORBIDDEN_CUSTOMER_NAME_RE.test(name) ||
@@ -225,6 +228,7 @@ export function parseSequenceBookingIntent(value: unknown): SequenceBookingInten
     sameStaffForAll: value.sameStaffForAll,
     voucherCode,
     applyEmailDiscount: value.applyEmailDiscount,
+    ...(otpSessionId ? { otpSessionId } : {}),
     customer: { name, phone, email },
   };
 }
@@ -239,6 +243,7 @@ export function serializeSequenceBookingIntent(intent: SequenceBookingIntent) {
     same_staff_for_all: intent.sameStaffForAll,
     voucher_code: intent.voucherCode,
     apply_email_discount: intent.applyEmailDiscount,
+    ...(intent.otpSessionId ? { otp_session_id: intent.otpSessionId } : {}),
     customer: {
       name: intent.customer.name,
       phone: intent.customer.phone,

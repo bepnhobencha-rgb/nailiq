@@ -2,6 +2,7 @@
 
 import { createServiceRoleClient } from "@/shared/lib/supabase/serviceRole";
 import { getDashboardWriteClient } from "@/shared/dashboard/setupActions";
+import { canViewClientSpend, isFrontDeskRole } from "@/shared/lib/salonMemberRole";
 import { validateGuestPhone } from "@/shared/booking/validateGuestPhone";
 import { loadSalonVipProfileIds } from "@/shared/dashboard/salonVipStatus";
 
@@ -18,8 +19,8 @@ import { loadSalonVipProfileIds } from "@/shared/dashboard/salonVipStatus";
  *   - last_visit_at: most recent start_time_utc in this salon
  *   - top_service / top_staff: most-frequent ids (mode) in this salon
  *
- * Privacy: salon membership is verified via `getDashboardWriteClient`
- * before any read. The aggregate is scoped strictly to the caller's
+ * Privacy: current salon membership and desk role are verified before
+ * validation or any read. nail_tech cannot use this customer lookup. The aggregate is scoped strictly to the caller's
  * salon — staff at salon A never see salon B's history of the same
  * phone, even though the underlying profile row is global.
  */
@@ -41,7 +42,7 @@ export type ClientLookupProfile = {
   /** Per-salon: count of non-cancelled bookings ever. */
   visit_count: number;
   /** Per-salon: sum of price_cents on completed bookings. */
-  total_spent_cents: number;
+  total_spent_cents: number | null;
   /** Per-salon: most recent start_time_utc, or null when no past visit. */
   last_visit_at: string | null;
   /** Per-salon: most-frequent service id + name. */
@@ -57,7 +58,7 @@ export async function lookupClientByPhone(
   phoneRaw: string,
 ): Promise<ClientLookupResult> {
   const ctx = await getDashboardWriteClient(slug);
-  if (!ctx) return { ok: false, error: "unauthorized" };
+  if (!ctx || !isFrontDeskRole(ctx.role)) return { ok: false, error: "unauthorized" };
 
   const phoneCheck = validateGuestPhone(phoneRaw);
   if (!phoneCheck.ok || phoneCheck.digits.length < MIN_DIGITS_FOR_LOOKUP) {
@@ -229,7 +230,7 @@ export async function lookupClientByPhone(
       is_vip: isVip,
       notes: profile?.notes?.trim() || null,
       visit_count: visitCount,
-      total_spent_cents: totalSpentCents,
+      total_spent_cents: canViewClientSpend(ctx.role) ? totalSpentCents : null,
       last_visit_at: lastVisitAt,
       top_service: topService,
       top_staff: topStaff,

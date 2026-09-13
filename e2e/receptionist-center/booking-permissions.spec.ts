@@ -83,7 +83,7 @@ async function openCreateAppointment(page: Page): Promise<void> {
 test.beforeAll(async ({}, testInfo) => {
   fx = await seedReceptionistCenterFixture(rcSlug(testInfo.project.name));
   members = await Promise.all(
-    (["owner", "admin", "receptionist", "nail_tech"] as const).map(seedMember),
+    (["owner", "admin", "senior", "receptionist", "nail_tech"] as const).map(seedMember),
   );
 });
 
@@ -94,7 +94,7 @@ test.afterAll(async ({}, testInfo) => {
   await cleanupTestSalon(rcSlug(testInfo.project.name));
 });
 
-for (const role of ["owner", "admin", "receptionist"] as const) {
+for (const role of ["owner", "admin", "senior", "receptionist"] as const) {
   test(`${role} can access booking create, edit, cancel, and status actions`, async ({
     page,
   }) => {

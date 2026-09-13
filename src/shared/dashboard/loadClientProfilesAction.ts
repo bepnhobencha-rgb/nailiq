@@ -2,7 +2,7 @@
 
 import { getDashboardWriteClient } from "@/shared/dashboard/setupActions";
 import { createServiceRoleClient } from "@/shared/lib/supabase/serviceRole";
-import { isOwnerOrAdmin, isFrontDeskRole } from "@/shared/lib/salonMemberRole";
+import { isOwnerOrAdmin, isFrontDeskRole, canViewClientSpend } from "@/shared/lib/salonMemberRole";
 import { loadSalonVipProfileIds } from "@/shared/dashboard/salonVipStatus";
 
 // ---------------------------------------------------------------------------
@@ -23,7 +23,7 @@ export type ClientProfileRow = {
   /** ISO timestamp of the most recent visit; null for import-only clients. */
   lastVisitAt: string | null;
   /** Sum of price_cents + addon_price_cents on completed bookings. */
-  totalSpentCents: number;
+  totalSpentCents: number | null;
 };
 
 export type LoadClientProfilesResult =
@@ -126,7 +126,7 @@ export async function loadClientProfiles(
     notes: r.notes ?? null,
     visitCount: Number(r.visit_count ?? 0),
     lastVisitAt: r.last_visit ?? null,
-    totalSpentCents: Number(r.total_spent_cents ?? 0),
+    totalSpentCents: canViewClientSpend(ctx.role) ? Number(r.total_spent_cents ?? 0) : null,
   }));
 
   return { ok: true, clients, total, page, pageSize };

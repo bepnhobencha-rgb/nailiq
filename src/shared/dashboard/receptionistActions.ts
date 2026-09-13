@@ -27,6 +27,7 @@ import {
   createGroupBookingsAuthoritative,
   resolveGroupBookingQuote,
 } from "@/shared/booking/groupBookingPricingServer";
+import { createDeskGroupBookingsAuthoritative } from "@/shared/booking/groupDeskBookingCreateServer";
 import { isValidCustomerName } from "@/shared/lib/nameFormat";
 import {
   canCancelBooking,
@@ -1915,7 +1916,7 @@ export async function createDeskGroup(
       if (v.ok) {
         const { data: otpRow, error: otpInsertError } = await db
           .from("phone_otp_sessions")
-          .insert({ phone: v.digits, salon_id: ctx.salon.id } as never)
+          .insert({ phone: v.digits, salon_id: ctx.salon.id, verified_channel: "staff_attested" } as never)
           .select("id")
           .single();
         if (otpInsertError) {
@@ -2020,10 +2021,13 @@ export async function createDeskGroup(
                       : "create_unavailable" as const,
               };
             }
-            const created = await createGroupBookingsAuthoritative({
+            const createRequest = {
               ...request,
               expectedPricingFingerprint: quoted.quote.pricingFingerprint,
-            });
+            };
+            const created = ctx.kind === "member" && ctx.userId
+              ? await createDeskGroupBookingsAuthoritative(createRequest, ctx.userId)
+              : await createGroupBookingsAuthoritative(createRequest);
             if (created.ok) {
               return {
                 ok: true,
@@ -4644,13 +4648,15 @@ export async function deskClaimPartySlotAction(
     phoneDigits = phoneResult.digits;
   }
 
-  const { data, error } = await svc.rpc("claim_party_slot", {
+  const deskActorId = ctx.kind === "member" ? ctxActorUserId(ctx) : null;
+  const { data, error } = await svc.rpc((deskActorId ? "claim_party_slot_for_desk" : "claim_party_slot") as never, {
     p_token: token,
     p_claim_id: claimId,
     p_member_name: nameTrim,
     p_member_phone: phoneDigits,
     p_reminder_opted_in: false,
-  });
+    ...(deskActorId ? { p_salon_id: ctx.salon.id, p_actor_user_id: deskActorId } : {}),
+  } as never);
 
   if (error) {
     ErrorReporter.captureException(error, { extra: { slug, claimId } });

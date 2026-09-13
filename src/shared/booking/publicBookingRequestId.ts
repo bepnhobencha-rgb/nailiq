@@ -1,3 +1,5 @@
+import { isBookingCreateRetired } from "./retiredBookingCreate";
+
 export type PublicBookingRequestMaterial = {
   salonId: string;
   serviceId: string;
@@ -151,7 +153,8 @@ export async function stablePublicBookingRequestId(
       if (
         stored &&
         now >= stored.createdAt &&
-        now - stored.createdAt <= REQUEST_ID_MAX_AGE_MS
+        now - stored.createdAt <= REQUEST_ID_MAX_AGE_MS &&
+        !isBookingCreateRetired(material.salonId, stored.requestId, storage)
       ) return stored.requestId;
     } catch {
       // A constrained browser may deny storage after it was resolved.
@@ -162,6 +165,52 @@ export async function stablePublicBookingRequestId(
       storage.setItem(key, JSON.stringify({ requestId, createdAt: now }));
     } catch {
       // The mounted flow still keeps this UUID in React state/ref.
+    }
+    return requestId;
+  });
+}
+
+/**
+ * Explicit restart after a verified terminal refund. Unlike best-effort success
+ * cleanup, this must persist a new identity before the customer can proceed.
+ * Concurrent tabs sharing the refunded ID converge on the first rotation.
+ */
+export async function rotatePublicBookingRequestId(
+  material: PublicBookingRequestMaterial,
+  expectedOldId: string,
+  options?: RequestIdOptions,
+): Promise<string> {
+  const storage = resolveStorage(options);
+  const locks = resolveLocks(options);
+  if (!storage || !locks || !UUID_RE.test(expectedOldId)) {
+    throw new Error("booking_restart_storage_unavailable");
+  }
+  const digest = await materialDigest(material);
+  const key = `${STORAGE_PREFIX}:${digest}`;
+  return withMaterialLock(digest, locks, async () => {
+    const now = options?.now ?? Date.now();
+    if (!Number.isFinite(now)) throw new Error("booking_restart_storage_unavailable");
+    const stored = parseStoredRequest(storage.getItem(key));
+    if (stored && stored.requestId !== expectedOldId && now >= stored.createdAt &&
+      now - stored.createdAt <= REQUEST_ID_MAX_AGE_MS) {
+      let retirementReadFailed = false;
+      const retired = isBookingCreateRetired(material.salonId, stored.requestId, {
+        getItem: (storageKey) => {
+          try { return storage.getItem(storageKey); }
+          catch { retirementReadFailed = true; return null; }
+        },
+      });
+      if (retirementReadFailed) throw new Error("booking_restart_storage_unavailable");
+      if (!retired) return stored.requestId;
+    }
+    const requestId = freshRequestId(options);
+    if (requestId === expectedOldId) throw new Error("invalid_public_booking_request_id");
+    // Replace in one write; removing first could leave a refunded ID eligible
+    // for fallback reuse if a constrained browser rejects the following write.
+    storage.setItem(key, JSON.stringify({ requestId, createdAt: now }));
+    const persisted = parseStoredRequest(storage.getItem(key));
+    if (persisted?.requestId !== requestId || persisted.createdAt !== now) {
+      throw new Error("booking_restart_storage_unavailable");
     }
     return requestId;
   });

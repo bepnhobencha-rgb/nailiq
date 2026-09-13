@@ -560,6 +560,7 @@ function ClaimForm({
         case "expired":         setError(t.errExpired);        break;
         case "not_found":       setError(t.errNotFound);       break;
         case "invalid_input":   setError(t.errInvalidInput);   break;
+        case "contact_change_requires_card_review": setError(t.errCardContactReview); break;
         default:                setError(t.errGeneric);
       }
     });
@@ -709,6 +710,8 @@ function EditDetailsForm({
 
       if (result.reason === "invalid_input") {
         setError(t.editDetailsErrPhone);
+      } else if (result.reason === "contact_change_requires_card_review") {
+        setError(t.errCardContactReview);
       } else {
         setError(t.editDetailsErrGeneric);
       }

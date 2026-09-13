@@ -1,3 +1,4 @@
+import { RemovalDeliveryError } from "@/shared/integrations/payments/removalDeliveryFailure";
 import { assertCardCaptureActive } from "@/shared/booking/cardCapturePause";
 /**
  * Square REST client for NailIQ imports (customers, catalog, bookings).
@@ -223,6 +224,7 @@ async function squareReq(
   apiVersion = SQUARE_VERSION,
 ): Promise<Record<string, unknown>> {
   const stage = squareFailureStage(method, path);
+  const removal = method === "POST" && /^\/cards\/[^/]+\/disable$/.test(path);
   let res: Response | undefined;
   let json: unknown;
   try {
@@ -236,6 +238,8 @@ async function squareReq(
     });
     json = await res.json();
   } catch {
+    if (removal) throw new RemovalDeliveryError(res?.ok ? "removal_invalid_provider_receipt" : "removal_provider_write_failed",
+      cardFailure("receipt_validation", "square_invalid_card_removal_receipt", "reconcile_first", res?.status ?? null));
     throw cardFailure(stage ?? "configuration", stage === "card_create" ? "provider_response_lost"
       : stage ? stageFailureCode(stage) : "square_request_failed",
       stage === "card_create" || stage === "reconciliation" || stage === "customer_create" ? "reconcile_first" : "safe_retry", res?.status ?? null);
@@ -248,6 +252,8 @@ async function squareReq(
       ((json as Record<string, unknown>).errors !== undefined &&
         (!Array.isArray((json as Record<string, unknown>).errors) ||
           ((json as Record<string, unknown>).errors as unknown[]).length > 0))) {
+    if (removal) throw new RemovalDeliveryError("removal_invalid_provider_receipt",
+      cardFailure("receipt_validation", "square_invalid_card_removal_receipt", "reconcile_first", res.status));
     throw cardFailure(stage === "card_create" ? "receipt_validation" : stage ?? "configuration",
       stage === "card_create" ? "square_invalid_card_receipt" : stage ? stageFailureCode(stage) : "square_invalid_response",
       stage === "card_create" || stage === "reconciliation" || stage === "customer_create" ? "reconcile_first" : "safe_retry", res.status);
@@ -408,6 +414,7 @@ function phoneSearchCandidates(phone: string): string[] {
 export async function findSquareCustomerByPhone(
   cfg: SquareConfig,
   phone: string,
+  options?: { requireMatchingPhone: boolean },
 ): Promise<string | null> {
   for (const candidate of phoneSearchCandidates(phone)) {
     // A failed read is not proof that the customer does not exist. Propagate
@@ -433,6 +440,11 @@ export async function findSquareCustomerByPhone(
         || typeof customer !== "object"
         || typeof (customer as { id?: unknown }).id !== "string"
         || !(customer as { id: string }).id.trim()
+        || (options?.requireMatchingPhone && (
+          !/^[A-Za-z0-9:_-]{1,255}$/.test((customer as { id: string }).id)
+          || typeof (customer as { phone_number?: unknown }).phone_number !== "string"
+          || phoneSearchCandidates((customer as { phone_number: string }).phone_number)[0] !== candidate
+        ))
       ))
       || (found.cursor !== undefined
         && found.cursor !== null
@@ -462,16 +474,40 @@ export async function findSquareCustomerByReference(cfg: SquareConfig, reference
 /** Find-or-create a Square customer for this booking's contact. */
 export async function ensureSquareCustomer(
   cfg: SquareConfig,
-  opts: { name?: string | null; phone?: string | null; email?: string | null; referenceId: string; idempotencyKey: string; reconcileReference?: boolean; matchEmailFallback?: boolean; beforeCreate?: () => Promise<void> },
+  opts: {
+    name?: string | null; phone?: string | null; email?: string | null;
+    referenceId: string; idempotencyKey: string; reconcileReference?: boolean;
+    matchEmailFallback?: boolean; beforeCreate?: () => Promise<void>;
+    /** Set only from the durable, server-validated card customer claim. */
+    lookupPolicy?: "verified_phone" | "reference_only";
+    /** Once dispatched, preserve the original body and never discover by contact. */
+    previouslyDispatched?: boolean;
+  },
 ): Promise<string> {
+  const scoped = opts.lookupPolicy !== undefined;
+  if (scoped && (
+    !["verified_phone", "reference_only"].includes(opts.lookupPolicy!)
+    || !/^(?:nq-customer|booking):[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(opts.referenceId)
+    || typeof opts.idempotencyKey !== "string" || !opts.idempotencyKey || opts.idempotencyKey.length > 45
+    || (opts.previouslyDispatched !== undefined && typeof opts.previouslyDispatched !== "boolean")
+    || (opts.lookupPolicy === "verified_phone" && !opts.previouslyDispatched
+      && (!opts.phone || !phoneSearchCandidates(opts.phone)[0]))
+  )) throw cardFailure("customer_search", "square_customer_search_failed", "safe_retry");
+
+  // A frozen reference wins over a later contact match. In particular, an
+  // exhausted unknown claim must not silently select another customer's ID.
+  if (scoped) {
+    const existing = await findSquareCustomerByReference(cfg, opts.referenceId);
+    if (existing) return existing;
+  }
   // Match on phone first (the salon's primary key for a guest). An unsuccessful
   // provider response must propagate: only a successful empty search proves it
   // is safe to attempt CreateCustomer.
-  if (opts.phone) {
-    const existing = await findSquareCustomerByPhone(cfg, opts.phone);
+  if (opts.phone && (!scoped || (opts.lookupPolicy === "verified_phone" && !opts.previouslyDispatched))) {
+    const existing = await findSquareCustomerByPhone(cfg, opts.phone, scoped ? { requireMatchingPhone: true } : undefined);
     if (existing) return existing;
   }
-  if (opts.email?.trim() && (!opts.phone || opts.matchEmailFallback)) {
+  if (!scoped && opts.email?.trim() && (!opts.phone || opts.matchEmailFallback)) {
     // A prior INVALID_PHONE fallback can have stored this email without a
     // phone. Match that exact profile, never a profile with a different phone.
     // Square documents exact email matching as case-insensitive.
@@ -488,33 +524,40 @@ export async function ensureSquareCustomer(
     }
     if (matches.length===1) return matches[0].id;
   }
-  if (opts.reconcileReference) {
+  if (!scoped && opts.reconcileReference) {
     const existing = await findSquareCustomerByReference(cfg, opts.referenceId);
     if (existing) return existing;
   }
-  const parts = (opts.name ?? "").trim().split(/\s+/);
+  const freshScoped = scoped && !opts.previouslyDispatched;
+  const parts = (opts.name?.trim() || (freshScoped ? "NailIQ Guest" : "")).split(/\s+/);
+  // A self-declared contact must not enter a shared provider identity or later
+  // get imported into someone else's CRM record. Never rewrite a frozen body.
+  const phone = freshScoped && opts.lookupPolicy === "reference_only" ? undefined : opts.phone;
   const base = {
     given_name: parts[0] || undefined,
     family_name: parts.slice(1).join(" ") || undefined,
-    email_address: opts.email || undefined,
+    email_address: freshScoped ? undefined : opts.email || undefined,
     reference_id: opts.referenceId,
   };
   await opts.beforeCreate?.();
   try {
     const json = await squareReq(cfg, "POST", "/customers", {
       idempotency_key: opts.idempotencyKey,
-      phone_number: opts.phone ? phoneSearchCandidates(opts.phone)[0] ?? opts.phone : undefined,
+      phone_number: phone ? phoneSearchCandidates(phone)[0] ?? phone : undefined,
       ...base,
     });
     const id = (json.customer as { id?: unknown } | undefined)?.id;
-    if (typeof id === "string" && id.trim()) return id;
+    if (typeof id === "string" && id.trim() && (!scoped || (
+      /^[A-Za-z0-9:_-]{1,255}$/.test(id)
+      && (json.customer as { reference_id?: unknown }).reference_id === opts.referenceId
+    ))) return id;
     throw cardFailure("customer_create", "square_customer_create_failed", "reconcile_first", responseHttpStatus.get(json) ?? null);
   } catch (e) {
     // A second idempotency key is safe only when Square definitively rejected
     // this exact request because of the phone. Transport failures, 5xxs and
     // unknown/mixed 4xx responses may have created the customer, so replaying
     // under a different key could create a duplicate.
-    if (!isDefinitiveInvalidPhoneError(e)) throw e;
+    if (!isDefinitiveInvalidPhoneError(e) || (scoped && !phone)) throw e;
     const json = await squareReq(cfg, "POST", "/customers", {
       // Square caps idempotency keys at 45 characters. Keep the explicit `-np`
       // namespace while deriving a collision-resistant UUID form for NailIQ's
@@ -523,9 +566,51 @@ export async function ensureSquareCustomer(
       ...base,
     });
     const id = (json.customer as { id?: unknown } | undefined)?.id;
-    if (typeof id === "string" && id.trim()) return id;
+    if (typeof id === "string" && id.trim() && (!scoped || (
+      /^[A-Za-z0-9:_-]{1,255}$/.test(id)
+      && (json.customer as { reference_id?: unknown }).reference_id === opts.referenceId
+    ))) return id;
     throw cardFailure("customer_create", "square_customer_create_failed", "reconcile_first", responseHttpStatus.get(json) ?? null);
   }
+}
+
+/** Read one legacy binding; a failed read is never a negative ownership proof.
+ * Return only a boolean so customer contact never leaves the adapter. */
+export async function verifySquareCardCustomerIdentity(
+  cfg: SquareConfig,
+  input: { customerId: string; referenceId: string } | { customerId: string; verifiedPhone: string },
+): Promise<boolean> {
+  if (typeof input.customerId !== "string" || !/^[A-Za-z0-9:_-]{1,255}$/.test(input.customerId)
+    || ("verifiedPhone" in input && (typeof input.verifiedPhone !== "string" || !phoneSearchCandidates(input.verifiedPhone)[0]))
+    || ("referenceId" in input && (typeof input.referenceId !== "string"
+      || !/^(?:nq-customer|booking):[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(input.referenceId)))
+    || (("referenceId" in input) === ("verifiedPhone" in input))) {
+    throw cardFailure("customer_search", "square_customer_search_failed", "safe_retry");
+  }
+  let json: Record<string, unknown>;
+  try { json = await squareReq(cfg, "GET", `/customers/${encodeURIComponent(input.customerId)}`); }
+  catch (error) {
+    if (error instanceof SquareHttpError && error.status === 404
+      && error.codes.length > 0 && error.codes.every(code => code === "NOT_FOUND" || code === "CUSTOMER_NOT_FOUND")) return false;
+    throw error;
+  }
+  const customer = json.customer;
+  if (!customer || typeof customer !== "object" || Array.isArray(customer)
+    || (customer as { id?: unknown }).id !== input.customerId) {
+    throw cardFailure("customer_search", "square_customer_search_failed", "manual_review", responseHttpStatus.get(json) ?? null);
+  }
+  if ("verifiedPhone" in input) {
+    const phone = (customer as { phone_number?: unknown }).phone_number;
+    if (phone != null && (typeof phone !== "string" || (phone.trim() && !phoneSearchCandidates(phone)[0]))) {
+      throw cardFailure("customer_search", "square_customer_search_failed", "manual_review", responseHttpStatus.get(json) ?? null);
+    }
+    return typeof phone === "string" && phoneSearchCandidates(phone)[0] === phoneSearchCandidates(input.verifiedPhone)[0];
+  }
+  const reference = (customer as { reference_id?: unknown }).reference_id;
+  if (reference != null && typeof reference !== "string") {
+    throw cardFailure("customer_search", "square_customer_search_failed", "manual_review", responseHttpStatus.get(json) ?? null);
+  }
+  return reference === input.referenceId;
 }
 
 /** Save a tokenized card (Web Payments SDK sourceId) on file for later charging. */
@@ -716,6 +801,13 @@ export async function listCardsByReferenceId(cfg: SquareConfig, referenceId: str
 /** Retrieve the exact legacy card; a missing reference is allowed only here.
  * Never return Square's raw payload (which includes billing/expiry data). */
 export async function readSquareCardById(cfg: SquareConfig, cardId: string, customerId: string): Promise<SquareCardReceipt> {
+  const card = await readSquareCardStateById(cfg, cardId, customerId);
+  if (!card.enabled) throw cardFailure("reconciliation", "reconciliation_invalid_card", "manual_review");
+  return card;
+}
+
+/** Read either active or disabled state without mutating the provider. */
+export async function readSquareCardStateById(cfg: SquareConfig, cardId: string, customerId: string): Promise<SquareCardReceipt> {
   if (!squareId(cardId) || !squareId(customerId)) {
     throw cardFailure("reconciliation", "reconciliation_invalid_card", "manual_review");
   }
@@ -723,7 +815,7 @@ export async function readSquareCardById(cfg: SquareConfig, cardId: string, cust
   const raw = json.card;
   const candidate = raw && typeof raw === "object" && !Array.isArray(raw) ? { ...raw, reference_id: (raw as Record<string, unknown>).reference_id ?? "" } : raw;
   const card = parseSquareCard(candidate);
-  if (!card || !card.enabled || card.cardId !== cardId || card.customerId !== customerId || card.merchantId !== cfg.merchantId) {
+  if (!card || card.cardId !== cardId || card.customerId !== customerId || card.merchantId !== cfg.merchantId) {
     throw cardFailure("reconciliation", "reconciliation_invalid_card", "manual_review", responseHttpStatus.get(json) ?? null);
   }
   return card;
@@ -733,20 +825,29 @@ export async function readSquareCardById(cfg: SquareConfig, cardId: string, cust
  *  disabled card can never be charged again, which is the removal path the
  *  stored-credential rules require us to offer the cardholder. */
 export async function disableCard(cfg: SquareConfig, cardId: string): Promise<void> {
+  const confirmsRemoval = (value: Record<string, unknown>): boolean => {
+    const card = value.card;
+    return !!card && typeof card === "object" && !Array.isArray(card)
+      && (card as Record<string, unknown>).id === cardId
+      && (card as Record<string, unknown>).enabled === false;
+  };
   try {
-    await squareReq(cfg, "POST", `/cards/${encodeURIComponent(cardId)}/disable`);
+    const value = await squareReq(cfg, "POST", `/cards/${encodeURIComponent(cardId)}/disable`);
+    if (!confirmsRemoval(value)) throw new RemovalDeliveryError("removal_invalid_provider_receipt",
+      cardFailure("receipt_validation", "square_invalid_card_removal_receipt", "reconcile_first", responseHttpStatus.get(value) ?? null));
   } catch (cause) {
     // Response loss after Square accepted the disable is recoverable: read the
     // exact card and treat the already-disabled state as success. Never infer
     // success from the transport error alone.
+    let outcome: "read_failed" | "not_removed" | "invalid_receipt" = "read_failed";
     try {
       const value = await squareReq(cfg, "GET", `/cards/${encodeURIComponent(cardId)}`);
-      const card = value.card as Record<string, unknown> | undefined;
-      if (card?.enabled === false) return;
-    } catch {
-      // Preserve the original ambiguous provider outcome.
-    }
-    throw cause;
+      if (confirmsRemoval(value)) return;
+      const card = value.card as Record<string, unknown> | null;
+      outcome = card && card.id === cardId && card.enabled === true ? "not_removed" : "invalid_receipt";
+    } catch { /* Preserve the initial failure; the read failure is a separate outcome. */ }
+    throw new RemovalDeliveryError(cause instanceof RemovalDeliveryError
+      ? cause.failure.code : "removal_provider_write_failed", cause, outcome);
   }
 }
 

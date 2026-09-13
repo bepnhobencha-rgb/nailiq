@@ -1741,7 +1741,9 @@ function ClientLookupCard({
   const lastVisitText = profile.last_visit_at
     ? formatRelativeShort(profile.last_visit_at, now, labels.relative)
     : null;
-  const totalSpent = formatServicePrice(profile.total_spent_cents, currency);
+  const totalSpent = profile.total_spent_cents === null
+    ? "—"
+    : formatServicePrice(profile.total_spent_cents, currency);
   const summary = labels.profileSummary
     .replace("{count}", String(profile.visit_count))
     .replace("{total}", totalSpent);

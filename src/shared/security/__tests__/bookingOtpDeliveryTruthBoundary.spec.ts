@@ -39,7 +39,8 @@ describe("booking gate OTP delivery truth boundary", () => {
   });
 
   it("reports channel-specific send failures", () => {
-    expect(switcher).toContain("t.bookingErrors.otpEmailSendFailed");
+    expect(switcher).toMatch(/ch === "email"\s+\? "otpEmailSendFailed"\s+: "otpSendFailed"/);
+    expect(switcher).toContain("t.bookingErrors[errorKey]");
     expect(english).toContain(
       'otpEmailSendFailed: "Couldn\'t send email. Please try again."',
     );

@@ -19,7 +19,7 @@ vi.mock("@/shared/photos/photoCustomerToken", () => ({
   verifyPhotoCustomerToken: mocks.verifyToken,
 }));
 
-import { PATCH } from "./route";
+import { GET, PATCH } from "./route";
 
 const phone = "16045550199";
 const salonId = "22222222-2222-4222-8222-222222222222";
@@ -27,7 +27,7 @@ const photoId = "11111111-1111-4111-8111-111111111111";
 
 function chain(result: unknown) {
   const value: Record<string, unknown> = {};
-  for (const name of ["select", "eq", "is", "in", "update", "maybeSingle"]) {
+  for (const name of ["select", "eq", "is", "in", "update", "maybeSingle", "single"]) {
     value[name] = vi.fn(() => value);
   }
   value.then = (resolve: (input: unknown) => unknown) => Promise.resolve(result).then(resolve);
@@ -49,14 +49,14 @@ function request(input?: { bearer?: string; salon?: string }) {
 
 function memberClient(memberships: { salon_id: string }[]) {
   return {
-    auth: { getUser: vi.fn().mockResolvedValue({ data: { user: { id: "member" } } }) },
+    auth: { getUser: vi.fn().mockResolvedValue({ data: { user: { id: "member" } }, error: null }) },
     from: vi.fn(() => chain({ data: memberships, error: null })),
   };
 }
 
 function anonymousClient() {
   return {
-    auth: { getUser: vi.fn().mockResolvedValue({ data: { user: null } }) },
+    auth: { getUser: vi.fn().mockResolvedValue({ data: { user: null }, error: null }) },
   };
 }
 
@@ -91,6 +91,43 @@ describe("customer consent authorization", () => {
     const response = await PATCH(request(), { params: Promise.resolve({ phone }) });
     expect(response.status).toBe(200);
     expect(mocks.verifyToken).not.toHaveBeenCalled();
+  });
+
+  it.each([undefined, "", "   ", salonId, `  ${salonId}  `])("preserves optional, empty and trimmed salon scope validation (%s)", async (salon) => {
+    mocks.createServer.mockResolvedValue(memberClient([{ salon_id: salonId }]));
+    const req = new Request(`https://nailiq.test/api/customer/${phone}/consents`, {
+      method: "PATCH", headers: { origin: "https://nailiq.test", "content-type": "application/json" },
+      body: JSON.stringify({ salon_id: salon }),
+    });
+    const response = await PATCH(req, { params: Promise.resolve({ phone }) });
+    expect(response.status).toBe(200);
+    expect(mocks.createService).toHaveBeenCalledTimes(1);
+  });
+
+  it.each(["GET", "PATCH"] as const)("rejects a session whose verified Auth user is absent on %s", async method => {
+    mocks.createServer.mockResolvedValue(anonymousClient()); mocks.verifyToken.mockResolvedValue(null);
+    const response = method === "GET"
+      ? await GET(new Request(`https://nailiq.test/api/customer/${phone}/consents?salon_id=${salonId}`), { params: Promise.resolve({ phone }) })
+      : await PATCH(request(), { params: Promise.resolve({ phone }) });
+    expect(response.status).toBe(401); expect(mocks.createService).not.toHaveBeenCalled();
+  });
+
+  it.each([null, [], { revoked_reason: 9 }, { salon_id: [] }, { salon_id: "not-a-uuid" }, { revoked_reason: "x".repeat(501) }])("rejects malformed PATCH body before auth/DB", async body => {
+    const req = new Request(`https://nailiq.test/api/customer/${phone}/consents`, {
+      method: "PATCH", headers: { origin: "https://nailiq.test", "content-type": "application/json" }, body: JSON.stringify(body),
+    });
+    const response = await PATCH(req, { params: Promise.resolve({ phone }) });
+    expect(response.status).toBe(400);
+    expect(mocks.createService).not.toHaveBeenCalled();
+    expect(mocks.createServer).not.toHaveBeenCalled();
+  });
+
+  it.each(["{bad-json", JSON.stringify({ padding: "x".repeat(4096) })])("rejects malformed or oversized streamed bytes with misleading Content-Length", async body => {
+    const req = new Request(`https://nailiq.test/api/customer/${phone}/consents`, {
+      method: "PATCH", headers: { origin: "https://nailiq.test", "content-type": "application/json", "content-length": "2" }, body,
+    });
+    const response = await PATCH(req, { params: Promise.resolve({ phone }) });
+    expect(response.status).toBe(400); expect(mocks.createServer).not.toHaveBeenCalled(); expect(mocks.createService).not.toHaveBeenCalled();
   });
 
   it("allows a purpose-bound customer bearer after authoritative photo binding", async () => {

@@ -2,7 +2,7 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 import { NextRequest } from "next/server";
 
 const mocks = vi.hoisted(() => ({
-  exchange: vi.fn(),
+  exchange: vi.fn(), inspect: vi.fn(),
   ensure: vi.fn(),
   overRate: vi.fn(),
   recordPending: vi.fn(),
@@ -14,7 +14,7 @@ vi.mock("@/shared/security/sameOriginMutation", () => ({
   isSameOriginMutation: () => true,
 }));
 vi.mock("@/shared/booking/bookingManagementCapabilities", () => ({
-  exchangePublicBookingCardManagementCapability: mocks.exchange,
+  exchangePublicBookingCardManagementCapability: mocks.exchange, inspectBookingManagementCapability: mocks.inspect,
 }));
 vi.mock("@/shared/noshow/ensureNoShowCardRequirement", () => ({
   ensureNoShowCardRequirement: mocks.ensure,
@@ -32,7 +32,7 @@ vi.mock("@/shared/booking/bookingCardContinuation", () => ({
 import { POST } from "@/app/api/booking/card-capability/route";
 
 describe("POST /api/booking/card-capability in V1", () => {
-  beforeEach(() => vi.clearAllMocks());
+  beforeEach(() => { vi.clearAllMocks(); mocks.inspect.mockResolvedValue({ok:true,inspection:{context:{salonId:"11111111-1111-4111-8111-111111111111",bookingId:"22222222-2222-4222-8222-222222222222"},booking:{status:"confirmed",salonName:"QA",startTimeUtc:"2026-09-15T19:00:00Z",salonTimezone:"America/Vancouver",serviceName:"Manicure",sequenceReceipt:null}}}); });
 
   it("permits the narrow no-show card-on-file capability", async () => {
     mocks.overRate.mockResolvedValue(false);
@@ -116,5 +116,6 @@ describe("POST /api/booking/card-capability in V1", () => {
       reason: "card_not_required",
     });
     expect(mocks.recordPending).not.toHaveBeenCalled();
+    expect(mocks.inspect).not.toHaveBeenCalled();
   });
 });

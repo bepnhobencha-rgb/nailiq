@@ -7,6 +7,9 @@ import {
   useCallback,
   useSyncExternalStore,
 } from "react";
+import { readPendingBookingCreate } from "@/shared/booking/pendingBookingCreate";
+import { readPendingGroupCreate } from "@/shared/booking/pendingGroupCreate";
+import { rememberBookingAppearance } from "@/shared/booking/bookingRecoveryAppearance";
 import { useRouter, useSearchParams, usePathname } from "next/navigation";
 import {
   type ReturningCustomer,
@@ -73,6 +76,13 @@ type GateOtpState = {
   sessionId: string;
 };
 
+const gateOtpErrorFallback = {
+  otpExpired: "Code expired or too many attempts. Send a new code.",
+  otpEmailSendFailed: "Couldn't send email. Please try again.",
+  otpSendFailed: "Couldn't send SMS. Please try again.",
+  otpInvalidCode: "Incorrect code. Please try again.",
+} as const;
+
 function GateOtpInline({
   t,
   shopSlug,
@@ -97,7 +107,12 @@ function GateOtpInline({
   const [code, setCode] = useState("");
   const [sending, setSending] = useState(false);
   const [verifying, setVerifying] = useState(false);
-  const [error, setError] = useState<string | null>(null);
+  // Keep the error identity so a locale change also updates an existing error.
+  // In-flight requests can finish after the language has changed.
+  const [errorKey, setErrorKey] = useState<keyof typeof gateOtpErrorFallback | null>(null);
+  const error = errorKey
+    ? t.bookingErrors[errorKey] ?? gateOtpErrorFallback[errorKey]
+    : null;
   const [deliveryAttemptIds, setDeliveryAttemptIds] = useState<
     Partial<Record<"sms" | "email", string>>
   >({});
@@ -105,7 +120,7 @@ function GateOtpInline({
 
   async function sendCode(ch: "sms" | "email" = channel) {
     setSending(true);
-    setError(null);
+    setErrorKey(null);
     try {
       const body: Record<string, string> = { shopSlug, phone: phoneDigits, channel: ch };
       if (ch === "email") body.email = email.trim();
@@ -129,19 +144,19 @@ function GateOtpInline({
         setShowEmailInput(false);
         setTimeout(() => codeRef.current?.focus(), 100);
       } else {
-        setError(
+        setErrorKey(
           data.error === "rate_limited"
-            ? (t.bookingErrors.otpExpired ?? "Too many attempts.")
+            ? "otpExpired"
             : ch === "email"
-              ? t.bookingErrors.otpEmailSendFailed
-              : (t.bookingErrors.otpSendFailed ?? "Couldn't send code."),
+              ? "otpEmailSendFailed"
+              : "otpSendFailed",
         );
       }
     } catch {
-      setError(
+      setErrorKey(
         ch === "email"
-          ? t.bookingErrors.otpEmailSendFailed
-          : (t.bookingErrors.otpSendFailed ?? "Couldn't send code."),
+          ? "otpEmailSendFailed"
+          : "otpSendFailed",
       );
     } finally {
       setSending(false);
@@ -152,7 +167,7 @@ function GateOtpInline({
     const trimmed = c.replace(/\D/g, "");
     if (trimmed.length < 6) return;
     setVerifying(true);
-    setError(null);
+    setErrorKey(null);
     try {
       const body: Record<string, string> = { shopSlug, phone: phoneDigits, code: trimmed };
       if (channel === "email") body.email = email.trim();
@@ -169,14 +184,14 @@ function GateOtpInline({
         // booking form can pre-fill without asking the customer to retype it.
         onVerified(data.sessionId, channel === "email" ? email.trim() : undefined);
       } else {
-        setError(
+        setErrorKey(
           data.error === "expired_or_max_attempts"
-            ? (t.bookingErrors.otpExpired ?? "Code expired.")
-            : (t.bookingErrors.otpInvalidCode ?? "Incorrect code."),
+            ? "otpExpired"
+            : "otpInvalidCode",
         );
       }
     } catch {
-      setError(t.bookingErrors.otpInvalidCode ?? "Incorrect code.");
+      setErrorKey("otpInvalidCode");
     } finally {
       setVerifying(false);
     }
@@ -435,6 +450,14 @@ export function BookingTypeSwitcher({
   // the page) doesn't drop the user back to individual.
   const searchParams = useSearchParams();
   const router = useRouter();
+  useEffect(() => {
+    try {
+      rememberBookingAppearance(window.sessionStorage, { salonId: salon.id, brandColor: salon.brandColor, themeMode: salon.themeMode });
+      window.dispatchEvent(new Event("nailiq-booking-appearance"));
+      const recovery = readPendingBookingCreate(window.sessionStorage, salon.id) ?? readPendingGroupCreate(window.sessionStorage, salon.id);
+      if (recovery) router.replace(recovery);
+    } catch { /* No dispatch is attempted here. */ }
+  }, [router, salon.id, salon.brandColor, salon.themeMode]);
   const pathname = usePathname();
   const currentSearch = searchParams.toString();
   const requestedMode = searchParams.get("mode");
@@ -509,6 +532,8 @@ export function BookingTypeSwitcher({
   // OTP step inside the flow is skipped (no re-prompt, no re-SMS).
   // Stored with the full identity it was issued against.
   const [gateOtp, setGateOtp] = useState<GateOtpState | null>(null);
+  const [sequenceOtpRecovery, setSequenceOtpRecovery] = useState<Omit<GateOtpState, "sessionId"> | null>(null);
+  const phoneGateRef = useRef<HTMLDivElement>(null);
   // Email used to receive the gate OTP code — pre-fills the booking email
   // field so new customers don't retype the same address.
   const [gateOtpEmail, setGateOtpEmail] = useState("");
@@ -536,6 +561,25 @@ export function BookingTypeSwitcher({
       : null;
   const gateOtpDone = activeGateOtp !== null;
   const gateOtpSessionId = activeGateOtp?.sessionId ?? null;
+  const sequenceOtpRecoveryActive = mode === "sequence" &&
+    sequenceOtpRecovery?.salonId === salon.id &&
+    sequenceOtpRecovery.phoneRevision === entryPhoneRevision &&
+    entryValidation.ok &&
+    sequenceOtpRecovery.phoneDigits === entryValidation.digits;
+  useEffect(() => {
+    if (sequenceOtpRecoveryActive) phoneGateRef.current?.focus();
+  }, [sequenceOtpRecoveryActive]);
+
+  function handleSequenceOtpInvalid() {
+    if (!entryValidation.ok) return;
+    setGateOtp((current) => current?.sessionId === gateOtpSessionId ? null : current);
+    setSequenceOtpRecovery({
+      salonId: salon.id,
+      phoneRevision: entryPhoneRevision,
+      phoneDigits: entryValidation.digits,
+    });
+    gateOtpVerifiedRef.current = false;
+  }
   // Returning customers (phone recognized) skip name entry — their name comes
   // from the verified profile after OTP. New customers must type ≥2 chars.
   // ≥2 matches the nameTooShort guard in submitPublicBooking.
@@ -621,6 +665,11 @@ export function BookingTypeSwitcher({
       phoneDigits: v.digits,
       sessionId,
     });
+    setSequenceOtpRecovery((current) =>
+      current?.salonId === salon.id && current.phoneRevision === entryPhoneRevision && current.phoneDigits === v.digits
+        ? null
+        : current,
+    );
     gateOtpVerifiedRef.current = true;
     // Store the email used for OTP delivery so new customers don't retype it.
     if (otpEmail) setGateOtpEmail(otpEmail);
@@ -665,6 +714,8 @@ export function BookingTypeSwitcher({
   // pre-fills the primary contact).
   const phoneGate = (
     <div
+      ref={phoneGateRef}
+      tabIndex={-1}
       data-testid="booking-phone-gate"
       className="rounded-2xl border border-[var(--booking-border)] bg-[var(--booking-bg-card)] p-4 sm:p-5"
     >
@@ -823,7 +874,14 @@ export function BookingTypeSwitcher({
 
       {/* OTP inline — appears INSIDE the card so the "Send code" button is
           always visible without scrolling. Only when salon has OTP enabled. */}
-      {gateReady && salon.phoneOtpEnabled && !gateOtpDone && entryValidation.ok ? (
+      {sequenceOtpRecoveryActive ? (
+        <p role="status" data-testid="booking-gate-otp-recovery" className="mt-4 text-sm text-[var(--booking-text-muted)]">
+          {language === "vi"
+            ? "Vui lòng xác thực lại để tiếp tục. Các dịch vụ và giờ đã chọn vẫn được giữ."
+            : "Please verify again to continue. Your selected services and time are kept."}
+        </p>
+      ) : null}
+      {gateReady && (salon.phoneOtpEnabled || sequenceOtpRecoveryActive) && !gateOtpDone && entryValidation.ok ? (
         <GateOtpInline
           // Same identity as the session it will produce, so switching salon or
           // editing the number drops the widget's stage, typed code and any
@@ -849,7 +907,9 @@ export function BookingTypeSwitcher({
   );
 
   // Shared props for BookingFlow — same in both individual-only and group-switcher paths.
-  const flowReady = gateReady && (!salon.phoneOtpEnabled || gateOtpDone);
+  // Re-verification keeps this same sequence mounted so its in-memory draft
+  // survives. Other modes and changed identities still require the usual gate.
+  const flowReady = gateReady && (!salon.phoneOtpEnabled || gateOtpDone || sequenceOtpRecoveryActive);
   const individualFlowProps = {
     t,
     shopSlug,
@@ -939,6 +999,7 @@ export function BookingTypeSwitcher({
               type="button"
               role="tab"
               aria-selected={active}
+              disabled={sequenceOtpRecoveryActive}
               data-testid={`booking-type-${m}`}
               onClick={() => setMode(m)}
               className={cn(
@@ -965,6 +1026,8 @@ export function BookingTypeSwitcher({
         />
       ) : mode === "sequence" ? (
         <BookingSequenceFlow
+          shopSlug={shopSlug}
+          key={`seq-${salon.id}-${entryPhoneRevision}`}
           t={t}
           services={services}
           addOns={addOns}
@@ -978,6 +1041,7 @@ export function BookingTypeSwitcher({
             email: entryCustomer?.email || gateOtpEmail || null,
           }}
           otpSessionId={gateOtpSessionId}
+          onOtpSessionInvalid={handleSequenceOtpInvalid}
           initialSmsConsent={entrySmsConsent}
         />
       ) : (

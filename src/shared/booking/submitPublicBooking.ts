@@ -1,3 +1,6 @@
+import { committedCardRecoveryHref } from "@/shared/booking/committedCardRecovery";
+import { replayPaidPublicBooking } from "@/shared/booking/replayPaidPublicBooking";
+import type { PublicBookingRequestMaterial } from "@/shared/booking/publicBookingRequestId";
 import * as ErrorReporter from "@/shared/observability/errorReporter";
 import { assertBookingLimitAvailable } from "@/shared/booking/assertBookingLimit";
 import { BOOKING_ANY_STAFF_ID } from "@/shared/booking/bookingStaffConstants";
@@ -36,7 +39,7 @@ import {
 } from "@/shared/booking/publicBookingPricing";
 import { resolveAnyStaffForPublicBooking } from "@/shared/booking/publicBookingAnyStaff";
 import type { PaidPublicDeposit } from "@/shared/payments/publicDepositTypes";
-import { runBoundedPublicBookingRpc } from "@/shared/booking/publicBookingRpcBoundary";
+import { dispatchPendingBookingCreate, DEFINITE_CREATE_REJECTIONS } from "@/shared/booking/pendingBookingCreate";
 import { settleCommittedBookingCardManagement } from "@/shared/booking/settleCommittedBookingCardManagement";
 import { v1AllowsNoShowCardOnFile } from "@/shared/release/v1IntegrationScope";
 import {
@@ -126,7 +129,7 @@ export type BookingParams = {
    *  assert this; server-side callers (desk, voice) leave it unset so no consent
    *  record is fabricated for a customer who never saw a checkbox. */
   smsConsent?: boolean;
-  /** Email capture: $2 off incentive for first-time email submission. */
+  /** Explicit $2 offer, once per phone, with email and exact SMS ownership. */
   emailCaptureDiscount?: boolean;
   /** Stable per-submit key. Replays return the original booking and never
    *  redeem a voucher/email incentive twice. */
@@ -139,6 +142,11 @@ export type BookingParams = {
   /** Internal retry marker: the same logical submit may replay a committed row
    * whose assigned staff now appears occupied by that very row. */
   idempotencyReplay?: boolean;
+  /** Immutable create material retained when the paid attempt first submitted.
+   * Replay never rebuilds it from current catalog, pricing or form state. */
+  paidReplayMaterial?: PublicBookingRequestMaterial | null;
+  /** Display-only label retained with the attempt; never payment authority. */
+  paidReplayServiceName?: string | null;
 };
 
 export type BookingResult = {
@@ -164,6 +172,8 @@ export type BookingResult = {
   pricing: PublicBookingPricingQuote;
   /** Action-scoped post-booking card proof. Null until trusted mint succeeds. */
   cardManagementToken: string | null;
+  /** Expiring create-authorized recovery when capability delivery failed. */
+  cardManagementRecoveryHref?: string | null;
   /** True when no-show card work remains after the booking was committed. */
   cardManagementPending: boolean;
   /** Public-safe post-commit delivery state; never equates booking success with delivery. */
@@ -230,6 +240,11 @@ async function executePublicBooking(
   params: BookingParams,
   mode: "quote" | "submit",
 ): Promise<BookingResult | PublicBookingPricingQuote> {
+  // A lost paid-create response can outlive the appointment, catalog or plan.
+  // Only the bound receipt may resolve it; no fresh preflight or mutation runs.
+  if (mode === "submit" && params.paidDeposit && params.idempotencyReplay === true) {
+    return replayPaidPublicBooking(params);
+  }
   const {
     shopSlug,
     serviceId,
@@ -390,29 +405,23 @@ async function executePublicBooking(
   // never readable by the anonymous client.
   const salonPhoneOtpEnabled =
     (salon as { phone_otp_enabled?: unknown }).phone_otp_enabled === true;
-  // The OTP session id actually used downstream (reuse + consume). Resolved from
-  // the client-passed id OR a valid session for the phone (see fallback below).
-  let resolvedOtpSessionId = "";
+  // Forward the explicit proof even when OTP is optional: pricing, creation and
+  // saved-card reuse independently validate its authority.
+  const resolvedOtpSessionId = params.otpSessionId?.trim() || "";
   if (mode === "submit" && salonPhoneOtpEnabled) {
-    const passedId = (params.otpSessionId ?? "").trim();
+    const passedId = resolvedOtpSessionId;
     if (!passedId) throw new Error("otp_required");
-    const { data: otpValid, error: otpValidationError } = await supabase.rpc(
-      "validate_phone_otp_session" as never,
-      {
-        p_session_id: passedId,
-        p_salon_id: String(salon.id),
-        p_phone: phoneOk.digits,
-      } as never,
-    );
+    const { data: otpValid, error: otpValidationError } =
+      await supabase.rpc("validate_booking_otp_session" as never, {
+          p_session_id: passedId,
+          p_salon_id: String(salon.id),
+          p_phone: phoneOk.digits,
+        } as never);
     if (otpValidationError || otpValid !== true) {
       throw new Error("otp_required");
     }
-    resolvedOtpSessionId = passedId;
-
-    // NOTE: do NOT consume the session here. The saved-card REUSE path
-    // (reuseNoShowCardForBooking, below) re-validates this same session and
-    // requires it UNCONSUMED to re-derive the card by the verified phone.
-    // Consume happens at the END, after the card step (single-use still holds).
+    // Creation consumes SMS atomically and binds it to this booking. Explicit
+    // saved-card reuse accepts that exact binding or an active unused proof.
   }
 
   // Enforce per-plan monthly booking cap (landing-page promise).
@@ -817,6 +826,7 @@ async function executePublicBooking(
       clientEmail: emailToStore,
       applyEmailDiscount:
         params.emailCaptureDiscount === true && emailToStore !== null,
+      otpSessionId: resolvedOtpSessionId || null,
     });
   }
 
@@ -843,6 +853,7 @@ async function executePublicBooking(
         params.emailCaptureDiscount === true && emailToStore !== null,
       p_idempotency_key: createIdempotencyKey,
       p_expected_pricing_fingerprint: expectedQuote.pricingFingerprint,
+      p_otp_session_id: resolvedOtpSessionId || null,
   };
   let rpcData: unknown = null;
   let rpcErr: RpcErrorShape | null = null;
@@ -873,6 +884,8 @@ async function executePublicBooking(
         paymentOperationId: params.paidDeposit.operationId,
         paymentRequestId: params.paidDeposit.paymentRequestId,
         paymentMaterialFingerprint: params.paidDeposit.materialFingerprint,
+        replayOnly: false,
+        otpSessionId: resolvedOtpSessionId || null,
       }),
     }).catch(() => null);
     if (!response) {
@@ -882,17 +895,22 @@ async function executePublicBooking(
       if (rpcData == null) rpcErr = { message: "paid booking response invalid" };
     }
   } else {
-    const attempt = await runBoundedPublicBookingRpc({
-      requestId: createIdempotencyKey,
-      invoke: (_requestId, signal) =>
-        supabase.rpc("create_public_booking", createRpcArgs).abortSignal(signal),
+    const receipt = await dispatchPendingBookingCreate({
+      binding: { kind: "individual", salonId: String(salon.id), idempotencyKey: createIdempotencyKey, pricingFingerprint: expectedQuote.pricingFingerprint },
+      invoke: signal => supabase.rpc("create_public_booking", createRpcArgs).abortSignal(signal),
+      classify: value => {
+        if (value.error) return ["23505", "23P01", "PGRST202"].includes(value.error.code) ? "rejected" : "unknown";
+        const raw = Array.isArray(value.data) ? value.data[0] : value.data;
+        if (!raw || typeof raw !== "object") return "unknown";
+        if (raw.success === false && DEFINITE_CREATE_REJECTIONS.has(raw.code)) return "rejected";
+        const pricing = parsePublicBookingPricingQuote(raw, { resolvedStaffId, resolvedStaffName, voucherCode: params.voucherCode });
+        return raw.success === true && typeof raw.booking_id === "string" &&
+          /^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/i.test(raw.booking_id) &&
+          pricing?.pricingFingerprint === expectedQuote.pricingFingerprint ? "succeeded" : "unknown";
+      },
     });
-    if (attempt.kind === "outcome_unknown") {
-      captureCreatePublicBookingFailure({ reason: "supabase_rpc_timeout_unknown" });
-      throw new Error("booking_commit_unknown");
-    }
-    rpcData = attempt.value.data;
-    rpcErr = attempt.value.error;
+    rpcData = receipt.data;
+    rpcErr = receipt.error;
   }
 
   let bookingId = "";
@@ -906,6 +924,17 @@ async function executePublicBooking(
         envelope.booking && typeof envelope.booking === "object"
           ? envelope.booking as Record<string, unknown>
           : null;
+      if (params.paidDeposit && envelope.success === false &&
+        envelope.code === "booking_create_failed" && nestedBooking?.success === false &&
+        envelope.deposit_compensation_status === "succeeded") {
+        // Only the server's durable successful refund receipt unlocks a fresh
+        // explicit booking attempt. Pending/unknown refunds keep payment locked.
+        throw new Error("deposit_refund_completed");
+      }
+      if (params.paidDeposit && envelope.success === false &&
+        envelope.code === "booking_recovery_required") {
+        throw new Error("deposit_booking_recovery_required");
+      }
       // The paid-deposit RPC wraps the canonical booking receipt so booking
       // creation and payment binding commit in one transaction. Parse that
       // nested receipt with the exact same strict pricing contract.
@@ -917,6 +946,11 @@ async function executePublicBooking(
           : envelope;
       if (o.success === false) {
         const code = typeof o.code === "string" ? o.code : "";
+        if (code === "phone_verification_required") {
+          // A paid deposit needs its existing compensation/replay flow. It is
+          // not permission to start another payment with a fresh quote.
+          throw new Error(params.paidDeposit ? "deposit_booking_recovery_required" : code);
+        }
         if (code === "pricing_changed") {
           const changedQuote = parsePublicBookingPricingQuote(o.quote, {
             resolvedStaffId,
@@ -1046,10 +1080,9 @@ async function executePublicBooking(
         : undefined,
     });
 
-  // Finalize identity evidence only after the card/reuse step, which needs the
-  // OTP session unconsumed. The narrow RPC binds the unguessable booking id to
-  // its durable client_profile_id, validates the exact OTP salon+phone, stamps
-  // phone trust / marketing consent and consumes OTP in one transaction.
+  // Finalize optional consent after the card/reuse step. The narrow RPC accepts
+  // an exact booking-bound proof idempotently; a fresh SMS proof can attach CRM
+  // once. Email evidence cannot authorize phone trust or marketing consent.
   if (resolvedOtpSessionId || params.marketingConsent === true) {
     const { data: finalized, error: finalizeError } = await supabase.rpc(
       "finalize_public_booking_profile" as never,
@@ -1323,6 +1356,9 @@ async function executePublicBooking(
     discountLines: authoritativePricing.discountLines,
     pricing: authoritativePricing,
     cardManagementToken,
+    cardManagementRecoveryHref: cardManagementPending && !cardManagementToken
+      ? committedCardRecoveryHref({ salonId: String(salon.id), bookingId, idempotencyKey: createIdempotencyKey,
+          pricingFingerprint: authoritativePricing.pricingFingerprint }) : null,
     cardManagementPending,
     confirmationDelivery: {
       sms: smsDelivery,

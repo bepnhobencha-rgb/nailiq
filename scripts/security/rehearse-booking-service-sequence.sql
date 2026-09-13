@@ -507,14 +507,14 @@ BEGIN
     '+16045550102', 'UTC', 'CAD', 'premium', 'active', true, '{}'::jsonb
   );
   INSERT INTO public.phone_otp_sessions(
-    id, salon_id, phone, verified_at, expires_at
+    id, salon_id, phone, verified_at, expires_at, verified_channel
   ) VALUES
     (v_otp_session, v_salon, '16045550195', transaction_timestamp(),
-      transaction_timestamp()+interval '15 minutes'),
+      transaction_timestamp()+interval '15 minutes', 'sms'),
     (v_other_otp_session, v_other_salon, '16045550195', transaction_timestamp(),
-      transaction_timestamp()+interval '15 minutes'),
+      transaction_timestamp()+interval '15 minutes', 'sms'),
     (v_wrong_phone_otp_session, v_salon, '16045550999', transaction_timestamp(),
-      transaction_timestamp()+interval '15 minutes');
+      transaction_timestamp()+interval '15 minutes', 'sms');
   v_one_line_request := pg_catalog.jsonb_set(
     v_one_line_request, '{request_id}',
     '"40000000-0000-4000-8000-000000000006"'::jsonb

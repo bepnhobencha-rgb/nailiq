@@ -54,6 +54,7 @@ export function safeCardFailure(error: unknown, stage: CardFailureStage): CardFa
 
 export function squareFailureStage(method: string, path: string): CardFailureStage | null {
   if (path === "/customers/search") return "customer_search";
+  if (method === "GET" && /^\/customers\/[^/]+$/.test(path)) return "customer_search";
   if (path === "/customers" && method === "POST") return "customer_create";
   if (path === "/cards" && method === "POST") return "card_create";
   if (path.startsWith("/cards?reference_id=") || (method === "GET" && /^\/cards\/[^/]+$/.test(path))) return "reconciliation";

@@ -55,6 +55,7 @@ export function BookingFlowOtpPanel({
   onSkip,
   onBack,
   salonPhone,
+  purpose = "booking",
 }: {
   t: BookingMessages;
   shopSlug: string;
@@ -65,6 +66,7 @@ export function BookingFlowOtpPanel({
   emailChannelEnabled?: boolean;
   /** Salon contact phone — shown as last-resort fallback when SMS and email both fail. */
   salonPhone?: string | null;
+  purpose?: "booking" | "phone";
   stepDir: BookingMotionDir;
   reducedMotion: boolean;
   stepTransition: { duration: number; ease: [number, number, number, number] };
@@ -79,20 +81,25 @@ export function BookingFlowOtpPanel({
   const [code, setCode] = useState("");
   const [error, setError] = useState<string | null>(null);
   const [cooldown, setCooldown] = useState(0);
-  const [sent, setSent] = useState(false);
+  const [smsSent, setSmsSent] = useState(false);
+  const [smsSendFailed, setSmsSendFailed] = useState(false);
   const [smsDeliveryAttemptId, setSmsDeliveryAttemptId] = useState("");
   const [isSending, startSendTransition] = useTransition();
   const [isVerifying, startVerifyTransition] = useTransition();
   // Email fallback state. `emailUsed` is the address a code was emailed to — sent
   // alongside the verify request so the server also checks the email-code store.
   const onFileEmail = (clientEmail ?? "").trim();
-  const canEmail = Boolean(emailChannelEnabled);
+  const canEmail = purpose !== "phone" && Boolean(emailChannelEnabled);
   const [emailUsed, setEmailUsed] = useState<string>("");
+  const [emailSendFailed, setEmailSendFailed] = useState(false);
   const [showEmailInput, setShowEmailInput] = useState(false);
   const [emailInput, setEmailInput] = useState("");
   const [isEmailing, startEmailTransition] = useTransition();
   const codeInputRef = useRef<HTMLInputElement>(null);
   const timerRef = useRef<ReturnType<typeof setInterval> | null>(null);
+  // Either accepted channel can verify the customer. A failed SMS must not
+  // disable a usable email code, regardless of which response arrives first.
+  const hasCodeDelivery = smsSent || Boolean(emailUsed);
 
   // Key for the per-phone "recently sent" guard. Digits-only so format variants
   // (spaces / +1) map to the same entry.
@@ -126,6 +133,8 @@ export function BookingFlowOtpPanel({
   function sendEmailCode(addr: string) {
     const email = addr.trim();
     if (!isEmailish(email)) return;
+    setError(null);
+    setEmailSendFailed(false);
     startEmailTransition(async () => {
       try {
         const res = await fetch("/api/booking-otp/send", {
@@ -137,15 +146,19 @@ export function BookingFlowOtpPanel({
         if (res.ok && body.ok) {
           setEmailUsed(email);
           setShowEmailInput(false);
+          setTimeout(() => codeInputRef.current?.focus(), 100);
+        } else {
+          setEmailSendFailed(true);
         }
       } catch {
-        /* email fallback is best-effort — SMS still works */
+        setEmailSendFailed(true);
       }
     });
   }
 
   function sendCode(opts?: { auto?: boolean }) {
     setError(null);
+    setSmsSendFailed(false);
     startSendTransition(async () => {
       // Auto-send on (re)mount: if we already texted this phone < cooldown ago
       // (customer stepped Back to edit info then Forward again), skip the
@@ -157,7 +170,7 @@ export function BookingFlowOtpPanel({
         : RESEND_COOLDOWN_S;
       if (opts?.auto && last && elapsedS < RESEND_COOLDOWN_S) {
         setSmsDeliveryAttemptId(last.deliveryAttemptId ?? "");
-        setSent(true);
+        setSmsSent(true);
         startCooldown(RESEND_COOLDOWN_S - elapsedS);
         setTimeout(() => codeInputRef.current?.focus(), 100);
         return;
@@ -174,10 +187,10 @@ export function BookingFlowOtpPanel({
           deliveryAttemptId?: string;
         };
         if (!res.ok || !body.ok) {
-          setError(t.bookingErrors.otpSendFailed);
+          setSmsSendFailed(true);
           return;
         }
-        setSent(true);
+        setSmsSent(true);
         setSmsDeliveryAttemptId(body.deliveryAttemptId ?? "");
         lastSmsSend.set(otpKey, {
           sentAt: Date.now(),
@@ -186,12 +199,13 @@ export function BookingFlowOtpPanel({
         startCooldown();
         setTimeout(() => codeInputRef.current?.focus(), 100);
       } catch {
-        setError(t.bookingErrors.otpSendFailed);
+        setSmsSendFailed(true);
       }
     });
   }
 
   function onVerify() {
+    if (!hasCodeDelivery || isVerifying) return;
     const trimmed = code.trim();
     if (!/^\d{4,8}$/.test(trimmed)) {
       setError(t.bookingErrors.otpInvalidCode);
@@ -207,7 +221,7 @@ export function BookingFlowOtpPanel({
             phone: clientPhone,
             code: trimmed,
             shopSlug,
-            email: emailUsed || undefined,
+            email: purpose === "phone" ? undefined : emailUsed || undefined,
             deliveryAttemptId: smsDeliveryAttemptId || undefined,
           }),
         });
@@ -253,10 +267,11 @@ export function BookingFlowOtpPanel({
       className="mt-6 w-full"
     >
       <h2 className="text-xl font-semibold text-[var(--booking-text)]">
-        {t.otpStepHeading}
+        {purpose === "phone" ? t.phoneOfferVerify : t.otpStepHeading}
       </h2>
-      {sent ? (
-        <p className="mt-1 text-sm text-[var(--booking-text-muted)]">
+      {purpose === "phone" ? <p className="mt-2 text-sm text-[var(--booking-text-muted)]">{t.phoneOnlyOtpHint}</p> : null}
+      {smsSent ? (
+        <p data-testid="otp-delivery-sms" className="mt-1 text-sm text-[var(--booking-text-muted)]">
           {t.otpStepSubheading}{" "}
           <span className="font-medium text-[var(--booking-text)]">
             {maskPhone(clientPhone)}
@@ -271,8 +286,15 @@ export function BookingFlowOtpPanel({
             </>
           ) : null}
         </p>
-      ) : (
-        <p className="mt-1 text-sm text-[var(--booking-text-muted)]">
+      ) : emailUsed ? (
+        <p data-testid="otp-delivery-email" className="mt-1 text-sm text-[var(--booking-text-muted)]">
+          {t.otpEmailStepSubheading}{" "}
+          <span className="font-medium text-[var(--booking-text)]">
+            {maskEmail(emailUsed)}
+          </span>
+        </p>
+      ) : smsSendFailed && !isSending ? null : (
+        <p data-testid="otp-delivery-pending" className="mt-1 text-sm text-[var(--booking-text-muted)]">
           {isSending ? t.otpSending : t.otpSendCode + "…"}
         </p>
       )}
@@ -302,7 +324,7 @@ export function BookingFlowOtpPanel({
               if (e.key === "Enter" && !isVerifying) onVerify();
             }}
             placeholder={t.otpCodePlaceholder}
-            disabled={!sent || isVerifying}
+            disabled={!hasCodeDelivery || isVerifying}
             className={cn(
               "w-full rounded-xl border bg-[var(--booking-bg-input)] px-4 py-3 text-center text-xl tracking-widest text-[var(--booking-text)] placeholder:text-[var(--booking-text-muted)]/40 focus:outline-none focus:ring-2 focus:ring-[var(--salon-primary)]/60",
               error ? "border-nq-error/60" : "border-[var(--booking-border)]",
@@ -330,11 +352,21 @@ export function BookingFlowOtpPanel({
               onClick={onSkip}
               className="text-sm text-[var(--booking-text-muted)] underline-offset-2 hover:underline"
             >
-              {t.otpSkip ?? "Bỏ qua"}
+              {purpose === "phone" ? t.phoneOfferSkip : t.otpSkip ?? "Bỏ qua"}
             </button>
           ) : null}
         </div>
-        {isOptional ? (
+        {smsSendFailed ? (
+          <p role="alert" data-testid="otp-sms-error" className="text-xs text-nq-error">
+            {t.bookingErrors.otpSendFailed}
+          </p>
+        ) : null}
+        {emailSendFailed ? (
+          <p role="alert" data-testid="otp-email-error" className="text-xs text-nq-error">
+            {t.bookingErrors.otpEmailSendFailed}
+          </p>
+        ) : null}
+        {isOptional && purpose !== "phone" ? (
           <p className="text-xs text-[var(--booking-text-muted)]/70">
             {t.otpOptionalHint ?? "Xác thực OTP giúp giảm rủi ro không đến (không bắt buộc)"}
           </p>
@@ -343,17 +375,28 @@ export function BookingFlowOtpPanel({
         {/* Email fallback — only when the salon's email channel is on. The happy
             path (SMS arrives) never needs this; it rescues a customer whose text
             never came (US carrier filtering) and captures a real email. */}
-        {canEmail && sent ? (
+        {canEmail ? (
           emailUsed ? (
-            <p
-              data-testid="otp-email-sent"
-              className="text-xs text-[var(--booking-text-muted)]"
-            >
-              ✓ {t.otpEmailSent}{" "}
-              <span className="font-medium text-[var(--booking-text)]">
-                {maskEmail(emailUsed)}
-              </span>
-            </p>
+            <div className="space-y-2">
+              <p
+                data-testid="otp-email-sent"
+                className="text-xs text-[var(--booking-text-muted)]"
+              >
+                ✓ {smsSent ? t.otpEmailSent : t.otpEmailStepSubheading}{" "}
+                <span className="font-medium text-[var(--booking-text)]">
+                  {maskEmail(emailUsed)}
+                </span>
+              </p>
+              <button
+                type="button"
+                data-testid="otp-email-resend"
+                disabled={isEmailing || isVerifying}
+                onClick={() => sendEmailCode(emailUsed)}
+                className="text-sm text-[var(--salon-primary)] underline-offset-2 hover:underline disabled:cursor-not-allowed disabled:opacity-50"
+              >
+                {isEmailing ? t.otpEmailSending : t.otpEmailResendCta}
+              </button>
+            </div>
           ) : showEmailInput ? (
             <div className="space-y-2">
               <label
@@ -402,7 +445,7 @@ export function BookingFlowOtpPanel({
         ) : null}
 
         {/* Last-resort fallback: call the salon directly when both SMS and email fail */}
-        {salonPhoneClean && sent ? (
+        {salonPhoneClean ? (
           <div className="flex items-center justify-between rounded-lg border border-[var(--booking-border)] bg-[var(--booking-bg-input)] px-3 py-2.5">
             <span className="text-sm text-[var(--booking-text-muted)]">
               {t.otpCallSalonHint ?? "Still having trouble?"}
@@ -431,7 +474,7 @@ export function BookingFlowOtpPanel({
             ← {t.back}
           </Button>
           <LuxuryBookingCta
-            disabled={!sent || isVerifying || code.trim().length < 4}
+            disabled={!hasCodeDelivery || isVerifying || code.trim().length < 4}
             onClick={onVerify}
             className="flex-[2]"
           >

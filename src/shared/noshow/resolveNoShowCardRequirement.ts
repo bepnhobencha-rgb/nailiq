@@ -6,6 +6,10 @@ import { resolvePaymentProvider } from "@/shared/integrations/payments";
 import { getSquareConfig } from "@/shared/integrations/square/client";
 import { v1AllowsNoShowCardOnFile } from "@/shared/release/v1IntegrationScope";
 import { quotePublicBookingSequence } from "@/shared/booking/bookingSequenceServer";
+import { isCardCapturePaused } from "@/shared/booking/cardCapturePause";
+import { groupBookingQuoteRequestSchema, resolveGroupBookingQuote } from "@/shared/booking/groupBookingPricingServer";
+
+import { publicBookingQuoteRequestSchema, resolvePublicBookingQuote } from "@/shared/booking/publicBookingQuoteServer";
 
 const num = (v: unknown): number => (v == null ? 0 : Number(v));
 const str = (v: unknown): string => (v == null ? "" : String(v));
@@ -44,6 +48,12 @@ export async function resolveNoShowCardRequirement(args: {
    *  whole-party protection is on, the displayed fee covers the whole group so
    *  it matches what the server saves on the organizer's card. */
   groupServiceIds?: string[];
+  /** Fresh individual quote, bound to the exact price the customer confirmed. */
+  individualIntent?: unknown;
+  individualPricingFingerprint?: string;
+  /** Bind group consent to the authoritative discounted booking price. */
+  groupIntent?: unknown;
+  groupPricingFingerprint?: string;
   /** A sequence fee must be derived from a fresh authoritative quote, never
    *  from browser totals or de-duplicated catalog ids. Both fields are required
    *  together and the exact fingerprint must still match. */
@@ -55,6 +65,12 @@ export async function resolveNoShowCardRequirement(args: {
   // ahead of every client construction/read as a second line of defense behind
   // the client-side gate.
   if (!v1AllowsNoShowCardOnFile()) return { required: false };
+
+  // This result controls the pre-booking form, not the durable protection
+  // requirement. During a capture pause, reserve the appointment without
+  // asking for a token that cannot be saved. Post-commit assessment still
+  // records the required card and supplies the recovery link.
+  if (isCardCapturePaused()) return { required: false };
 
   try {
     const db = looseServiceClient();
@@ -82,7 +98,40 @@ export async function resolveNoShowCardRequirement(args: {
     // Fee base: the whole party's services (group + whole-party on) or just this
     // service. Sum prices in one query so the gate stays fast.
     let priceCents: number;
-    if (args.sequenceIntent != null || args.sequencePricingFingerprint != null) {
+    if (args.individualIntent != null || args.individualPricingFingerprint != null) {
+      const parsed = publicBookingQuoteRequestSchema.safeParse(args.individualIntent);
+      if (!parsed.success || parsed.data.salonId !== args.salonId ||
+        parsed.data.serviceId !== args.serviceId ||
+        parsed.data.clientPhone !== args.clientPhone.replace(/\D/g, "") ||
+        typeof args.individualPricingFingerprint !== "string" ||
+        !/^[0-9a-f]{64}$/.test(args.individualPricingFingerprint) ||
+        args.groupIntent != null || args.groupPricingFingerprint != null ||
+        args.groupServiceIds != null ||
+        args.sequenceIntent != null || args.sequencePricingFingerprint != null) return { required: false };
+      const result = await resolvePublicBookingQuote(parsed.data);
+      if (!result.ok || result.quote.salonId !== args.salonId ||
+        result.quote.serviceId !== args.serviceId ||
+        result.quote.pricingFingerprint !== args.individualPricingFingerprint) return { required: false };
+      // Creation stores serviceFinalCents in bookings.price_cents. Match the
+      // durable no-show policy after promotions/email/voucher allocation;
+      // add-ons and taxes are separate from this service fee base.
+      priceCents = result.quote.serviceFinalCents;
+    } else if (args.groupIntent != null || args.groupPricingFingerprint != null) {
+      const parsed = groupBookingQuoteRequestSchema.safeParse(args.groupIntent);
+      if (!parsed.success || parsed.data.salonId !== args.salonId ||
+        parsed.data.bookings[0].clientPhone !== args.clientPhone.replace(/\D/g, "") ||
+        parsed.data.bookings[0].serviceId !== args.serviceId ||
+        typeof args.groupPricingFingerprint !== "string" ||
+        !/^[0-9a-f]{64}$/.test(args.groupPricingFingerprint) ||
+        args.sequenceIntent != null || args.sequencePricingFingerprint != null) return { required: false };
+      const result = await resolveGroupBookingQuote(parsed.data);
+      if (!result.ok || result.quote.salonId !== args.salonId ||
+        result.quote.pricingFingerprint !== args.groupPricingFingerprint) return { required: false };
+      // Group creation persists each member's serviceFinalCents as price_cents.
+      // Add-ons/taxes stay separate, matching strict post-commit no-show policy.
+      const members = wholeParty ? result.quote.memberQuotes : result.quote.memberQuotes.slice(0, 1);
+      priceCents = members.reduce((sum, member) => sum + member.serviceFinalCents, 0);
+    } else if (args.sequenceIntent != null || args.sequencePricingFingerprint != null) {
       if (
         args.sequenceIntent == null ||
         typeof args.sequencePricingFingerprint !== "string" ||

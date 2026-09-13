@@ -1,5 +1,7 @@
 "use client";
 
+import { BookingPhoneDiscountChoice } from "./BookingPhoneDiscountChoice";
+
 import { AnimatePresence, useReducedMotion } from "@/shared/lib/motionClient";
 import { useMemo, useState, useEffect } from "react";
 import { getClientLoyaltyCardByPhone } from "@/shared/loyalty/loyaltyActions";
@@ -219,6 +221,7 @@ export function BookingFlow({
         displayEndUtc={flow.bookingResult.endTimeUtc}
         bookingId={flow.bookingResult.bookingId}
         cardManagementToken={flow.bookingResult.cardManagementToken}
+        cardManagementRecoveryHref={flow.bookingResult.cardManagementRecoveryHref}
         cardManagementPending={flow.bookingResult.cardManagementPending}
         confirmationDelivery={flow.bookingResult.confirmationDelivery}
         salonPhone={salon.salonPhone}
@@ -418,7 +421,16 @@ export function BookingFlow({
             onBack={flow.backFromOtpToInfo}
           />
         ) : null}
-        {flow.step === "deposit" && flow.pricingQuote ? (
+        {flow.step === "deposit" && (Boolean(flow.clientEmail.trim()) || flow.pricingQuoteError === "phone_verification_required") && !flow.discountChoiceMade ? (
+          <BookingPhoneDiscountChoice
+            t={t} shopSlug={shopSlug} phone={flow.clientPhone} salonPhone={salon.salonPhone}
+            hasEmail={Boolean(flow.clientEmail.trim())} requested={flow.emailDiscountRequested}
+            verifying={flow.discountVerifying} verificationRequired={flow.pricingQuoteError === "phone_verification_required"}
+            disabled={flow.submitting} onStart={flow.startDiscountVerification}
+            onVerified={flow.finishDiscountVerification} onSkip={flow.skipPhoneDiscount}
+          />
+        ) : null}
+        {flow.step === "deposit" && flow.pricingQuote && !flow.discountVerifying && (!flow.clientEmail.trim() || flow.discountChoiceMade) && flow.pricingQuoteError !== "phone_verification_required" ? (
           <BookingFlowDepositPanel
             salonId={salon.id}
             pricingQuote={flow.pricingQuote}
@@ -426,6 +438,8 @@ export function BookingFlow({
             clientPhone={flow.clientPhone}
             clientEmail={flow.clientEmail.trim() || null}
             otpSessionId={flow.otpSessionId}
+            applyEmailDiscount={flow.emailDiscountRequested}
+            onPhoneVerificationRequired={flow.handleDepositPhoneVerificationRequired}
             onPaid={flow.goDepositPaid}
             onSkip={flow.goDepositSkip}
             onBack={flow.backFromOtpToInfo}
@@ -435,10 +449,28 @@ export function BookingFlow({
             Preparing secure deposit…
           </p>
         ) : null}
-        {flow.step === "confirm" &&
+        {flow.step === "confirm" && flow.depositRefundCompleted ? (
+          <section data-testid="booking-deposit-refunded" className="mt-6 space-y-4 rounded-xl border border-[var(--booking-border)] bg-[var(--booking-bg-input)] p-4 text-[var(--booking-text)]">
+            <p role="status">{t.depositRefundCompleted}</p>
+            <p className="text-sm text-[var(--booking-text-muted)]">{t.depositRefundDraftRetained}</p>
+            {flow.error ? <p role="alert" className="text-sm text-nq-error">{flow.error}</p> : null}
+            <button type="button" disabled={flow.submitting} onClick={() => void flow.startFreshBookingAfterRefund()} className="nq-booking-btn-ghost min-h-11 px-4 disabled:opacity-50">
+              {t.depositRefundStartFresh}
+            </button>
+          </section>
+        ) : null}
+        {flow.step === "confirm" && !flow.depositRefundCompleted &&
         flow.service &&
         flow.timeSlot &&
         flow.confirmTimeLabel ? (
+          <>
+          <BookingPhoneDiscountChoice
+            t={t} shopSlug={shopSlug} phone={flow.clientPhone} salonPhone={salon.salonPhone}
+            hasEmail={Boolean(flow.clientEmail.trim())} requested={flow.emailDiscountRequested}
+            verifying={flow.discountVerifying} verificationRequired={flow.pricingQuoteError === "phone_verification_required"}
+            disabled={flow.submitting} lockedReason={flow.hasPaidDeposit ? t.phoneOfferPaidDepositHint : undefined} onStart={flow.startDiscountVerification}
+            onVerified={flow.finishDiscountVerification} onSkip={flow.skipPhoneDiscount}
+          />
           <BookingFlowConfirmPanel
             t={t}
             shopLabel={flow.shopLabel}
@@ -460,7 +492,8 @@ export function BookingFlow({
             selectedAddonIds={flow.selectedAddonIds}
             selectedAddonsTotalMin={flow.selectedAddonsTotalMin}
             error={flow.error}
-            submitting={flow.submitting}
+            submitting={flow.submitting || flow.discountVerifying}
+            materialLocked={flow.hasPaidDeposit}
             stepDir={flow.stepDir}
             reducedMotion={Boolean(reducedMotion)}
             stepTransition={stepTransition}
@@ -484,6 +517,7 @@ export function BookingFlow({
             onApplyVoucher={flow.handleApplyVoucher}
             onRemoveVoucher={flow.handleRemoveVoucher}
           />
+          </>
         ) : null}
       </AnimatePresence>
     </div>

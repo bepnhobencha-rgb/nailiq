@@ -15,6 +15,7 @@ import { createServiceRoleClient } from "@/shared/lib/supabase/serviceRole";
 import { generateReminderToken } from "@/shared/noshow/generateReminderToken";
 import { clientIp } from "@/shared/lib/inAppRateLimit";
 import { isUsPhone } from "@/shared/lib/phoneRegion";
+import { toCanonicalPhone } from "@/shared/lib/toCanonicalPhone";
 import {
   buildBookingConfirmationSms,
   buildGroupMemberInviteSms,
@@ -142,7 +143,7 @@ export async function POST(req: Request) {
   const { data: bookingRow } = await db
     .from("bookings")
     .select(
-      "id, salon_id, group_id, group_size, status, schedule_model, client_phone, client_name, service_id, staff_id, start_time_utc",
+      "id, salon_id, group_id, group_size, status, schedule_model, client_phone, client_name, service_id, staff_id, start_time_utc, client_profile_id, otp_session_id",
     )
     .eq("id", bookingId)
     .maybeSingle();
@@ -160,6 +161,8 @@ export async function POST(req: Request) {
         service_id: string | null;
         staff_id: string | null;
         start_time_utc: string | null;
+        client_profile_id?: string | null;
+        otp_session_id?: string | null;
       }
     | null;
 
@@ -352,19 +355,17 @@ export async function POST(req: Request) {
       : "en";
   const requestedLang = language === "en" || language === "vi" ? language : null;
 
-  const { data: profile } = await db
-    .from("client_profiles")
-    .select("id")
-    .eq("phone", clientPhone)
-    .is("deleted_at", null)
-    .maybeSingle();
+  // The chosen language always applies to this confirmation. Persisting or
+  // reading global customer preferences additionally requires phone ownership;
+  // a newly created appointment and its claimed phone do not establish it.
+  const preferenceProfileId = await resolveBookingPreferenceProfileId(db, booking);
   let lang: "en" | "vi" = requestedLang ?? salonLocale;
-  if (profile) {
+  if (preferenceProfileId) {
     if (requestedLang) {
       // Persist the choice so future reminders for this customer match it.
       await db.from("customer_preferences").upsert(
         {
-          client_profile_id: profile.id,
+          client_profile_id: preferenceProfileId,
           salon_id: salonId,
           preferred_language: requestedLang,
         },
@@ -374,7 +375,7 @@ export async function POST(req: Request) {
       const { data: prefs } = await db
         .from("customer_preferences")
         .select("preferred_language")
-        .eq("client_profile_id", profile.id)
+        .eq("client_profile_id", preferenceProfileId)
         .eq("salon_id", salonId)
         .maybeSingle();
       lang = prefs?.preferred_language === "vi" || prefs?.preferred_language === "en"
@@ -564,6 +565,62 @@ export async function POST(req: Request) {
     },
     { status: responseStatus },
   );
+}
+
+async function resolveBookingPreferenceProfileId(
+  db: ReturnType<typeof createServiceRoleClient>,
+  booking: {
+    id: string;
+    salon_id: string;
+    client_phone: string | null;
+    client_profile_id?: string | null;
+    otp_session_id?: string | null;
+  },
+): Promise<string | null> {
+  const profileId = booking.client_profile_id;
+  const sessionId = booking.otp_session_id;
+  const phone = toCanonicalPhone(booking.client_phone ?? "");
+  if (
+    !phone || typeof profileId !== "string" || typeof sessionId !== "string" ||
+    !z.uuid().safeParse(profileId).success || !z.uuid().safeParse(sessionId).success
+  ) return null;
+
+  try {
+    const { data, error } = await db
+      .from("phone_otp_sessions")
+      .select("id, salon_id, phone, verified_channel, verified_at, expires_at, consumed_at, consumed_by_booking_id")
+      .eq("id", sessionId)
+      .eq("salon_id", booking.salon_id)
+      .maybeSingle();
+    const session = data as Record<string, unknown> | null;
+    const timestamp = (value: unknown) => typeof value === "string" ? Date.parse(value) : NaN;
+    const verifiedAt = timestamp(session?.verified_at);
+    const consumedAt = timestamp(session?.consumed_at);
+    const expiresAt = timestamp(session?.expires_at);
+    if (
+      error || !session || session.id !== sessionId || session.salon_id !== booking.salon_id ||
+      session.verified_channel !== "sms" || typeof session.phone !== "string" ||
+      toCanonicalPhone(session.phone) !== phone || session.consumed_by_booking_id !== booking.id ||
+      !Number.isFinite(verifiedAt) || !Number.isFinite(consumedAt) || !Number.isFinite(expiresAt) ||
+      consumedAt < verifiedAt || consumedAt >= expiresAt || consumedAt > Date.now()
+    ) return null;
+
+    // Consumption must have happened during the OTP lifetime. An already
+    // consumed valid proof remains usable for delayed confirmation retries.
+    const { data: profileRow, error: profileError } = await db
+      .from("client_profiles")
+      .select("id, phone, deleted_at")
+      .eq("id", profileId)
+      .is("deleted_at", null)
+      .maybeSingle();
+    const profile = profileRow as Record<string, unknown> | null;
+    return !profileError && profile?.id === profileId && profile.deleted_at === null &&
+      typeof profile.phone === "string" && toCanonicalPhone(profile.phone) === phone
+      ? profileId : null;
+  } catch {
+    // Optional profile enrichment must not change confirmation delivery truth.
+    return null;
+  }
 }
 
 async function readConfirmationStatus(

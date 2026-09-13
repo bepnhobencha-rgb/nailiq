@@ -189,7 +189,7 @@ describe("sequence create atomic OTP and health boundary", () => {
     expect(mocks.readiness).toHaveBeenCalledTimes(1);
     expect(mocks.from).toHaveBeenCalledTimes(1);
     expect(mocks.rpc).not.toHaveBeenCalledWith(
-      "validate_phone_otp_session",
+      "validate_booking_otp_session",
       expect.anything(),
     );
     expect(mocks.settleCard).toHaveBeenCalledTimes(2);
@@ -233,7 +233,10 @@ describe("sequence create atomic OTP and health boundary", () => {
       ok: true,
       bookingId: ids.booking,
       cardManagementPending: true,
+      cardManagementRecoveryHref: `/booking/recover-card#recover=${ids.salon}.${ids.booking}.${ids.request}.${"a".repeat(64)}`,
     });
+    expect(JSON.stringify(payload)).not.toContain("square-source");
+    expect(JSON.stringify(payload)).not.toContain("square-verification");
     expect(mocks.settleCard).toHaveBeenCalledWith(
       expect.objectContaining({
         bookingId: ids.booking,
@@ -245,6 +248,22 @@ describe("sequence create atomic OTP and health boundary", () => {
       }),
       expect.any(Function),
     );
+  });
+
+
+  it.each([
+    { cardManagementPending: false, cardManagementToken: null },
+    { cardManagementPending: true, cardManagementToken: "existing-capability" },
+  ])("does not add recovery authority when already settled or a capability arrived: %j", async (settlement) => {
+    mocks.create.mockResolvedValueOnce({
+      ok: true, bookingId: ids.booking, segmentIds: [], idempotent: false,
+      quote: { lines: [], pricingFingerprint: "a".repeat(64) },
+      salonSlug: "qa-sequence", smsConsent: false, language: "en",
+    });
+    mocks.settleCard.mockResolvedValueOnce(settlement);
+    const response = await POST(request(body()) as never);
+    expect(response.status).toBe(200);
+    expect((await response.json()).cardManagementRecoveryHref).toBeNull();
   });
 
   it("rejects a card source without explicit no-show consent before replay", async () => {

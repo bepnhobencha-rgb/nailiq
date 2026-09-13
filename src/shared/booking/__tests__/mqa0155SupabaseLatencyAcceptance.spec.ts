@@ -78,16 +78,17 @@ describe("MQA-0155 Supabase latency acceptance", () => {
     })).rejects.toThrow("permission_denied");
   });
 
-  it("wires the bounded unknown outcome to the canonical stable booking replay", () => {
+  it("wires bounded unknown outcome to receipt recovery with the canonical create key", () => {
     const submit = readFileSync("src/shared/booking/submitPublicBooking.ts", "utf8");
     const flow = readFileSync("src/components/booking/useBookingFlowState.ts", "utf8");
+    const pending = readFileSync("src/shared/booking/pendingBookingCreate.ts", "utf8");
 
     expect(submit).toMatch(
-      /p_idempotency_key:\s*createIdempotencyKey[\s\S]*runBoundedPublicBookingRpc\([\s\S]*requestId:\s*createIdempotencyKey[\s\S]*create_public_booking[\s\S]*abortSignal\(signal\)/,
+      /p_idempotency_key:\s*createIdempotencyKey[\s\S]*dispatchPendingBookingCreate\([\s\S]*idempotencyKey:\s*createIdempotencyKey[\s\S]*create_public_booking[\s\S]*abortSignal\(signal\)/,
     );
-    expect(submit).toContain('throw new Error("booking_commit_unknown")');
+    expect(pending).toMatch(/runBoundedPublicBookingRpc[\s\S]*requestId: args.binding.idempotencyKey[\s\S]*BookingCreateOutcomeUnknownError/);
     expect(flow).toMatch(
-      /booking_commit_unknown[\s\S]*t\.submitUnknown[\s\S]*setStep\("confirm"\)/,
+      /BookingCreateOutcomeUnknownError[\s\S]*recoveryRouter.replace\(err.recoveryHref\)/,
     );
     expect(flow).toContain("bookingSubmitIdempotencyKeyRef.current");
   });

@@ -53,7 +53,12 @@ export function CardProtectionRecovery<P extends object>({ token, t, Capture, ca
         ? { accepted: true, policyVersion: context.consent.version } : undefined);
       const refreshedStatus = await load();
       if (mounted.current && result.ok && result.managementToken) setActiveToken(result.managementToken);
-      if (mounted.current && !result.ok && refreshedStatus && refreshedStatus !== "saved") setError(context?.canVerifyExistingCard ? "verificationFailed" : "unavailable");
+      if (mounted.current && !result.ok && refreshedStatus && refreshedStatus !== "saved") {
+        // A successful status read can report an unresolved provider operation.
+        // Keep that durable state visible while the reconciliation lease is due.
+        if (context?.canVerifyExistingCard) setError("verificationFailed");
+        else if (!["saving", "reconciliation_pending", "manual_review"].includes(refreshedStatus)) setError("unavailable");
+      }
     } catch { if (mounted.current) setError("unavailable"); }
     finally { pending.current = false; if (mounted.current) setBusy(false); }
   }
@@ -67,6 +72,7 @@ export function CardProtectionRecovery<P extends object>({ token, t, Capture, ca
         </p>
         {!context?.cancelled && !context?.capturePaused && status === "manual_review" && !context?.canVerifyExistingCard ? <p className="mt-2 text-sm">{copy.review}</p> : null}
         {!context?.cancelled && !context?.capturePaused && (status === "saving" || status === "reconciliation_pending") ? <p className="mt-2 text-sm">{copy.reconciling}</p> : null}
+        {!context?.cancelled && !context?.capturePaused && context?.canRetry && status === "retry_required" ? <p className="mt-2 text-sm">{copy.retryGuidance}</p> : null}
       </div>
       {needsConsent && context?.consent && !context.capturePaused && !context.cancelled ? <div className="mt-3">
         <details><summary className="min-h-11 cursor-pointer py-3 text-sm font-semibold">{copy.policyLabel}</summary>

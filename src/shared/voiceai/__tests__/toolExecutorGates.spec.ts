@@ -320,6 +320,7 @@ describe("toolExecutor — a verified caller CAN cancel the party", () => {
   // and still broken, and the gate tests above would happily pass.
   const verifiedSession = {
     phone: OWNER_PHONE,
+    verified_channel: "sms",
     consumed_at: null,
     expires_at: new Date(Date.now() + 5 * 60_000).toISOString(),
   };
@@ -335,6 +336,20 @@ describe("toolExecutor — a verified caller CAN cancel the party", () => {
     });
     expect(body.success).toBe(true);
     expect(body.cancelled_count).toBe(2);
+  });
+
+  it.each(["email", "legacy_unverified"])("%s contact proof cannot cancel the organizer's party", async (verifiedChannel) => {
+    const body = await call("cancel_booking", { group_id: GROUP_ID, otp_session_id: "sess-1" }, {
+      salons: salonRow,
+      phone_otp_sessions: { ...verifiedSession, verified_channel: verifiedChannel },
+      bookings: [
+        { id: "b1", status: "confirmed", client_phone: OWNER_PHONE, is_group_organizer: true, group_id: GROUP_ID },
+        { id: "b2", status: "confirmed", client_phone: null, is_group_organizer: false, group_id: GROUP_ID },
+      ],
+    });
+    expect(body.error).toBe("otp_required");
+    expect(body.success).toBeUndefined();
+    expect(body.cancelled_count).toBeUndefined();
   });
 
   it("carrier-verified caller-ID for the organizer also works, without a code", async () => {

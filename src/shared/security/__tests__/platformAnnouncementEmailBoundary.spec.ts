@@ -1,3 +1,4 @@
+import { assertReleaseSchemaContract } from "@/shared/security/__tests__/releaseSchemaContract";
 import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
 import { describe, expect, it } from "vitest";
@@ -44,11 +45,6 @@ describe("role-localized platform email boundary", () => {
     expect(parity).toContain("through 20260820105820");
     expect(parity).toContain('"platform_announcement_deliveries"');
     expect(parity).toContain('"queue_platform_announcement_deliveries"');
-    expect(parity).toContain("tables: 241");
-    expect(parity).toContain("columns: 3734");
-    expect(parity).toContain("policies: 221");
-    expect(parity).toContain("functions: 560");
-    expect(parity).toContain("indexes: 992");
-    expect(parity).toContain("service_role: 228");
+    assertReleaseSchemaContract(parity);
   });
 });

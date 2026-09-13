@@ -371,6 +371,20 @@ describe("parseBookingSequenceReceipt", () => {
       },
     });
 
+    // Real PostgreSQL JSON uses +00:00 while the nested parser canonicalizes Z.
+    for (const action of ["status", "card_manage"] as const) {
+      const offset = inspection(offsetReceipt());
+      offset.action = action;
+      offset.booking.start_time_utc = postgresOffset(offset.booking.start_time_utc);
+      offset.booking.end_time_utc = postgresOffset(offset.booking.end_time_utc);
+      expect(parseBookingManagementInspection(offset, action).ok).toBe(true);
+      offset.booking.start_time_utc = "2026-08-28T18:01:00+00:00";
+      expect(parseBookingManagementInspection(offset, action)).toEqual({ ok: false, code: "invalid_management_response" });
+      offset.booking.start_time_utc = "2026-08-28T18:00:00+00:00";
+      offset.booking.end_time_utc = "2026-08-28T19:11:00+00:00";
+      expect(parseBookingManagementInspection(offset, action)).toEqual({ ok: false, code: "invalid_management_response" });
+    }
+
     const tampered = receipt();
     tampered.segments[0]!.total_cents = (tampered.segments[0]!.total_cents ?? 0) + 1;
     expect(

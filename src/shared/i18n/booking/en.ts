@@ -125,6 +125,7 @@ export const bookingEn = {
   confirmationEmailProcessing:
     "Processing — keep your booking reference until the email arrives.",
   confirmationEmailNotRequested: "No email address was provided.",
+  confirmationEmailUnverified: "Email delivery could not be verified. Your appointment is still confirmed.",
   confirmationSmsAccepted:
     "Accepted for sending. Mobile delivery may take a moment.",
   confirmationSmsSuppressed:
@@ -252,7 +253,20 @@ export const bookingEn = {
   /** Placeholder for contact step — NANP Canadian example; guests may enter any valid E.164. */
   clientPhonePlaceholder: PHONE_INPUT_PLACEHOLDER_NANP,
   clientEmailLabel: "Email",
-  clientEmailHint: "Add your email for $2 off this booking + appointment reminders and easy reschedule links.",
+  clientEmailHint: "Add email for reminders and booking links. A $2 discount is available once per phone number after SMS verification.",
+  phoneOfferPaidDepositHint: "A deposit is already linked to this price. Complete payment recovery before changing an offer; do not pay again.",
+  phoneOfferPaymentRecovery: "A deposit payment already exists. Its payment and booking outcome must be reconciled before continuing. Do not pay again.",
+  depositRefundCompleted: "Your appointment was not created, and your deposit refund has been confirmed. Your bank may take time to show it.",
+  depositRefundDraftRetained: "Your booking details are still here. Start again when you are ready to review the price and any new deposit.",
+  depositRefundStartFresh: "Start a new booking",
+  phoneDiscountHint: "$2 off once per phone number with email and SMS verification. You can book without the discount.",
+  phoneDiscountVerify: "Verify by SMS for $2 off",
+  phoneDiscountSkip: "Continue without the $2 discount",
+  phoneDiscountRequested: "Discount requested — the verified quote determines eligibility and your final total.",
+  phoneOfferVerificationRequired: "Verify this phone by SMS to use this offer, or continue without the discount or personal voucher. Review the new total before confirming.",
+  phoneOfferVerify: "Verify phone by SMS",
+  phoneOfferSkip: "Continue without this offer",
+  phoneOnlyOtpHint: "Enter the code sent by SMS. Email verification can still be used for booking, but cannot unlock this offer.",
   clientNotesLabel: "Special notes",
   clientNotesOptionalHint: "Optional — allergies, design ideas, parking, etc.",
   waitlistNotifyCta: "Notify me if a slot opens",
@@ -644,6 +658,7 @@ export const bookingEn = {
 
   /** Strings used on the public /party/[token] page. */
   partyPage: {
+    errCardContactReview: "Your appointment is still reserved. Please contact the salon to change the phone number while card protection is linked.",
     /** Page header */
     invited: "You're invited!",
     groupBookingAt: "Group booking at",

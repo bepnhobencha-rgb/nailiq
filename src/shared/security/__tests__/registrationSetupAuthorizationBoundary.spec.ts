@@ -1,3 +1,4 @@
+import { assertReleaseSchemaContract } from "@/shared/security/__tests__/releaseSchemaContract";
 import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
 import { describe, expect, it } from "vitest";
@@ -46,7 +47,7 @@ describe("existing-owner registration setup database boundary", () => {
   });
 
   it("updates the blank-database function tripwire", () => {
-    expect(parity).toContain("functions: 560");
+    assertReleaseSchemaContract(parity);
     expect(parity).toContain(
       '"complete_existing_owner_registration_setup"',
     );

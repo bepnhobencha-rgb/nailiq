@@ -1,14 +1,21 @@
 import { NextResponse } from "next/server";
+import { z } from "zod";
 import { createServiceRoleClient } from "@/shared/lib/supabase/serviceRole";
 import { createClient } from "@/shared/lib/supabase/server";
 import { isSameOriginMutation } from "@/shared/security/sameOriginMutation";
 import { consumePublicRequestRateLimit } from "@/shared/security/publicServerActionRateLimit";
 import { toCanonicalPhone } from "@/shared/lib/toCanonicalPhone";
 import { verifyPhotoCustomerToken } from "@/shared/photos/photoCustomerToken";
+import { readJsonObjectWithLimit } from "@/shared/security/readJsonObjectWithLimit";
 
 export const dynamic = "force-dynamic";
 
 type Params = { params: Promise<{ phone: string }> };
+
+const revokeConsentBody = z.object({
+  revoked_reason: z.string().trim().max(500).optional(),
+  salon_id: z.string().trim().pipe(z.union([z.uuid(), z.literal("")])).optional(),
+});
 
 function bearerToken(authHeader: string | null): string | null {
   const match = /^Bearer\s+([^\s]+)$/i.exec(authHeader?.trim() ?? "");
@@ -48,12 +55,11 @@ export async function PATCH(req: Request, { params }: Params) {
     );
   }
 
-  let body: { revoked_reason?: string; salon_id?: string };
-  try {
-    body = (await req.json()) as { revoked_reason?: string; salon_id?: string };
-  } catch {
-    body = {};
+  const parsed = revokeConsentBody.safeParse(await readJsonObjectWithLimit(req, 4096));
+  if (!parsed.success) {
+    return NextResponse.json({ ok: false, error: "invalid_request" }, { status: 400 });
   }
+  const body = parsed.data;
 
   const revokedReason = body.revoked_reason?.trim() ?? "customer_request";
   const requestedSalonId = body.salon_id?.trim() ?? null;

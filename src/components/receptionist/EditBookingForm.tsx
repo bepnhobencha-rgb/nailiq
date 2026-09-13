@@ -539,7 +539,10 @@ export function EditBookingForm({
   const editCopy = rcMessages.edit;
   const addonCopy = rcMessages.editAddon;
 
+  const [saveOutcomeUnknown, setSaveOutcomeUnknown] = useState(false);
+
   const handleSave = async () => {
+    if (saving || saveOutcomeUnknown) return;
     const startMin = slotLabelToMinutes(selectedSlotLabel);
     if (startMin == null) {
       setError(editCopy.serverErrorMessage);
@@ -555,26 +558,35 @@ export function EditBookingForm({
       : null;
     const sequenceRequestId = retainedSequenceReview?.requestId ?? crypto.randomUUID();
 
-    const result = await editBookingAction(slug, {
-      salonId,
-      bookingId,
-      newStartTimeUtc,
-      newStaffId: selectedStaff,
-      newServiceId: selectedService,
-      // Empty string from the <select> means "no add-on"; map to `null`
-      // so the server treats it as a removal request rather than a
-      // preserve. Always-defined here (controlled select) so the
-      // server takes the new-value branch even when unchanged.
-      newAddonServiceId: selectedAddon === "" ? null : selectedAddon,
-      // Pass bed pick only when resources are shown; undefined = keep current.
-      ...(deskData?.salon.resourcesEnabled ? { newResourceId: resourceId } : {}),
-      sequenceRequestId,
-      ...(retainedSequenceReview
-        ? { expectedSequenceFingerprint: retainedSequenceReview.quote.sequenceFingerprint }
-        : {}),
-    });
-
-    setSaving(false);
+    let result: Awaited<ReturnType<typeof editBookingAction>>;
+    try {
+      result = await editBookingAction(slug, {
+        salonId,
+        bookingId,
+        newStartTimeUtc,
+        newStaffId: selectedStaff,
+        newServiceId: selectedService,
+        // Empty string from the <select> means "no add-on"; map to `null`
+        // so the server treats it as a removal request rather than a
+        // preserve. Always-defined here (controlled select) so the
+        // server takes the new-value branch even when unchanged.
+        newAddonServiceId: selectedAddon === "" ? null : selectedAddon,
+        // Pass bed pick only when resources are shown; undefined = keep current.
+        ...(deskData?.salon.resourcesEnabled ? { newResourceId: resourceId } : {}),
+        sequenceRequestId,
+        ...(retainedSequenceReview
+          ? { expectedSequenceFingerprint: retainedSequenceReview.quote.sequenceFingerprint }
+          : {}),
+      });
+    } catch {
+      // A redirect or lost response can reject before an action result arrives.
+      // Do not infer that the write failed or replay it without a fresh read.
+      setSaveOutcomeUnknown(true);
+      setError(editCopy.saveOutcomeUnknownMessage);
+      return;
+    } finally {
+      setSaving(false);
+    }
 
     if (result.ok) {
       sessionStorage.removeItem(`nailiq:desk-sequence-reschedule:${bookingId}`);
@@ -606,6 +618,9 @@ export function EditBookingForm({
     }
 
     switch (result.error) {
+      case "unauthorized":
+        setError(editCopy.unauthorizedMessage);
+        break;
       case "not_found":
         setError(editCopy.not_foundMessage);
         break;
@@ -897,6 +912,17 @@ export function EditBookingForm({
         </p>
       ) : null}
 
+      {saveOutcomeUnknown ? (
+        <Button
+          type="button"
+          variant="primary"
+          data-testid="edit-reload-button"
+          onClick={() => window.location.reload()}
+        >
+          {editCopy.reloadButton}
+        </Button>
+      ) : null}
+
       <div className="flex flex-col-reverse gap-3 sm:flex-row sm:justify-end">
         <Button
           type="button"
@@ -913,7 +939,7 @@ export function EditBookingForm({
           data-testid="edit-save-button"
           className="w-full sm:w-auto"
           loading={saving}
-          disabled={!hasChanges || isPastDay || saving || isOffline}
+          disabled={!hasChanges || isPastDay || saving || isOffline || saveOutcomeUnknown}
           title={
             isOffline
               ? offlineEditDisabledHint

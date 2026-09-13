@@ -1,5 +1,5 @@
 import { afterAll, beforeAll, describe, expect, it, vi } from "vitest";
-import { randomUUID } from "node:crypto";
+import { randomInt, randomUUID } from "node:crypto";
 import { appendFileSync, closeSync, openSync, writeFileSync } from "node:fs";
 import { isAbsolute } from "node:path";
 import { execFileSync } from "node:child_process";
@@ -35,6 +35,8 @@ const service = "55630000-0000-4000-8000-000000000061";
 const staff = "55630000-0000-4000-8000-000000000062";
 let journal: number | null = null;
 let sequence = 0;
+type SandboxSource = "cnon:card-nonce-ok" | "cnon:card-nonce-declined";
+type FixtureContact = { email?: string; phone?: string; verifiedSms?: boolean };
 function note(value: Record<string, unknown>) {
   if (journal === null) throw new Error("sandbox_journal_required");
   appendFileSync(journal, JSON.stringify({ at:new Date().toISOString(), ...value }) + "\n");
@@ -49,15 +51,27 @@ async function rpc(name: string, args: Record<string, unknown>) {
   if (error) throw new Error("disposable_qa_rpc_failed");
   return data;
 }
-async function fixture(sourceToken = "cnon:card-nonce-ok", contact?: string) {
+async function fixture(sourceToken: SandboxSource = "cnon:card-nonce-ok", contact: FixtureContact = {}) {
   const booking = randomUUID();
-  const email = contact ?? `synthetic-${booking}@example.com`;
+  const email = contact.email ?? `synthetic-${booking}@example.com`;
+  const phone = contact.phone ?? "";
   if (!/^synthetic-[a-z0-9-]+@example\.com$/.test(email)) throw new Error("synthetic_contact_required");
-  // Email identity avoids accidentally reusing a finite pool of synthetic
-  // phone numbers from an earlier Sandbox test. No real guest is referenced.
+  if (phone !== "" && !/^\+1604555\d{4}$/.test(phone)) throw new Error("synthetic_phone_required");
+  if (contact.verifiedSms && !phone) throw new Error("synthetic_sms_phone_required");
+  // Declared contact is test input, never identity authority. A fresh booking
+  // remains booking-scoped unless the exact consumed SMS proof is seeded below.
   sql(`INSERT INTO public.bookings(id,salon_id,service_id,staff_id,client_name,client_phone,client_email,start_time_utc,end_time_utc,status,price_cents,noshow_card_required,noshow_fee_cents)
-    VALUES('${booking}','${salon}','${service}','${staff}','Synthetic Sandbox','','${email}',
+    VALUES('${booking}','${salon}','${service}','${staff}','Synthetic Sandbox','${phone}','${email}',
     date_trunc('hour',now())+interval '3 days ${++sequence} hours',date_trunc('hour',now())+interval '3 days ${sequence} hours 30 minutes','confirmed',5000,true,1000);`);
+  if (contact.verifiedSms) {
+    const session = randomUUID();
+    // Synthetic DB proof only. This fixture does not request or send an OTP.
+    sql(`BEGIN;
+      INSERT INTO public.phone_otp_sessions(id,phone,salon_id,verified_channel,verified_at,expires_at,consumed_at,consumed_by_booking_id)
+      VALUES('${session}','${phone}','${salon}','sms',now()-interval '4 minutes',now()+interval '10 minutes',now()-interval '3 minutes','${booking}');
+      UPDATE public.bookings SET otp_session_id='${session}' WHERE id='${booking}' AND salon_id='${salon}';
+      COMMIT;`);
+  }
   const cap = await rpc("mint_booking_management_capability",{p_salon_id:salon,p_booking_id:booking,p_action:"card_manage",p_min_expires_at:new Date(Date.now()+25*60_000).toISOString()});
   if (cap.ok !== true) throw new Error("disposable_qa_capability_failed");
   note({event:"fixture_reserved",bookingId:booking});
@@ -69,10 +83,26 @@ async function state(booking: string) {
   return data;
 }
 async function operation(booking: string) {
-  const {data,error}=await db.from("booking_card_save_operations").select("id,status,first_failure_code,first_failure_stage").eq("booking_id",booking).order("created_at",{ascending:false}).limit(1).single();
+  const {data,error}=await db.from("booking_card_save_operations").select("id,status,customer_claim_id,first_failure_code,first_failure_stage").eq("booking_id",booking).order("created_at",{ascending:false}).order("delivery_sequence",{ascending:false}).limit(1).single();
   if(error || !data) throw new Error("disposable_operation_read_failed");
   note({event:"operation_inspected",bookingId:booking,operationId:data.id,status:data.status,failureCode:data.first_failure_code});
   return data;
+}
+async function retryClosedAttempt(f: Awaited<ReturnType<typeof fixture>>, sourceToken: SandboxSource = "cnon:card-nonce-ok") {
+  // Never enter a new source while the prior provider outcome is unknown.
+  expect((await operation(f.booking)).status).toBe("failed");
+  const retry = await rpc("recover_booking_card_management",{p_token_id:f.tokenId});
+  expect(retry.ok).toBe(true);
+  return {...f,tokenId:retry.token_id as string,requestId:randomUUID(),sourceToken};
+}
+async function assertCustomerAuthority(booking: string, authority: "booking" | "verified_phone") {
+  const claimId = (await operation(booking)).customer_claim_id;
+  expect(claimId).toBeTruthy();
+  const {data,error} = await db.from("square_card_customer_claims")
+    .select("identity_version,authority_kind,identity_authorized")
+    .eq("id",claimId).eq("salon_id",salon).single();
+  if (error || !data) throw new Error("disposable_customer_authority_read_failed");
+  expect(data).toEqual({identity_version:2,authority_kind:authority,identity_authorized:true});
 }
 async function reconcile(booking: string) {
   const op=await operation(booking);
@@ -120,6 +150,12 @@ describe.skipIf(!enabled)("Actual Square Sandbox cards + disposable PostgreSQL (
     // recorded operation and reconcile it before deliberately starting a new run.
     journal=openSync(path,"wx",0o600);
     writeFileSync(journal,"",{encoding:"utf8"});note({event:"run_started",provider:"square",environment:"sandbox",notificationMode:config.notificationMode});
+    // Refuse certifying the R10 client against the old contact-sharing schema.
+    // This read occurs before any Square preflight or fixture mutation.
+    expect(sql(`SELECT count(*) FROM information_schema.columns WHERE table_schema='public'
+      AND table_name='square_card_customer_claims' AND column_name IN ('identity_version','authority_kind','identity_authorized');`)).toBe("3");
+    expect(sql(`SELECT to_regprocedure('public.square_card_booking_phone_authorized(uuid,uuid,jsonb)') IS NOT NULL;`)).toBe("t");
+    note({event:"customer_authority_v2_schema_present"});
     await guard.preflight();note({event:"identity_and_webhooks_off_verified"});
     vi.stubGlobal("fetch",recoveryOperationId ? async(input:RequestInfo|URL,init?:RequestInit)=>{
       const request=new Request(input,init);const url=new URL(request.url);
@@ -136,7 +172,7 @@ describe.skipIf(!enabled)("Actual Square Sandbox cards + disposable PostgreSQL (
       VALUES('${salon}','card-sandbox-certification','Synthetic Sandbox Certification','+16045550160','America/Vancouver','CAD',true,true,'{"en":"Cancel with 24 hours notice.","vi":"Báo trước 24 giờ khi hủy."}') ON CONFLICT DO NOTHING;
       INSERT INTO public.services(id,salon_id,name,price_cents,duration_minutes,category) VALUES('${service}','${salon}','QA Service',5000,30,'card-sandbox-certification') ON CONFLICT DO NOTHING;
       INSERT INTO public.staff(id,salon_id,name,status) VALUES('${staff}','${salon}','QA Staff','active') ON CONFLICT DO NOTHING;`);
-  });
+  },60_000);
   afterAll(()=>{
     vi.unstubAllGlobals();
     if(journal!==null) {note({event:"run_finished",counts:guard?.counts()});closeSync(journal);journal=null;}
@@ -147,47 +183,82 @@ describe.skipIf(!enabled)("Actual Square Sandbox cards + disposable PostgreSQL (
     expect(result.some(r=>r.ok)).toBe(true);await assertSaved(f.booking);
     await saveCardWithManagementCapability(f);
     expect(guard!.counts()).toMatchObject({customerCreates:1,cardCreates:1});note({event:"same_operation_race_pass",counts:guard!.counts()});
-  });
-  it.skipIf(!!recoveryOperationId)("records a real Sandbox decline, keeps the booking and blocks replay",async()=>{
+  },60_000);
+  it.skipIf(!!recoveryOperationId)("records a real Sandbox decline, blocks replay and safely saves a fresh card",async()=>{
     guard!.setMode("success");const f=await fixture("cnon:card-nonce-declined");
     expect((await saveCardWithManagementCapability(f)).ok).toBe(false);
     expect((await state(f.booking)).card_protection_status).toBe("retry_required");
     expect((await operation(f.booking)).first_failure_stage).toBe("card_create");
+    const declined = await operation(f.booking);
     await saveCardWithManagementCapability(f);expect(guard!.counts().cardCreates).toBe(1);
-    note({event:"sandbox_decline_pass",counts:guard!.counts()});
-  });
+    const retried = await retryClosedAttempt(f);
+    expect((await saveCardWithManagementCapability(retried)).ok).toBe(true);
+    await assertSaved(f.booking);
+    expect((await operation(f.booking)).customer_claim_id).toBe(declined.customer_claim_id);
+    await saveCardWithManagementCapability(retried);
+    expect(guard!.counts()).toMatchObject({customerCreates:1,cardCreates:2});
+    note({event:"sandbox_decline_and_fresh_card_recovery_pass",counts:guard!.counts()});
+  },60_000);
   it.skipIf(!!recoveryOperationId).each(["before_dispatch","response_loss","db_before","db_after"] as const)("handles %s at the real-provider transport boundary",async(mode:CardSandboxMode)=>{
     guard!.setMode(mode);const f=await fixture();await saveCardWithManagementCapability(f);
     if(mode==="before_dispatch") {
       expect((await state(f.booking)).card_protection_status).toBe("retry_required");
       expect(guard!.counts()).toMatchObject({customerCreates:0,cardCreates:0});
+      note({event:"before_dispatch_no_mutation_confirmed",counts:guard!.counts()});
+      guard!.setMode("success");
+      expect((await saveCardWithManagementCapability(await retryClosedAttempt(f))).ok).toBe(true);
+      await assertSaved(f.booking);
+      expect(guard!.counts()).toMatchObject({customerCreates:1,cardCreates:1});
     } else {
+      // Repeating the old request before reconciliation must not replay a
+      // dispatched card source. db_after may already be durably succeeded.
+      await saveCardWithManagementCapability(f);
+      expect(guard!.counts().cardCreates).toBe(1);
       await reconcile(f.booking);await assertSaved(f.booking);await saveCardWithManagementCapability(f);
       expect(guard!.counts().cardCreates).toBe(1);
     }
     note({event:`${mode}_pass`,counts:guard!.counts()});
   },180_000);
-  it.skipIf(!!recoveryOperationId)("shares one customer identity across concurrent independent bookings",async()=>{
-    guard!.setMode("success");const email=`synthetic-${randomUUID()}@example.com`;
-    const a=await fixture("cnon:card-nonce-ok",email);const b=await fixture("cnon:card-nonce-ok",email);
+  it.skipIf(!!recoveryOperationId)("keeps two unverified same-contact bookings in separate customer identities",async()=>{
+    guard!.setMode("success");
+    const contact = {email:`synthetic-${randomUUID()}@example.com`,phone:`+1604555${String(randomInt(10_000)).padStart(4,"0")}`};
+    const a=await fixture("cnon:card-nonce-ok",contact);const b=await fixture("cnon:card-nonce-ok",contact);
+    const results = await Promise.all([saveCardWithManagementCapability(a),saveCardWithManagementCapability(b)]);
+    expect(results.every(result=>result.ok)).toBe(true);
+    for (const f of [a,b]) {
+      await assertSaved(f.booking);
+      await assertCustomerAuthority(f.booking,"booking");
+    }
+    const bookings = await Promise.all([state(a.booking),state(b.booking)]);
+    expect(bookings[0].noshow_customer_id).not.toBe(bookings[1].noshow_customer_id);
+    expect((await operation(a.booking)).customer_claim_id).not.toBe((await operation(b.booking)).customer_claim_id);
+    expect(guard!.counts()).toMatchObject({customerCreates:2,cardCreates:2});
+    note({event:"unverified_contact_booking_isolation_pass",counts:guard!.counts()});
+  },60_000);
+  it.skipIf(!!recoveryOperationId)("shares one customer only for exact consumed SMS authority on both bookings",async()=>{
+    guard!.setMode("success");
+    const contact = {email:`synthetic-${randomUUID()}@example.com`,phone:`+1604555${String(randomInt(10_000)).padStart(4,"0")}`,verifiedSms:true};
+    const a=await fixture("cnon:card-nonce-ok",contact);const b=await fixture("cnon:card-nonce-ok",contact);
     await Promise.all([saveCardWithManagementCapability(a),saveCardWithManagementCapability(b)]);
-    expect(guard!.counts().customerCreates).toBe(1);
     for(const f of [a,b]) {
       if((await state(f.booking)).card_protection_status!=="saved") {
         // A follower is permitted to wait before any provider mutation. A new
         // logical card attempt is allowed only after its prior attempt closed.
-        expect((await operation(f.booking)).status).toBe("failed");
-        const retry=await rpc("recover_booking_card_management",{p_token_id:f.tokenId});
-        expect(retry.ok).toBe(true);
-        await saveCardWithManagementCapability({...f,tokenId:retry.token_id,requestId:randomUUID()});
+        expect((await saveCardWithManagementCapability(await retryClosedAttempt(f))).ok).toBe(true);
       }
       await assertSaved(f.booking);
+      await assertCustomerAuthority(f.booking,"verified_phone");
     }
     const bookings=await Promise.all([state(a.booking),state(b.booking)]);
     expect(bookings[0].noshow_customer_id).toBe(bookings[1].noshow_customer_id);
-    expect(guard!.counts()).toMatchObject({customerCreates:1,cardCreates:2});
-    note({event:"cross_booking_customer_race_pass",counts:guard!.counts()});
-  });
+    expect((await operation(a.booking)).customer_claim_id).toBe((await operation(b.booking)).customer_claim_id);
+    // The finite synthetic phone pool may already exist in the Sandbox from
+    // an earlier run. Validated reuse requires zero creates; a new phone needs
+    // one. Neither path is permitted to create two customers for this authority.
+    expect(guard!.counts().customerCreates).toBeLessThanOrEqual(1);
+    expect(guard!.counts().cardCreates).toBe(2);
+    note({event:"consumed_sms_customer_race_pass",counts:guard!.counts()});
+  },60_000);
   it.skipIf(!recoveryOperationId)("recovers only the explicitly selected existing operation using provider reads",async()=>{
     const {data:existing,error}=await db.from("booking_card_save_operations")
       .select("id,booking_id,status,provider,expected_environment,expected_merchant_id")

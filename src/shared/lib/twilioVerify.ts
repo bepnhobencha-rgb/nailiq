@@ -171,7 +171,6 @@ export async function sendVerification(
     if (!res.ok) {
       console.error("[sendVerification] Twilio API error", {
         status: res.status,
-        body: text.slice(0, 300),
       });
       return { ok: false, error: `twilio_${res.status}` };
     }
@@ -210,8 +209,8 @@ export async function sendVerification(
         : undefined,
       providerStatus,
     };
-  } catch (e) {
-    console.error("[sendVerification]", e);
+  } catch {
+    console.error("[sendVerification] provider_response_unknown");
     return { ok: false, error: "provider_response_unknown" };
   }
 }
@@ -254,7 +253,7 @@ export async function checkVerification(
     }
 
     if (!res.ok) {
-      console.error("[checkVerification] Twilio", res.status, text.slice(0, 300));
+      console.error("[checkVerification] Twilio API error", { status: res.status });
       return { ok: false, error: "invalid_code" };
     }
 
@@ -263,8 +262,8 @@ export async function checkVerification(
     }
 
     return { ok: false, error: "invalid_code" };
-  } catch (e) {
-    console.error("[checkVerification]", e);
+  } catch {
+    console.error("[checkVerification] provider_read_failed");
     return { ok: false, error: "invalid_code" };
   }
 }

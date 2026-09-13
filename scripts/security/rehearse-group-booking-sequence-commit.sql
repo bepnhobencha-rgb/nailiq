@@ -116,10 +116,10 @@ BEGIN
   END IF;
 
   INSERT INTO public.phone_otp_sessions(
-    id, salon_id, phone, verified_at, expires_at
+    id, salon_id, phone, verified_at, expires_at, verified_channel
   ) VALUES (
     v_otp_one, v_salon, '16045550199', transaction_timestamp(),
-    transaction_timestamp() + interval '30 minutes'
+    transaction_timestamp() + interval '30 minutes', 'sms'
   );
 
   v_request := pg_catalog.jsonb_build_object(
@@ -253,10 +253,10 @@ BEGIN
   END IF;
 
   INSERT INTO public.phone_otp_sessions(
-    id, salon_id, phone, verified_at, expires_at
+    id, salon_id, phone, verified_at, expires_at, verified_channel
   ) VALUES (
     v_otp_two, v_salon, '16045550199', transaction_timestamp(),
-    transaction_timestamp() + interval '30 minutes'
+    transaction_timestamp() + interval '30 minutes', 'sms'
   );
   v_conflict_request := pg_catalog.jsonb_set(
     pg_catalog.jsonb_set(
