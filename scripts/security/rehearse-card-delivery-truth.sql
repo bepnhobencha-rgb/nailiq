@@ -15,7 +15,7 @@ INSERT INTO public.staff(id,salon_id,name,status) VALUES('55630000-0000-4000-800
 
 DO $$
 DECLARE salon uuid:='55630000-0000-4000-8000-000000000001'; booking uuid; cap uuid; retry_cap uuid;
- op jsonb; result jsonb; second_result jsonb; consent jsonb:=jsonb_build_object('v',2,'policyVersion','nsp_'||repeat('a',64),
+ op jsonb; result jsonb; second_result jsonb; customer_claim jsonb; consent jsonb:=jsonb_build_object('v',2,'policyVersion','nsp_'||repeat('a',64),
  'feeCents',1000,'currency','CAD','scope','booking_member','policyEn','Cancel with 24 hours notice.','policyVi','Báo trước 24 giờ.');
  clock_at timestamptz:=transaction_timestamp(); lease uuid; i integer; before_count integer;
  row_booking public.bookings%ROWTYPE; row_salon public.salons%ROWTYPE;
@@ -72,6 +72,16 @@ BEGIN
    ELSE
      result:=public.prepare_booking_card_save_dispatch((op->>'operation_id')::uuid,(op->>'attempt_token')::uuid,clock_at,consent);
      PERFORM pg_temp.check_card_truth(result->>'ok'='true','consent preparation');
+     result:=public.bind_booking_card_save_dispatch((op->>'operation_id')::uuid,(op->>'attempt_token')::uuid,'customer_qa','merchant_qa','sandbox');
+     PERFORM pg_temp.check_card_truth(result->>'code'='customer_identity_unverified','unproven customer rejected');
+     result:=public.bind_booking_card_provider_identity((op->>'operation_id')::uuid,(op->>'attempt_token')::uuid,'merchant_qa','sandbox');
+     PERFORM pg_temp.check_card_truth(result->>'ok'='true','provider identity binding');
+     customer_claim:=public.claim_square_card_customer((op->>'operation_id')::uuid,(op->>'attempt_token')::uuid);
+     PERFORM pg_temp.check_card_truth(customer_claim->>'code'='claimed_v2','customer identity lease');
+     -- Model one exact synthetic provider read; no network/provider call exists here.
+     result:=public.complete_square_card_customer((op->>'operation_id')::uuid,(op->>'attempt_token')::uuid,
+       (customer_claim->>'claim_id')::uuid,(customer_claim->>'lease_token')::uuid,'found','customer_qa');
+     PERFORM pg_temp.check_card_truth(result->>'code'='known','customer identity read receipt');
      result:=public.bind_booking_card_save_dispatch((op->>'operation_id')::uuid,(op->>'attempt_token')::uuid,'customer_qa','merchant_qa','sandbox');
      PERFORM pg_temp.check_card_truth(result->>'ok'='true','customer binding');
      IF i=2 THEN
@@ -272,7 +282,7 @@ BEGIN
    UPDATE public.booking_card_save_operations SET expected_merchant_id='merchant_qa',expected_environment='sandbox',
      customer_delivery_version=1 WHERE id=(op->>'operation_id')::uuid;
    first_claim:=public.claim_square_card_customer((op->>'operation_id')::uuid,(op->>'attempt_token')::uuid);
-   PERFORM pg_temp.check_card_truth(first_claim->>'code'='claimed','initial customer lease');
+   PERFORM pg_temp.check_card_truth(first_claim->>'code'='claimed_v2','initial customer lease');
    result:=public.complete_square_card_customer((op->>'operation_id')::uuid,(op->>'attempt_token')::uuid,
      (first_claim->>'claim_id')::uuid,(first_claim->>'lease_token')::uuid,'not_dispatched',NULL);
    PERFORM pg_temp.check_card_truth(result->>'code'='ready','search failure proves no customer dispatch');
@@ -287,15 +297,14 @@ BEGIN
    UPDATE public.booking_card_save_operations SET expected_merchant_id='merchant_qa',expected_environment='sandbox',
      customer_delivery_version=1 WHERE id=(op->>'operation_id')::uuid;
    next_claim:=public.claim_square_card_customer((op->>'operation_id')::uuid,(op->>'attempt_token')::uuid);
-   PERFORM pg_temp.check_card_truth(next_claim->'request_material'->>'client_email'='corrected@example.com'
-     AND next_claim->>'allow_create'='true','customer request refreshes before first dispatch');
-   IF i=2 THEN
-     PERFORM pg_temp.check_card_truth(next_claim->>'claim_id'=first_claim->>'claim_id'
-       AND next_claim->>'idempotency_key'=first_claim->>'idempotency_key'
-       AND next_claim->>'reference_id'=first_claim->>'reference_id','same phone preserves customer claim identity');
-   ELSE
-     PERFORM pg_temp.check_card_truth(next_claim->>'claim_id'<>first_claim->>'claim_id','changed email fingerprint has no prior creation');
-   END IF;
+   PERFORM pg_temp.check_card_truth(next_claim->>'code'='claimed_v2'
+     AND next_claim->>'lookup_mode'='booking_reference'
+     AND next_claim->'request_material'->>'client_email' IS NULL
+     AND next_claim->'request_material'->>'client_phone' IS NULL
+     AND next_claim->>'allow_create'='true','declared contact never becomes customer identity authority');
+   PERFORM pg_temp.check_card_truth(next_claim->>'claim_id'=first_claim->>'claim_id'
+     AND next_claim->>'idempotency_key'=first_claim->>'idempotency_key'
+     AND next_claim->>'reference_id'=first_claim->>'reference_id','same booking preserves customer identity after contact correction');
    PERFORM pg_temp.check_card_truth((SELECT dispatch_prepared_at IS NULL FROM public.square_card_customer_claims
      WHERE id=(first_claim->>'claim_id')::uuid),'no provider mutation was prepared');
  END LOOP;

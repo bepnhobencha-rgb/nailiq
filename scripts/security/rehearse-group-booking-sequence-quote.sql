@@ -12,6 +12,7 @@ DECLARE
   v_staff_two uuid := '73000000-0000-4000-8000-000000000002';
   v_resource_one uuid := '74000000-0000-4000-8000-000000000001';
   v_resource_two uuid := '74000000-0000-4000-8000-000000000002';
+  v_otp_session uuid := '78000000-0000-4000-8000-000000000001';
   v_start timestamptz := date_trunc('day', transaction_timestamp() + interval '8 days')
     + interval '12 hours';
   v_readiness jsonb;
@@ -54,7 +55,12 @@ BEGIN
     (v_resource_two, v_salon, 'Pair Room Two', 'room', 'active', 'pair-a');
 
   INSERT INTO public.platform_flags(key, enabled, description)
-  VALUES ('feature_multi_service_booking', true, 'local group sequence rehearsal')
+  VALUES
+    ('feature_multi_service_booking', true, 'local group sequence rehearsal'),
+    -- Schema-only QA restores omit migration INSERT data. Establish this
+    -- rehearsal's initial OFF state before testing the explicit ON transition;
+    -- the outer ROLLBACK preserves any pre-existing platform configuration.
+    ('feature_group_multi_service_booking', false, 'local group sequence rehearsal')
   ON CONFLICT (key) DO UPDATE SET enabled = EXCLUDED.enabled;
 
   v_readiness := public.load_public_group_sequence_readiness(v_salon);
@@ -91,6 +97,15 @@ BEGIN
     RAISE EXCEPTION 'quote-only readiness failed: %', v_readiness;
   END IF;
 
+  -- The $2 phone-bound incentive requires fresh organizer SMS proof. This
+  -- synthetic SQL session authorizes the quote without sending or consuming OTP.
+  INSERT INTO public.phone_otp_sessions(
+    id, salon_id, phone, verified_at, expires_at, verified_channel
+  ) VALUES (
+    v_otp_session, v_salon, '16045550199', transaction_timestamp(),
+    transaction_timestamp() + interval '30 minutes', 'sms'
+  );
+
   v_request := pg_catalog.jsonb_build_object(
     'contract_version', 1,
     'salon_id', v_salon,
@@ -98,6 +113,7 @@ BEGIN
     'requested_anchor_utc', v_start,
     'seat_together', true,
     'apply_email_discount', true,
+    'otp_session_id', v_otp_session,
     'organizer', pg_catalog.jsonb_build_object(
       'name', 'Organizer QA', 'phone', '16045550199',
       'email', 'organizer@example.test'
@@ -153,6 +169,12 @@ BEGIN
   SELECT count(*) INTO v_before_bookings FROM public.bookings;
   SELECT count(*) INTO v_before_profiles FROM public.client_profiles;
   SELECT count(*) INTO v_before_otp FROM public.phone_otp_sessions;
+  v_changed := public.quote_public_group_booking_sequences(
+    v_request - 'otp_session_id'
+  );
+  IF v_changed->>'code' IS DISTINCT FROM 'phone_verification_required' THEN
+    RAISE EXCEPTION 'phone-bound quote accepted missing SMS proof: %', v_changed;
+  END IF;
   v_quote := public.quote_public_group_booking_sequences(v_request);
   IF coalesce((v_quote->>'success')::boolean, false) IS NOT TRUE
      OR v_quote->>'code' <> 'quoted'
@@ -167,6 +189,13 @@ BEGIN
      OR (SELECT count(*) FROM public.client_profiles) <> v_before_profiles
      OR (SELECT count(*) FROM public.phone_otp_sessions) <> v_before_otp THEN
     RAISE EXCEPTION 'quote-only resolver produced a business write';
+  END IF;
+  IF EXISTS (
+    SELECT 1 FROM public.phone_otp_sessions
+    WHERE id = v_otp_session
+      AND (consumed_at IS NOT NULL OR consumed_by_booking_id IS NOT NULL)
+  ) THEN
+    RAISE EXCEPTION 'quote-only resolver consumed organizer SMS proof';
   END IF;
 
   v_changed := public.quote_public_group_booking_sequences(

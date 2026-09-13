@@ -36,6 +36,7 @@ DECLARE
   v_penny_staff_two constant uuid := 'b1000000-0000-4000-8000-000000000023';
   v_penny_staff_three constant uuid := 'b1000000-0000-4000-8000-000000000024';
   v_penny_addon constant uuid := 'b1000000-0000-4000-8000-000000000025';
+  v_otp constant uuid := 'b1000000-0000-4000-8000-000000000015';
   v_start timestamptz := date_trunc('day', clock_timestamp()) + interval '3 days 12 hours';
   v_payload jsonb;
   v_payload_changed jsonb;
@@ -75,7 +76,7 @@ BEGIN
   ) VALUES
     (
       v_salon, 'group-pricing-rehearsal', 'Group pricing rehearsal',
-      '+16045550300', 'UTC', 'CAD',
+      '+16045550100', 'UTC', 'CAD',
       '{
         "sun":{"open":"00:00","close":"23:59","closed":false},
         "mon":{"open":"00:00","close":"23:59","closed":false},
@@ -90,7 +91,7 @@ BEGIN
     ),
     (
       v_penny_salon, 'group-penny-rehearsal', 'Group penny rehearsal',
-      '+16045550301', 'UTC', 'CAD',
+      '+16045550101', 'UTC', 'CAD',
       '{
         "sun":{"open":"00:00","close":"23:59","closed":false},
         "mon":{"open":"00:00","close":"23:59","closed":false},
@@ -151,7 +152,7 @@ BEGIN
     client_phone, valid_from, expires_at
   ) VALUES (
     v_restricted_voucher, v_salon, 'GROUP-RESTRICTED', 'promo', 300, 5,
-    '16045550399', clock_timestamp() - interval '1 day',
+    '16045550199', clock_timestamp() - interval '1 day',
     clock_timestamp() + interval '10 days'
   );
   INSERT INTO public.vouchers (
@@ -183,8 +184,19 @@ BEGIN
   );
 
   v_quote := public.quote_group_booking(
-    v_salon, v_payload, v_voucher, '+1 (604) 555-0399',
+    v_salon, v_payload, v_voucher, '+1 (604) 555-0199',
     'group@example.test', true
+  );
+  IF v_quote->>'code' IS DISTINCT FROM 'phone_verification_required' THEN
+    RAISE EXCEPTION 'group incentives accepted no organizer SMS proof: %', v_quote;
+  END IF;
+  INSERT INTO public.phone_otp_sessions(
+    id, salon_id, phone, verified_at, expires_at, verified_channel
+  ) VALUES (v_otp, v_salon, '16045550199', clock_timestamp(),
+    clock_timestamp() + interval '30 minutes', 'sms');
+  v_quote := public.quote_group_booking(
+    v_salon, v_payload, v_voucher, '+1 (604) 555-0199',
+    'group@example.test', true, v_otp
   );
   IF v_quote->>'success' <> 'true'
      OR v_quote->>'code' <> 'quoted'
@@ -207,8 +219,19 @@ BEGIN
   END IF;
 
   v_result := public.create_group_bookings(
-    v_salon, v_payload, v_voucher, '+1 (604) 555-0399',
+    v_salon, v_payload, v_voucher, '+1 (604) 555-0199',
     'group@example.test', true, v_idem, v_quote->>'pricing_fingerprint'
+  );
+  IF v_result->>'code' IS DISTINCT FROM 'phone_verification_required'
+     OR EXISTS (SELECT 1 FROM public.bookings WHERE salon_id = v_salon)
+     OR EXISTS (SELECT 1 FROM public.client_profiles WHERE phone = '16045550199')
+     OR EXISTS (SELECT 1 FROM public.voucher_redemptions WHERE salon_id = v_salon)
+     OR EXISTS (SELECT 1 FROM public.phone_otp_sessions WHERE id = v_otp AND consumed_at IS NOT NULL) THEN
+    RAISE EXCEPTION 'unproven group incentive create was not zero-write: %', v_result;
+  END IF;
+  v_result := public.create_group_bookings(
+    v_salon, v_payload, v_voucher, '+1 (604) 555-0199',
+    'group@example.test', true, v_idem, v_quote->>'pricing_fingerprint', v_otp
   );
   IF v_result->>'success' <> 'true'
      OR v_result->>'code' <> 'booked'
@@ -218,6 +241,11 @@ BEGIN
   END IF;
   v_group_id := (v_result->>'group_id')::uuid;
   v_booking_ids := v_result->'booking_ids';
+  IF NOT EXISTS (SELECT 1 FROM public.phone_otp_sessions
+      WHERE id = v_otp AND consumed_at IS NOT NULL
+        AND consumed_by_booking_id = (v_booking_ids->>0)::uuid) THEN
+    RAISE EXCEPTION 'group incentive SMS proof was not consumed by its organizer';
+  END IF;
 
   IF (SELECT count(*) FROM public.booking_card_management_continuations c
       WHERE c.booking_id = (v_booking_ids->>0)::uuid
@@ -245,7 +273,7 @@ BEGIN
            AND vr.booking_id = (v_booking_ids->>0)::uuid) <> 1
      OR (SELECT used_count FROM public.vouchers WHERE id = v_voucher) <> 1
      OR (SELECT email_discount_claimed_at FROM public.client_profiles
-         WHERE phone = '16045550399') IS NULL
+         WHERE phone = '16045550199') IS NULL
      OR (SELECT public_booking_pricing_snapshot FROM public.bookings
          WHERE id = (v_booking_ids->>0)::uuid) IS DISTINCT FROM
         (v_result->'pricing_snapshot') THEN
@@ -253,7 +281,7 @@ BEGIN
   END IF;
 
   v_replay := public.create_group_bookings(
-    v_salon, v_payload, v_voucher, '+1 (604) 555-0399',
+    v_salon, v_payload, v_voucher, '+1 (604) 555-0199',
     'group@example.test', true, v_idem, v_quote->>'pricing_fingerprint'
   );
   IF v_replay->>'success' <> 'true'
@@ -288,7 +316,7 @@ BEGIN
     v_payload, '{0,client_name}', '"Changed organizer"'::jsonb
   );
   v_replay := public.create_group_bookings(
-    v_salon, v_payload_changed, v_voucher, '+1 (604) 555-0399',
+    v_salon, v_payload_changed, v_voucher, '+1 (604) 555-0199',
     'group@example.test', true, v_idem, v_quote->>'pricing_fingerprint'
   );
   IF v_replay->>'code' <> 'idempotency_conflict' THEN
@@ -311,7 +339,7 @@ BEGIN
   );
   v_replay := public.quote_group_booking(
     v_salon, v_payload_changed, v_restricted_voucher,
-    '+16045550399', NULL, false
+    '+16045550199', NULL, false
   );
   IF v_replay->>'code' <> 'voucher_invalid' THEN
     RAISE EXCEPTION 'restricted V1 voucher was accepted: %', v_replay;
@@ -333,7 +361,7 @@ BEGIN
   );
   v_replay := public.quote_group_booking(
     v_salon, v_payload_changed, v_free_service_voucher,
-    '+16045550399', NULL, false
+    '+16045550199', NULL, false
   );
   IF v_replay->>'code' <> 'voucher_invalid' THEN
     RAISE EXCEPTION 'free-service V1 voucher was accepted: %', v_replay;
@@ -355,18 +383,18 @@ BEGIN
     '{1,end_time_utc}', pg_catalog.to_jsonb(v_start + interval '3 hours 40 minutes')
   );
   v_stale_quote := public.quote_group_booking(
-    v_salon, v_payload_changed, NULL, '+16045550388', NULL, false
+    v_salon, v_payload_changed, NULL, '+16045550188', NULL, false
   );
   UPDATE public.services SET price_cents = 5100 WHERE id = v_service;
   SELECT count(*) INTO v_before_bookings FROM public.bookings WHERE salon_id = v_salon;
   SELECT count(*) INTO v_before_addons FROM public.booking_addons ba
   JOIN public.bookings b ON b.id = ba.booking_id WHERE b.salon_id = v_salon;
   SELECT count(*) INTO v_before_profiles FROM public.client_profiles
-    WHERE phone = '16045550388';
+    WHERE phone = '16045550188';
   SELECT count(*) INTO v_before_redemptions FROM public.voucher_redemptions
     WHERE salon_id = v_salon;
   v_replay := public.create_group_bookings(
-    v_salon, v_payload_changed, NULL, '+16045550388', NULL, false,
+    v_salon, v_payload_changed, NULL, '+16045550188', NULL, false,
     v_changed_idem, v_stale_quote->>'pricing_fingerprint'
   );
   IF v_replay->>'code' <> 'pricing_changed'
@@ -378,7 +406,7 @@ BEGIN
          JOIN public.bookings b ON b.id = ba.booking_id
          WHERE b.salon_id = v_salon) <> v_before_addons
      OR (SELECT count(*) FROM public.client_profiles
-         WHERE phone = '16045550388') <> v_before_profiles
+         WHERE phone = '16045550188') <> v_before_profiles
      OR (SELECT count(*) FROM public.voucher_redemptions
          WHERE salon_id = v_salon) <> v_before_redemptions THEN
     RAISE EXCEPTION 'group pricing_changed was not zero-write: %', v_replay;
@@ -403,14 +431,14 @@ BEGIN
     '{1,end_time_utc}', pg_catalog.to_jsonb(v_start + interval '5 hours 40 minutes')
   );
   v_quote := public.quote_group_booking(
-    v_salon, v_payload_changed, NULL, '+16045550377', NULL, false
+    v_salon, v_payload_changed, NULL, '+16045550177', NULL, false
   );
   SELECT count(*) INTO v_before_bookings FROM public.bookings WHERE salon_id = v_salon;
   SELECT count(*) INTO v_before_profiles FROM public.client_profiles
-    WHERE phone = '16045550377';
+    WHERE phone = '16045550177';
   BEGIN
     PERFORM public.create_group_bookings(
-      v_salon, v_payload_changed, NULL, '+16045550377', NULL, false,
+      v_salon, v_payload_changed, NULL, '+16045550177', NULL, false,
       v_rollback_idem, v_quote->>'pricing_fingerprint'
     );
     RAISE EXCEPTION 'forced group rollback unexpectedly succeeded';
@@ -423,7 +451,7 @@ BEGIN
   IF (SELECT count(*) FROM public.bookings WHERE salon_id = v_salon)
        <> v_before_bookings
      OR (SELECT count(*) FROM public.client_profiles
-         WHERE phone = '16045550377') <> v_before_profiles THEN
+         WHERE phone = '16045550177') <> v_before_profiles THEN
     RAISE EXCEPTION 'forced group failure left partial writes';
   END IF;
   EXECUTE 'DROP TRIGGER reject_group_rehearsal_addon ON public.booking_addons';
@@ -451,7 +479,7 @@ BEGIN
     )
   );
   v_quote := public.quote_group_booking(
-    v_penny_salon, v_payload_changed, NULL, '+16045550366', NULL, false
+    v_penny_salon, v_payload_changed, NULL, '+16045550166', NULL, false
   );
   IF (v_quote->>'tax_cents')::integer <> 2
      OR (v_quote->'member_quotes'->0->>'tax_cents')::integer <> 1
@@ -463,7 +491,7 @@ BEGIN
     RAISE EXCEPTION 'largest-remainder penny allocation mismatch: %', v_quote;
   END IF;
   v_result := public.create_group_bookings(
-    v_penny_salon, v_payload_changed, NULL, '+16045550366', NULL, false,
+    v_penny_salon, v_payload_changed, NULL, '+16045550166', NULL, false,
     v_penny_idem, v_quote->>'pricing_fingerprint'
   );
   IF v_result->>'success' <> 'true'
@@ -492,7 +520,7 @@ BEGIN
     start_time_utc, end_time_utc, status, price_cents
   )
   SELECT
-    v_salon, v_service, v_staff_one, 'Cap seed ' || g, '160455504' || g,
+    v_salon, v_service, v_staff_one, 'Cap seed ' || g, '160455501' || lpad(g::text, 2, '0'),
     date_trunc('month', clock_timestamp()) + interval '1 day' + g * interval '1 minute',
     date_trunc('month', clock_timestamp()) + interval '1 day 1 minute' + g * interval '1 minute',
     'completed', 0
@@ -511,10 +539,10 @@ BEGIN
     '{1,end_time_utc}', pg_catalog.to_jsonb(v_start + interval '8 hours 40 minutes')
   );
   v_quote := public.quote_group_booking(
-    v_salon, v_payload_changed, NULL, '+16045550355', NULL, false
+    v_salon, v_payload_changed, NULL, '+16045550155', NULL, false
   );
   v_replay := public.create_group_bookings(
-    v_salon, v_payload_changed, NULL, '+16045550355', NULL, false,
+    v_salon, v_payload_changed, NULL, '+16045550155', NULL, false,
     v_cap_idem, v_quote->>'pricing_fingerprint'
   );
   IF v_replay->>'code' <> 'monthly_booking_limit_reached'

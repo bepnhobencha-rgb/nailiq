@@ -187,6 +187,13 @@ BEGIN
   );
 
   v_quote := public.quote_public_group_booking_sequences(v_request);
+  IF v_quote->>'code' IS DISTINCT FROM 'phone_verification_required'
+     OR EXISTS (SELECT 1 FROM public.bookings WHERE salon_id = v_salon)
+     OR EXISTS (SELECT 1 FROM public.client_profiles WHERE phone = '16045550199') THEN
+    RAISE EXCEPTION 'group sequence quote accepted no organizer SMS proof: %', v_quote;
+  END IF;
+  v_request := v_request || pg_catalog.jsonb_build_object('otp_session_id', v_otp_one);
+  v_quote := public.quote_public_group_booking_sequences(v_request);
   IF v_quote->>'code' <> 'quoted' THEN
     RAISE EXCEPTION 'whole-party quote failed: %', v_quote;
   END IF;
@@ -197,6 +204,13 @@ BEGIN
     'sms_consent', true,
     'notification_language', 'en'
   );
+  v_changed := public.create_public_group_booking_sequences(v_create_request - 'otp_session_id');
+  IF v_changed->>'code' IS DISTINCT FROM 'phone_verification_required'
+     OR EXISTS (SELECT 1 FROM public.bookings WHERE salon_id = v_salon)
+     OR EXISTS (SELECT 1 FROM public.client_profiles WHERE phone = '16045550199')
+     OR EXISTS (SELECT 1 FROM public.phone_otp_sessions WHERE id = v_otp_one AND consumed_at IS NOT NULL) THEN
+    RAISE EXCEPTION 'group sequence create accepted missing proof or wrote partial state: %', v_changed;
+  END IF;
   v_created := public.create_public_group_booking_sequences(v_create_request);
   IF v_created->>'code' <> 'booked'
      OR coalesce((v_created->>'idempotent')::boolean, true) IS TRUE
@@ -304,6 +318,8 @@ BEGIN
     '{members,0,customer,name}',
     '"Organizer Rollback"'::jsonb
   );
+  -- The previous proof was consumed; a new request needs a new exact proof.
+  v_conflict_request := v_conflict_request || pg_catalog.jsonb_build_object('otp_session_id', v_otp_two);
   v_conflict_quote := public.quote_public_group_booking_sequences(
     v_conflict_request
   );

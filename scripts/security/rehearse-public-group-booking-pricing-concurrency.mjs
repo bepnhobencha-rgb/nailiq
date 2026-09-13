@@ -28,6 +28,8 @@ const ids = {
   voucherIdemB: "b2000000-0000-4000-8000-000000000009",
   slotIdemA: "b2000000-0000-4000-8000-000000000010",
   slotIdemB: "b2000000-0000-4000-8000-000000000011",
+  voucherOtpA: "b2000000-0000-4000-8000-000000000012",
+  voucherOtpB: "b2000000-0000-4000-8000-000000000013",
 };
 
 const runSql = async (statement) => {
@@ -64,24 +66,26 @@ const payloadAt = (base, offsetHours, label) => [
   },
 ];
 
-const quote = async (payload, voucher, phone) => lastJson(await runSql(`
+const quote = async (payload, voucher, phone, otp = null, applyEmailDiscount = false) => lastJson(await runSql(`
   select set_config('request.jwt.claim.role', 'service_role', true);
   select public.quote_group_booking(
     '${ids.salon}', ${sqlJson(payload)}, ${voucher ? `'${voucher}'` : "null"},
-    '${phone}', null, false
+    '${phone}', 'group-concurrency@example.test', ${applyEmailDiscount},
+    ${otp ? `'${otp}'` : "null"}
   )::text;
 `));
-const createSql = (payload, voucher, phone, idem, fingerprint) => `
+const createSql = (payload, voucher, phone, idem, fingerprint, otp = null, applyEmailDiscount = false) => `
   select set_config('request.jwt.claim.role', 'service_role', true);
   select public.create_group_bookings(
     '${ids.salon}', ${sqlJson(payload)}, ${voucher ? `'${voucher}'` : "null"},
-    '${phone}', null, false, '${idem}', '${fingerprint}'
+    '${phone}', 'group-concurrency@example.test', ${applyEmailDiscount}, '${idem}', '${fingerprint}',
+    ${otp ? `'${otp}'` : "null"}
   )::text;
 `;
 
 const phones = [
-  "16045550501", "16045550502", "16045550503",
-  "16045550504", "16045550505",
+  "16045550151", "16045550152", "16045550153",
+  "16045550154", "16045550155",
 ];
 
 const cleanup = async () => {
@@ -104,7 +108,7 @@ try {
       subscription_plan
     ) values (
       '${ids.salon}', 'group-pricing-concurrency', 'Group concurrency',
-      '+16045550500', 'UTC', 'CAD',
+      '+16045550150', 'UTC', 'CAD',
       '{
         "sun":{"open":"00:00","close":"23:59","closed":false},
         "mon":{"open":"00:00","close":"23:59","closed":false},
@@ -140,6 +144,14 @@ try {
       '${ids.voucher}', '${ids.salon}', 'GROUP-LAST-ONE', 'promo', 300, 1,
       clock_timestamp() - interval '1 day', clock_timestamp() + interval '10 days'
     );
+    -- Distinct, fresh organizer proofs for the two competing phone incentives.
+    insert into public.phone_otp_sessions (
+      id, salon_id, phone, verified_at, expires_at, verified_channel
+    ) values
+      ('${ids.voucherOtpA}', '${ids.salon}', '${phones[1]}', clock_timestamp(),
+        clock_timestamp() + interval '30 minutes', 'sms'),
+      ('${ids.voucherOtpB}', '${ids.salon}', '${phones[2]}', clock_timestamp(),
+        clock_timestamp() + interval '30 minutes', 'sms');
   `);
 
   const base = await runSql(`
@@ -171,18 +183,36 @@ try {
   // Two accepted quotes race for the last unrestricted voucher use.
   const voucherPayloadA = payloadAt(base, 2, "Voucher A");
   const voucherPayloadB = payloadAt(base, 4, "Voucher B");
+  const unprovenQuote = await quote(voucherPayloadA, ids.voucher, phones[1], null, true);
+  assert.equal(unprovenQuote.code, "phone_verification_required");
   const [voucherQuoteA, voucherQuoteB] = await Promise.all([
-    quote(voucherPayloadA, ids.voucher, phones[1]),
-    quote(voucherPayloadB, ids.voucher, phones[2]),
+    quote(voucherPayloadA, ids.voucher, phones[1], ids.voucherOtpA, true),
+    quote(voucherPayloadB, ids.voucher, phones[2], ids.voucherOtpB, true),
   ]);
   assert.equal(voucherQuoteA.success, true);
   assert.equal(voucherQuoteB.success, true);
+  assert.equal(voucherQuoteA.email_discount_cents, 200);
+  assert.equal(voucherQuoteB.email_discount_cents, 200);
+  const unprovenCreate = lastJson(await runSql(createSql(
+    voucherPayloadA, ids.voucher, phones[1], ids.voucherIdemA,
+    voucherQuoteA.pricing_fingerprint, null, true,
+  )));
+  assert.equal(unprovenCreate.code, "phone_verification_required");
+  assert.equal(await runSql(`
+    select concat_ws('|',
+      (select count(*) from public.bookings where salon_id = '${ids.salon}'),
+      (select count(*) from public.client_profiles where phone = '${phones[1]}'),
+      (select used_count from public.vouchers where id = '${ids.voucher}'),
+      (select count(*) from public.phone_otp_sessions
+        where id = '${ids.voucherOtpA}' and consumed_at is not null)
+    )
+  `), "2|0|0|0");
   const [voucherRaceA, voucherRaceB] = (
     await Promise.all([
       runSql(createSql(voucherPayloadA, ids.voucher, phones[1], ids.voucherIdemA,
-        voucherQuoteA.pricing_fingerprint)),
+        voucherQuoteA.pricing_fingerprint, ids.voucherOtpA, true)),
       runSql(createSql(voucherPayloadB, ids.voucher, phones[2], ids.voucherIdemB,
-        voucherQuoteB.pricing_fingerprint)),
+        voucherQuoteB.pricing_fingerprint, ids.voucherOtpB, true)),
     ])
   ).map(lastJson);
   assert.deepEqual(
@@ -199,6 +229,19 @@ try {
       and idempotency_key in ('${ids.voucherIdemA}', '${ids.voucherIdemB}')
   `), "1");
   const voucherLoserPhone = voucherRaceA.code === "voucher_invalid" ? phones[1] : phones[2];
+  const voucherWinner = voucherRaceA.code === "booked" ? voucherRaceA : voucherRaceB;
+  const voucherWinnerOtp = voucherRaceA.code === "booked" ? ids.voucherOtpA : ids.voucherOtpB;
+  const voucherLoserOtp = voucherRaceA.code === "voucher_invalid" ? ids.voucherOtpA : ids.voucherOtpB;
+  assert.equal(await runSql(`
+    select concat_ws('|',
+      (select count(*) from public.phone_otp_sessions
+        where id = '${voucherWinnerOtp}' and consumed_at is not null
+          and consumed_by_booking_id = '${voucherWinner.booking_ids[0]}'),
+      (select count(*) from public.phone_otp_sessions
+        where id = '${voucherLoserOtp}' and consumed_at is null
+          and consumed_by_booking_id is null)
+    )
+  `), "1|1");
   assert.equal(await runSql(`
     select count(*) from public.client_profiles where phone = '${voucherLoserPhone}'
   `), "0");

@@ -6,7 +6,7 @@ import {
   cleanupTestUser,
   seedTestSalonMember,
 } from "../helpers/db";
-import { DEFAULT_OPENING_HOURS_JSON } from "@/shared/dashboard/openingHoursDefaults";
+import { DAY_KEYS, defaultOpeningHoursWeek } from "@/shared/dashboard/openingHoursDefaults";
 
 import { gotoReceptionistCenter, supabaseAdmin } from "./helpers";
 
@@ -19,7 +19,10 @@ const owners = new Map<string, Awaited<ReturnType<typeof seedTestSalonMember>>>(
 async function seedSalonBare(slug: string, withService: boolean): Promise<string> {
   await cleanupTestSalon(slug);
 
-  const openingParsed: unknown = JSON.parse(DEFAULT_OPENING_HOURS_JSON);
+  // These cases isolate missing catalog/staff setup. Keep intake open on every
+  // weekday so a Sunday run does not exercise the separate closed-day guard.
+  const openingParsed = defaultOpeningHoursWeek();
+  for (const day of DAY_KEYS) openingParsed[day].closed = false;
 
   const { data: salon, error: salonErr } = await supabaseAdmin
     .from("salons")
