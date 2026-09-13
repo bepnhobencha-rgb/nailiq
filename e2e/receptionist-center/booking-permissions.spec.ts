@@ -128,6 +128,19 @@ test("nail tech cannot access booking create, edit, cancel, or another tech's st
     ),
   ).toHaveCount(0);
   await expect(page.getByTestId("header-add-walkin")).toHaveCount(0);
+  await expect(page.getByTestId("header-add-group")).toHaveCount(0);
+  await expect(
+    page.getByTestId("nailiq-suggestion-bar").getByRole("button", { name: /walk-in|vãng lai/i }),
+  ).toHaveCount(0);
+
+  // Direct queue links must keep read access without exposing the intake form.
+  await page.goto(
+    `/dashboard/${encodeURIComponent(fx.slug)}/center?date=${fx.ymdUtc}#queue`,
+  );
+  await waitForReceptionistHydration(page, fx.slug);
+  await expect(page.getByTestId("queue-panel-slideover")).toHaveAttribute("aria-hidden", "false");
+  await expect(page.getByTestId("walkin-add-form")).toHaveCount(0);
+  await page.getByRole("button", { name: /Close queue panel|Đóng hàng chờ/i }).click();
 
   await openBaselineBooking(page);
   await expect(page.getByTestId("edit-booking-button")).toHaveCount(0);

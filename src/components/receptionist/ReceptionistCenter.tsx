@@ -1309,17 +1309,19 @@ function ReceptionistCenterInner({
   // public group scheduler + submit engine end-to-end.
   const [deskGroupOpen, setDeskGroupOpen] = useState(false);
   const openWalkinAdd = useCallback(() => {
+    if (!canCreateDeskBooking(viewerRole)) return;
     // Every ordinary "+ Walk-in" launch starts clean. A recovery link is
     // one-shot state and must never leak into a later, unrelated customer if
     // the receptionist closes the panel without submitting.
     setWalkinPrefill(null);
     setQueuePanelOpen(true);
     setAddFocusNonce((n) => n + 1);
-  }, [setQueuePanelOpen]);
+  }, [setQueuePanelOpen, viewerRole]);
   const openPreviewWalkinAdd = useCallback(() => {
+    if (!canCreateDeskBooking(viewerRole)) return;
     setPreviewFullQueueOpen(true);
     openWalkinAdd();
-  }, [openWalkinAdd]);
+  }, [openWalkinAdd, viewerRole]);
 
   // Apply an archived-booking recovery link exactly once. The client-generated
   // request UUID is created when the form opens and then lives in form state,
@@ -3245,7 +3247,8 @@ function ReceptionistCenterInner({
     // Walk-in queue feature gate (page forces queue_panel off when the
     // walkin_queue feature is disabled) — suppresses walk-in/queue nudges.
     queueEnabled: modules.queue_panel,
-    walkinIntakeOpen: walkinIntakeOpenForSelectedDay,
+    walkinIntakeOpen:
+      walkinIntakeOpenForSelectedDay && canCreateDeskBooking(viewerRole),
   };
   const cockpitLabels: CockpitLabels = {
     longWaitGuest: rcMessages.basicMode.longWaitGuest,
@@ -3776,7 +3779,9 @@ function ReceptionistCenterInner({
             canAddAppointment={
               viewMode === "day" && canCreateDeskBooking(viewerRole)
             }
-            canAddGroup={viewMode === "day" && groupBookingEnabled}
+            canAddGroup={
+              viewMode === "day" && groupBookingEnabled && canCreateDeskBooking(viewerRole)
+            }
             settings={
               <>
                 <ReceptionistInterfaceSwitcher
@@ -4137,7 +4142,7 @@ function ReceptionistCenterInner({
                   })}
                 </div>
               )}
-              {isMobile ? (
+              {isMobile && canCreateDeskBooking(viewerRole) ? (
                 <div className="h-11 w-11 shrink-0">
                   <HeaderCustomerSearch
                     slug={slug}
@@ -4170,7 +4175,9 @@ function ReceptionistCenterInner({
                   canAddAppointment={
                     viewMode === "day" && canCreateDeskBooking(viewerRole)
                   }
-                  canAddGroup={viewMode === "day" && groupBookingEnabled}
+                  canAddGroup={
+                    viewMode === "day" && groupBookingEnabled && canCreateDeskBooking(viewerRole)
+                  }
                   onAddWalkin={openWalkinAdd}
                   onAddAppointment={() => {
                     setDeskPrefill({ ymd: data.selectedDate });
@@ -4230,7 +4237,7 @@ function ReceptionistCenterInner({
                   {language === "vi" ? "+ Hẹn mới" : "+ New appt"}
                 </Button>
               ) : null}
-              {deskBookingOpen ? (
+              {deskBookingOpen && canCreateDeskBooking(viewerRole) ? (
                 <DeskBookingForm
                   slug={slug}
                   salonId={data.salon.id}
@@ -4294,7 +4301,8 @@ function ReceptionistCenterInner({
                  same per-salon `group_booking` flag as the party-card strip. */}
               {!receptionistShellV2Enabled &&
               viewMode === "day" &&
-              groupBookingEnabled ? (
+              groupBookingEnabled &&
+              canCreateDeskBooking(viewerRole) ? (
                 <Button
                   variant="secondary"
                   size="sm"
@@ -4305,7 +4313,7 @@ function ReceptionistCenterInner({
                   {language === "vi" ? "+ Nhóm" : "+ Group"}
                 </Button>
               ) : null}
-              {deskGroupOpen ? (
+              {deskGroupOpen && canCreateDeskBooking(viewerRole) ? (
                 <DeskGroupForm
                   slug={slug}
                   salonId={data.salon.id}
@@ -5312,7 +5320,8 @@ function ReceptionistCenterInner({
                 }
                 showQuickAdd={
                   (modules.quick_add || walkinPrefill !== null) &&
-                  walkinIntakeOpenForSelectedDay
+                  walkinIntakeOpenForSelectedDay &&
+                  canCreateDeskBooking(viewerRole)
                 }
                 focusAddNonce={addFocusNonce}
                 initialClientName={walkinPrefill?.clientName}
@@ -5342,7 +5351,11 @@ function ReceptionistCenterInner({
                 labels={{
                   title: rcMessages.queue.title,
                   removedGuest: rcMessages.removedGuest,
-                  emptyMessage: rcMessages.queue.emptyMessage,
+                  emptyMessage: canCreateDeskBooking(viewerRole)
+                    ? rcMessages.queue.emptyMessage
+                    : language === "vi"
+                      ? "Chưa có khách xếp hàng."
+                      : "No walk-ins queued.",
                   cancelButton: rcMessages.queue.cancelButton,
                   assignButton: rcMessages.queue.assignButton,
                   urgentBadge: rcMessages.queue.urgentBadge,

@@ -2110,7 +2110,8 @@ export const userVi: UserMessages = {
     },
     actionErrorFallback: "Không thực hiện được thao tác. Thử lại.",
     actionErrors: {
-      unauthorized: "Cần đăng nhập.",
+      unauthorized:
+        "Quyền truy cập hiện tại không cho phép thao tác này. Hãy đăng nhập lại hoặc nhờ chủ tiệm kiểm tra quyền của bạn.",
       salon_mismatch: "Tiệm không khớp phiên của bạn.",
       server_error: "Có lỗi. Thử lại sau.",
       invalid_name: "Nhập tên khách.",

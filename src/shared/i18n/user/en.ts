@@ -4673,7 +4673,8 @@ export const userEn: UserMessages = {
     },
     actionErrorFallback: "Could not complete that action. Try again.",
     actionErrors: {
-      unauthorized: "Sign in is required.",
+      unauthorized:
+        "Your current access does not allow this action. Sign in again or ask the salon owner to check your permissions.",
       salon_mismatch: "Salon did not match your session.",
       server_error: "Something went wrong. Try again shortly.",
       invalid_name: "Enter a guest name.",
