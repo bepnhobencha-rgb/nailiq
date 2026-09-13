@@ -132,6 +132,25 @@ async function cleanup(email: string) {
   );
 }
 
+async function expectPrivateSalonSetup(page: Page, slug: string, salonName: string) {
+  await expect(page).toHaveURL(
+    `${localAuthHttpsOrigin}/dashboard/${encodeURIComponent(slug)}/setup`,
+  );
+  // Dashboard navigation retains a hidden main while the setup route streams.
+  // Certify this salon's loaded, private setup rather than the retained shell.
+  const main = page.getByRole("main");
+  const escapedSalonName = salonName.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  await expect(main.getByRole("heading", {
+    level: 1,
+    name: new RegExp(`^(?:Let’s finish|Hãy hoàn tất) ${escapedSalonName}$`),
+  })).toBeVisible();
+  const privateStatus = main.getByTestId("guided-setup-not-live-status");
+  await expect(privateStatus).toBeVisible();
+  await expect(privateStatus).toContainText(
+    /not live yet|chưa Go-Live/i,
+  );
+}
+
 for (const lang of ["en", "vi"] as const) {
   for (const destination of ["/", "/register"] as const) {
     test(`${lang}: login navigates to ${destination} without background signup requests`, async ({ page }) => {
@@ -342,10 +361,7 @@ for (const lang of ["en", "vi"] as const) {
           name: /start coco setup|bắt đầu coco setup|go to dashboard|vào bảng điều khiển/i,
         })
         .click();
-      await expect(page).toHaveURL(
-        new RegExp(`/dashboard/${registered.salon.slug}(?:[/?#]|$)`),
-      );
-      await expect(page.locator("main")).toBeVisible();
+      await expectPrivateSalonSetup(page, registered.salon.slug, salonName);
       expect(errors).toEqual([]);
       expect(setupHomePrefetches).toEqual([]);
 
@@ -382,19 +398,11 @@ for (const lang of ["en", "vi"] as const) {
         await login.locator('input[type="password"]').fill(password);
         loginPhase = "submit_login";
         await login.getByTestId("password-signin-submit").click();
-        await expect(login).toHaveURL(
-          new RegExp(`/dashboard/${registered.salon.slug}(?:[/?#]|$)`),
-        );
-        // Certify reload of a loaded dashboard. The URL changes before its
-        // document and background worker requests have finished loading.
-        await expect(login.locator("main")).toBeVisible();
+        await expectPrivateSalonSetup(login, registered.salon.slug, salonName);
         await login.waitForLoadState("networkidle");
         loginPhase = "reload_dashboard";
         await login.reload();
-        await expect(login.locator("main")).toBeVisible();
-        await expect(login).toHaveURL(
-          new RegExp(`/dashboard/${registered.salon.slug}(?:[/?#]|$)`),
-        );
+        await expectPrivateSalonSetup(login, registered.salon.slug, salonName);
         const afterLogin = await getRegisteredSalonForUser(user!.id);
         expect(afterLogin.salon.id).toBe(registered.salon.id);
         expect(afterLogin.memberRole).toBe("owner");

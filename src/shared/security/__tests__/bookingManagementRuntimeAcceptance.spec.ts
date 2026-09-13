@@ -2,8 +2,11 @@ import fs from "node:fs";
 import path from "node:path";
 import { describe, expect, it } from "vitest";
 
+import { readCardManagementRoute } from "./readCardManagementRoute";
+
 const ROOT = process.cwd();
-const read = (relative: string) => fs.readFileSync(path.join(ROOT, relative), "utf8");
+const read = (relative: string) => relative === "src/app/api/booking/square-save-card/route.ts"
+  ? readCardManagementRoute(relative) : fs.readFileSync(path.join(ROOT, relative), "utf8");
 const exists = (relative: string) => fs.existsSync(path.join(ROOT, relative));
 
 function migrationCorpus(): string {

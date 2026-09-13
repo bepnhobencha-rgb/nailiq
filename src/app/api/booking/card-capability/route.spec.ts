@@ -1,4 +1,5 @@
 import { beforeEach, describe, expect, it, vi } from "vitest";
+vi.mock("server-only", () => ({}));
 const m = vi.hoisted(() => ({ exchange: vi.fn(), requirement: vi.fn(), pending: vi.fn(), resolve: vi.fn(), inspect: vi.fn() }));
 vi.mock("@/shared/booking/bookingManagementCapabilities", () => ({ exchangePublicBookingCardManagementCapability: m.exchange, inspectBookingManagementCapability: m.inspect }));
 vi.mock("@/shared/noshow/ensureNoShowCardRequirement", () => ({ ensureNoShowCardRequirement: m.requirement }));

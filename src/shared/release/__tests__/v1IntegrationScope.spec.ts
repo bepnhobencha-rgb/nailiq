@@ -2,6 +2,8 @@ import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
 import { describe, expect, it } from "vitest";
 
+import { readCardManagementRoute } from "@/shared/security/__tests__/readCardManagementRoute";
+
 import {
   V1_INTEGRATION_SCOPE,
   v1AllowsArchivedBookingRecovery,
@@ -50,10 +52,7 @@ describe("NailIQ V1 integration scope", () => {
       resolve(process.cwd(), "src/shared/noshow/ensureNoShowCardRequirement.ts"),
       "utf8",
     );
-    const cardCapability = readFileSync(
-      resolve(process.cwd(), "src/app/api/booking/card-capability/route.ts"),
-      "utf8",
-    );
+    const cardCapability = readCardManagementRoute("src/app/api/booking/card-capability/route.ts");
     const preBookingRequirement = readFileSync(
       resolve(process.cwd(), "src/shared/noshow/resolveNoShowCardRequirement.ts"),
       "utf8",
@@ -62,10 +61,7 @@ describe("NailIQ V1 integration scope", () => {
       resolve(process.cwd(), "src/components/booking/useBookingFlowState.ts"),
       "utf8",
     );
-    const squareCardMutation = readFileSync(
-      resolve(process.cwd(), "src/app/api/booking/square-save-card/route.ts"),
-      "utf8",
-    );
+    const squareCardMutation = readCardManagementRoute("src/app/api/booking/square-save-card/route.ts");
     const stripeCardMutation = readFileSync(
       resolve(process.cwd(), "src/app/api/booking/stripe-setup-intent/route.ts"),
       "utf8",

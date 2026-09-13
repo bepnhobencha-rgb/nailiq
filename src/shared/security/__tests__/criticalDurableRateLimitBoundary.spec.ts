@@ -2,10 +2,13 @@ import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
 import { describe, expect, it } from "vitest";
 
+import { readCardManagementRoute } from "./readCardManagementRoute";
+
 const ROOT = process.cwd();
 
 function source(path: string): string {
-  return readFileSync(resolve(ROOT, path), "utf8");
+  return path === "src/app/api/booking/square-save-card/route.ts"
+    ? readCardManagementRoute(path) : readFileSync(resolve(ROOT, path), "utf8");
 }
 
 describe("critical public durable rate-limit boundary", () => {
