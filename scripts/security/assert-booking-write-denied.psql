@@ -1,0 +1,94 @@
+-- Included only by the disposable, rollback-contained booking RLS rehearsal.
+-- Caller sets the five booking_write_* case variables and the actual API role.
+-- Keep expected errors outside PL/pgSQL EXCEPTION blocks (see the existing
+-- rehearse-salon-column-access.sql PostgreSQL 17 regression precedent).
+\if :{?booking_write_salon_id}
+\else
+  SELECT 1 / 0 AS booking_write_salon_id_required;
+\endif
+\if :{?booking_write_service_id}
+\else
+  SELECT 1 / 0 AS booking_write_service_id_required;
+\endif
+\if :{?booking_write_booking_id}
+\else
+  SELECT 1 / 0 AS booking_write_booking_id_required;
+\endif
+\if :{?booking_write_can_read}
+\else
+  SELECT 1 / 0 AS booking_write_can_read_required;
+\endif
+\if :{?booking_write_case}
+\else
+  SELECT 1 / 0 AS booking_write_case_required;
+\endif
+
+SELECT current_user IN ('authenticated', 'anon') AS booking_write_api_role
+\gset
+\if :booking_write_api_role
+\else
+  \echo 'RLS test must run as an API role:' :booking_write_case
+  SELECT 1 / 0 AS booking_write_api_role_required;
+\endif
+
+SAVEPOINT booking_write_denied_insert;
+\set ON_ERROR_STOP off
+INSERT INTO public.bookings(salon_id, service_id, client_name, source, status, joined_queue_at)
+VALUES (:'booking_write_salon_id'::uuid, :'booking_write_service_id'::uuid,
+        'RLS Denied Intake', 'walkin', 'waiting', now());
+\set booking_write_insert_sqlstate :SQLSTATE
+\set booking_write_insert_message ''
+\if :ERROR
+  \set booking_write_insert_message :LAST_ERROR_MESSAGE
+\endif
+\set ON_ERROR_STOP on
+ROLLBACK TO SAVEPOINT booking_write_denied_insert;
+RELEASE SAVEPOINT booking_write_denied_insert;
+
+-- A successful INSERT or an unrelated constraint/trigger/permission error
+-- must fail this rehearsal. Anon may also be denied by an explicit table ACL.
+SELECT :'booking_write_insert_sqlstate' = '42501'
+   AND (:'booking_write_insert_message' = 'new row violates row-level security policy for table "bookings"'
+        OR (current_user = 'anon' AND :'booking_write_insert_message' = 'permission denied for table bookings'))
+  AS booking_write_insert_denied
+\gset
+\if :booking_write_insert_denied
+\else
+  \echo 'RLS denied INSERT failed its exact error assertion:' :booking_write_case 'SQLSTATE' :booking_write_insert_sqlstate
+  SELECT 1 / 0 AS booking_write_insert_was_not_denied;
+\endif
+
+WITH changed AS (
+  UPDATE public.bookings SET walkin_priority = 'high'
+  WHERE id = :'booking_write_booking_id'::uuid
+  RETURNING 1
+)
+SELECT count(*) = 0 AS booking_write_update_denied FROM changed
+\gset
+\if :booking_write_update_denied
+\else
+  \echo 'RLS denied UPDATE unexpectedly changed a row:' :booking_write_case
+  SELECT 1 / 0 AS booking_write_update_was_not_denied;
+\endif
+
+SELECT count(*) = (CASE WHEN :'booking_write_can_read'::boolean THEN 1 ELSE 0 END)
+  AS booking_write_read_boundary
+FROM public.bookings WHERE id = :'booking_write_booking_id'::uuid
+\gset
+\if :booking_write_read_boundary
+\else
+  \echo 'SELECT boundary changed:' :booking_write_case
+  SELECT 1 / 0 AS booking_write_read_boundary_changed;
+\endif
+
+\unset booking_write_salon_id
+\unset booking_write_service_id
+\unset booking_write_booking_id
+\unset booking_write_can_read
+\unset booking_write_case
+\unset booking_write_api_role
+\unset booking_write_insert_sqlstate
+\unset booking_write_insert_message
+\unset booking_write_insert_denied
+\unset booking_write_update_denied
+\unset booking_write_read_boundary

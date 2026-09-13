@@ -41,49 +41,22 @@ VALUES
   ('69130000-0000-4000-8003-000000000002', '69130000-0000-4000-8001-000000000002',
    '69130000-0000-4000-8002-000000000002', 'RLS Queue B', 'walkin', 'waiting', now());
 
--- Test-only invoker helper: it cannot elevate privileges and is rolled back.
--- Require the exact RLS INSERT error for authenticated callers, so an unrelated
--- trigger/constraint/permission failure cannot masquerade as authorization.
-CREATE FUNCTION pg_temp.assert_booking_write_denied(
-  p_salon uuid, p_service uuid, p_booking uuid, p_can_read boolean, p_case text
-) RETURNS void LANGUAGE plpgsql SECURITY INVOKER AS $$
-DECLARE v_rows integer; v_inserted boolean := false;
-BEGIN
-  IF current_user NOT IN ('authenticated', 'anon') THEN
-    RAISE EXCEPTION 'RLS test must run as an API role: %', p_case;
-  END IF;
-  BEGIN
-    INSERT INTO public.bookings(salon_id, service_id, client_name, source, status, joined_queue_at)
-    VALUES (p_salon, p_service, 'RLS Denied Intake', 'walkin', 'waiting', now());
-    v_inserted := true;
-  EXCEPTION WHEN insufficient_privilege THEN
-    IF SQLERRM IS DISTINCT FROM 'new row violates row-level security policy for table "bookings"'
-       AND NOT (current_user = 'anon' AND SQLERRM = 'permission denied for table bookings') THEN
-      RAISE;
-    END IF;
-  END;
-  UPDATE public.bookings SET walkin_priority = 'high' WHERE id = p_booking;
-  GET DIAGNOSTICS v_rows = ROW_COUNT;
-  IF v_inserted OR v_rows <> 0 THEN
-    RAISE EXCEPTION 'RLS denied writes unexpectedly succeeded: % (insert=%, update_rows=%)',
-      p_case, v_inserted, v_rows;
-  END IF;
-  SELECT count(*) INTO v_rows FROM public.bookings WHERE id = p_booking;
-  IF v_rows <> (CASE WHEN p_can_read THEN 1 ELSE 0 END) THEN
-    RAISE EXCEPTION 'SELECT boundary changed: %', p_case;
-  END IF;
-END;
-$$;
-
+-- Expected permission failures run as direct psql statements with savepoints.
+-- Do not wrap them in PL/pgSQL EXCEPTION blocks: the existing column-access
+-- rehearsal documents a PostgreSQL 17 backend-termination failure in that
+-- pattern. Every denied INSERT still requires its exact SQLSTATE and message.
 SET LOCAL ROLE authenticated;
 SET LOCAL request.jwt.claim.role = 'authenticated';
 SET LOCAL request.jwt.claim.sub = '69130000-0000-4000-8000-000000000005';
 
 -- Baseline membership-only policies fail HERE on the actual INSERT, before
 -- any static policy-shape assertion. Nail tech must retain same-salon reads.
-SELECT pg_temp.assert_booking_write_denied(
-  '69130000-0000-4000-8001-000000000001', '69130000-0000-4000-8002-000000000001',
-  '69130000-0000-4000-8003-000000000001', true, 'nail tech own salon');
+\set booking_write_salon_id '69130000-0000-4000-8001-000000000001'
+\set booking_write_service_id '69130000-0000-4000-8002-000000000001'
+\set booking_write_booking_id '69130000-0000-4000-8003-000000000001'
+\set booking_write_can_read 'true'
+\set booking_write_case 'nail tech own salon'
+\ir assert-booking-write-denied.psql
 
 DO $desk_roles$
 DECLARE v_n integer; v_id uuid; v_rows integer;
@@ -106,18 +79,49 @@ BEGIN
     WHERE id = '69130000-0000-4000-8003-000000000001';
     GET DIAGNOSTICS v_rows = ROW_COUNT;
     IF v_rows <> 1 THEN RAISE EXCEPTION 'desk cannot update teammate intake: %', v_n; END IF;
-    PERFORM pg_temp.assert_booking_write_denied(
-      '69130000-0000-4000-8001-000000000002', '69130000-0000-4000-8002-000000000002',
-      '69130000-0000-4000-8003-000000000002', false, 'desk role cross tenant');
   END LOOP;
 END;
 $desk_roles$;
 
+-- Each desk role must still fail direct writes into the other salon. Keep
+-- these expected failures outside the PL/pgSQL loop above.
+SET LOCAL request.jwt.claim.sub = '69130000-0000-4000-8000-000000000001';
+\set booking_write_salon_id '69130000-0000-4000-8001-000000000002'
+\set booking_write_service_id '69130000-0000-4000-8002-000000000002'
+\set booking_write_booking_id '69130000-0000-4000-8003-000000000002'
+\set booking_write_can_read 'false'
+\set booking_write_case 'owner cross tenant'
+\ir assert-booking-write-denied.psql
+SET LOCAL request.jwt.claim.sub = '69130000-0000-4000-8000-000000000002';
+\set booking_write_salon_id '69130000-0000-4000-8001-000000000002'
+\set booking_write_service_id '69130000-0000-4000-8002-000000000002'
+\set booking_write_booking_id '69130000-0000-4000-8003-000000000002'
+\set booking_write_can_read 'false'
+\set booking_write_case 'admin cross tenant'
+\ir assert-booking-write-denied.psql
+SET LOCAL request.jwt.claim.sub = '69130000-0000-4000-8000-000000000003';
+\set booking_write_salon_id '69130000-0000-4000-8001-000000000002'
+\set booking_write_service_id '69130000-0000-4000-8002-000000000002'
+\set booking_write_booking_id '69130000-0000-4000-8003-000000000002'
+\set booking_write_can_read 'false'
+\set booking_write_case 'senior cross tenant'
+\ir assert-booking-write-denied.psql
+SET LOCAL request.jwt.claim.sub = '69130000-0000-4000-8000-000000000004';
+\set booking_write_salon_id '69130000-0000-4000-8001-000000000002'
+\set booking_write_service_id '69130000-0000-4000-8002-000000000002'
+\set booking_write_booking_id '69130000-0000-4000-8003-000000000002'
+\set booking_write_can_read 'false'
+\set booking_write_case 'receptionist cross tenant'
+\ir assert-booking-write-denied.psql
+
 -- A separate tenant's owner has authority there but not here.
 SET LOCAL request.jwt.claim.sub = '69130000-0000-4000-8000-000000000006';
-SELECT pg_temp.assert_booking_write_denied(
-  '69130000-0000-4000-8001-000000000001', '69130000-0000-4000-8002-000000000001',
-  '69130000-0000-4000-8003-000000000001', false, 'tenant B owner into A');
+\set booking_write_salon_id '69130000-0000-4000-8001-000000000001'
+\set booking_write_service_id '69130000-0000-4000-8002-000000000001'
+\set booking_write_booking_id '69130000-0000-4000-8003-000000000001'
+\set booking_write_can_read 'false'
+\set booking_write_case 'tenant B owner into A'
+\ir assert-booking-write-denied.psql
 DO $tenant_b$
 DECLARE v_rows integer;
 BEGIN
@@ -134,9 +138,12 @@ $tenant_b$;
 -- Same user, different roles: role must bind to the target salon, never to
 -- an arbitrary membership. WITH CHECK must also authorize the NEW salon.
 SET LOCAL request.jwt.claim.sub = '69130000-0000-4000-8000-000000000007';
-SELECT pg_temp.assert_booking_write_denied(
-  '69130000-0000-4000-8001-000000000002', '69130000-0000-4000-8002-000000000002',
-  '69130000-0000-4000-8003-000000000002', true, 'owner A and nail tech B');
+\set booking_write_salon_id '69130000-0000-4000-8001-000000000002'
+\set booking_write_service_id '69130000-0000-4000-8002-000000000002'
+\set booking_write_booking_id '69130000-0000-4000-8003-000000000002'
+\set booking_write_can_read 'true'
+\set booking_write_case 'owner A and nail tech B'
+\ir assert-booking-write-denied.psql
 DO $mixed_roles$
 DECLARE v_rows integer;
 BEGIN
@@ -147,21 +154,42 @@ BEGIN
   WHERE id = '69130000-0000-4000-8003-000000000001';
   GET DIAGNOSTICS v_rows = ROW_COUNT;
   IF v_rows <> 1 THEN RAISE EXCEPTION 'mixed-role owner lost tenant A write'; END IF;
-  BEGIN
-    UPDATE public.bookings
-    SET salon_id = '69130000-0000-4000-8001-000000000002',
-        service_id = '69130000-0000-4000-8002-000000000002'
-    WHERE id = '69130000-0000-4000-8003-000000000001';
-    RAISE EXCEPTION 'UPDATE WITH CHECK allowed owner A to move booking into tech B';
-  EXCEPTION WHEN insufficient_privilege THEN
-    IF SQLERRM IS DISTINCT FROM 'new row violates row-level security policy for table "bookings"' THEN RAISE; END IF;
-  END;
+END;
+$mixed_roles$;
+SAVEPOINT booking_write_reparent;
+\set ON_ERROR_STOP off
+UPDATE public.bookings
+SET salon_id = '69130000-0000-4000-8001-000000000002',
+    service_id = '69130000-0000-4000-8002-000000000002'
+WHERE id = '69130000-0000-4000-8003-000000000001';
+\set booking_write_reparent_sqlstate :SQLSTATE
+\set booking_write_reparent_message ''
+\if :ERROR
+  \set booking_write_reparent_message :LAST_ERROR_MESSAGE
+\endif
+\set ON_ERROR_STOP on
+ROLLBACK TO SAVEPOINT booking_write_reparent;
+RELEASE SAVEPOINT booking_write_reparent;
+SELECT :'booking_write_reparent_sqlstate' = '42501'
+   AND :'booking_write_reparent_message' = 'new row violates row-level security policy for table "bookings"'
+  AS booking_write_reparent_denied
+\gset
+\if :booking_write_reparent_denied
+\else
+  \echo 'UPDATE WITH CHECK allowed owner A to move booking into tech B or returned the wrong failure:' :booking_write_reparent_sqlstate
+  SELECT 1 / 0 AS booking_write_reparent_was_not_denied;
+\endif
+DO $reparent_preserved$
+BEGIN
   IF NOT EXISTS (SELECT 1 FROM public.bookings WHERE id = '69130000-0000-4000-8003-000000000001'
                 AND salon_id = '69130000-0000-4000-8001-000000000001') THEN
     RAISE EXCEPTION 'failed reparent did not preserve original booking';
   END IF;
 END;
-$mixed_roles$;
+$reparent_preserved$;
+\unset booking_write_reparent_sqlstate
+\unset booking_write_reparent_message
+\unset booking_write_reparent_denied
 
 -- Test the ACTUAL valid role domain without removing a constraint. Unknown,
 -- NULL and noncanonical roles cannot be stored; they confer no membership.
@@ -189,9 +217,12 @@ END;
 $invalid_membership$;
 SET LOCAL ROLE authenticated;
 SET LOCAL request.jwt.claim.sub = '69130000-0000-4000-8000-000000000008';
-SELECT pg_temp.assert_booking_write_denied(
-  '69130000-0000-4000-8001-000000000001', '69130000-0000-4000-8002-000000000001',
-  '69130000-0000-4000-8003-000000000001', false, 'invalid or absent membership');
+\set booking_write_salon_id '69130000-0000-4000-8001-000000000001'
+\set booking_write_service_id '69130000-0000-4000-8002-000000000001'
+\set booking_write_booking_id '69130000-0000-4000-8003-000000000001'
+\set booking_write_can_read 'false'
+\set booking_write_case 'invalid or absent membership'
+\ir assert-booking-write-denied.psql
 
 -- Live membership changes take effect on the next statement; stale JWTs do
 -- not carry salon authority. Demotion preserves read, removal revokes read.
@@ -204,19 +235,28 @@ WHERE salon_id = '69130000-0000-4000-8001-000000000001'
   AND user_id = '69130000-0000-4000-8000-000000000004';
 SET LOCAL ROLE authenticated;
 SET LOCAL request.jwt.claim.sub = '69130000-0000-4000-8000-000000000001';
-SELECT pg_temp.assert_booking_write_denied(
-  '69130000-0000-4000-8001-000000000001', '69130000-0000-4000-8002-000000000001',
-  '69130000-0000-4000-8003-000000000001', true, 'owner demoted to tech');
+\set booking_write_salon_id '69130000-0000-4000-8001-000000000001'
+\set booking_write_service_id '69130000-0000-4000-8002-000000000001'
+\set booking_write_booking_id '69130000-0000-4000-8003-000000000001'
+\set booking_write_can_read 'true'
+\set booking_write_case 'owner demoted to tech'
+\ir assert-booking-write-denied.psql
 SET LOCAL request.jwt.claim.sub = '69130000-0000-4000-8000-000000000004';
-SELECT pg_temp.assert_booking_write_denied(
-  '69130000-0000-4000-8001-000000000001', '69130000-0000-4000-8002-000000000001',
-  '69130000-0000-4000-8003-000000000001', false, 'receptionist membership removed');
+\set booking_write_salon_id '69130000-0000-4000-8001-000000000001'
+\set booking_write_service_id '69130000-0000-4000-8002-000000000001'
+\set booking_write_booking_id '69130000-0000-4000-8003-000000000001'
+\set booking_write_can_read 'false'
+\set booking_write_case 'receptionist membership removed'
+\ir assert-booking-write-denied.psql
 
 -- Missing subject is unauthenticated even if the DB role is authenticated.
 SET LOCAL request.jwt.claim.sub = '';
-SELECT pg_temp.assert_booking_write_denied(
-  '69130000-0000-4000-8001-000000000001', '69130000-0000-4000-8002-000000000001',
-  '69130000-0000-4000-8003-000000000001', false, 'missing auth uid');
+\set booking_write_salon_id '69130000-0000-4000-8001-000000000001'
+\set booking_write_service_id '69130000-0000-4000-8002-000000000001'
+\set booking_write_booking_id '69130000-0000-4000-8003-000000000001'
+\set booking_write_can_read 'false'
+\set booking_write_case 'missing auth uid'
+\ir assert-booking-write-denied.psql
 
 -- Public callers still cannot directly mutate/read bookings. Even a supplied
 -- owner sub cannot turn the anon PostgreSQL role into authenticated.
@@ -224,9 +264,12 @@ RESET ROLE;
 SET LOCAL ROLE anon;
 SET LOCAL request.jwt.claim.role = 'anon';
 SET LOCAL request.jwt.claim.sub = '69130000-0000-4000-8000-000000000007';
-SELECT pg_temp.assert_booking_write_denied(
-  '69130000-0000-4000-8001-000000000001', '69130000-0000-4000-8002-000000000001',
-  '69130000-0000-4000-8003-000000000001', false, 'anon direct booking access');
+\set booking_write_salon_id '69130000-0000-4000-8001-000000000001'
+\set booking_write_service_id '69130000-0000-4000-8002-000000000001'
+\set booking_write_booking_id '69130000-0000-4000-8003-000000000001'
+\set booking_write_can_read 'false'
+\set booking_write_case 'anon direct booking access'
+\ir assert-booking-write-denied.psql
 DO $public_catalog$
 BEGIN
   IF (SELECT count(*) FROM public.public_service_catalog
