@@ -202,6 +202,8 @@ jobs:
           psql "$DB_URL" -v ON_ERROR_STOP=1 -q \
             -f scripts/security/check-public-booking-profile-finalization.sql
           psql "$DB_URL" -v ON_ERROR_STOP=1 -q \
+            -f scripts/security/test-booking-crm-finalizer-party.sql
+          psql "$DB_URL" -v ON_ERROR_STOP=1 -q \
             -f scripts/security/rehearse-public-booking-profile-finalization-rollback.sql
           psql "$DB_URL" -v ON_ERROR_STOP=1 -q \
             -f scripts/security/check-booking-addons-boundary.sql
