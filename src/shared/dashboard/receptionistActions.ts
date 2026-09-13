@@ -31,6 +31,7 @@ import { createDeskGroupBookingsAuthoritative } from "@/shared/booking/groupDesk
 import { isValidCustomerName } from "@/shared/lib/nameFormat";
 import {
   canCancelBooking,
+  canChangeBookingStatus,
   canMarkNoShow,
   canCreateDeskBooking,
   canCreateAfterHoursDeskBooking,
@@ -533,6 +534,7 @@ export async function addWalkinToQueue(
   );
   const ctx = await getDashboardWriteClient(slug);
   if (!ctx) return fail("unauthorized");
+  if (!canCreateDeskBooking(ctx.role)) return fail("unauthorized");
 
   if (ctx.salon.id !== String(input.salonId).trim()) {
     return fail("salon_mismatch");
@@ -875,6 +877,7 @@ export async function assignWalkinToSlot(
 ): Promise<{ ok: true } | { ok: false; error: string }> {
   const ctx = await getDashboardWriteClient(slug);
   if (!ctx) return fail("unauthorized");
+  if (!canEditBooking(ctx.role)) return fail("unauthorized");
 
   if (ctx.salon.id !== String(input.salonId).trim()) {
     return fail("salon_mismatch");
@@ -1109,6 +1112,7 @@ export async function updateWalkinContact(
 > {
   const ctx = await getDashboardWriteClient(slug);
   if (!ctx) return fail("unauthorized");
+  if (!canEditBooking(ctx.role)) return fail("unauthorized");
   if (ctx.salon.id !== String(input.salonId).trim()) {
     return fail("salon_mismatch");
   }
@@ -1164,6 +1168,7 @@ export async function cancelWaitingWalkin(
 ): Promise<{ ok: true } | { ok: false; error: string }> {
   const ctx = await getDashboardWriteClient(slug);
   if (!ctx) return fail("unauthorized");
+  if (!canCancelBooking(ctx.role)) return fail("unauthorized");
 
   if (ctx.salon.id !== String(input.salonId).trim()) {
     return fail("salon_mismatch");
@@ -1209,6 +1214,7 @@ export async function undoWalkinAssignment(
 ): Promise<{ ok: true } | { ok: false; error: string }> {
   const ctx = await getDashboardWriteClient(slug);
   if (!ctx) return fail("unauthorized");
+  if (!canEditBooking(ctx.role)) return fail("unauthorized");
 
   if (ctx.salon.id !== String(input.salonId).trim()) {
     return fail("salon_mismatch");
@@ -1265,6 +1271,7 @@ export async function markWalkinInProgress(
 ): Promise<{ ok: true } | { ok: false; error: string }> {
   const ctx = await getDashboardWriteClient(slug);
   if (!ctx) return fail("unauthorized");
+  if (!canChangeBookingStatus(ctx.role)) return fail("unauthorized");
 
   if (ctx.salon.id !== String(input.salonId).trim()) {
     return fail("salon_mismatch");
@@ -2893,6 +2900,7 @@ export async function addWalkinAndAssign(
   {
     const ctx = await getDashboardWriteClient(slug);
     if (!ctx) return fail("unauthorized");
+    if (!canCreateDeskBooking(ctx.role)) return fail("unauthorized");
     if (ctx.salon.id !== String(input.salonId).trim()) {
       return fail("salon_mismatch");
     }
@@ -3017,6 +3025,7 @@ export async function setSoftHold(
 ): Promise<{ ok: true; holdUntilIso: string } | { ok: false; error: string }> {
   const ctx = await getDashboardWriteClient(slug);
   if (!ctx) return fail("unauthorized");
+  if (!canEditBooking(ctx.role)) return fail("unauthorized");
   if (ctx.salon.id !== String(input.salonId).trim()) {
     return fail("salon_mismatch");
   }
@@ -3075,6 +3084,7 @@ export async function clearSoftHold(
 ): Promise<{ ok: true } | { ok: false; error: string }> {
   const ctx = await getDashboardWriteClient(slug);
   if (!ctx) return fail("unauthorized");
+  if (!canEditBooking(ctx.role)) return fail("unauthorized");
   if (ctx.salon.id !== String(input.salonId).trim()) {
     return fail("salon_mismatch");
   }

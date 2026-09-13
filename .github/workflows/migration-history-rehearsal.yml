@@ -13,6 +13,7 @@ on:
       - "scripts/security/check-no-duplicate-appointments-boundary.sql"
       - "scripts/security/rehearse-individual-waitlist-capacity.sql"
       - "scripts/security/check-setup-catalog-mutation-rls.sql"
+      - "scripts/security/check-booking-write-role-rls.sql"
       - "scripts/security/assert-setup-catalog-denied.psql"
       - "scripts/security/rehearse-no-duplicate-appointments-concurrency.mjs"
       - "scripts/security/check-staff-action-notification-outbox-boundary.sql"
@@ -119,6 +120,8 @@ jobs:
             -f scripts/security/rehearse-service-combo-management-rls-rollback.sql
           psql "$DB_URL" -v ON_ERROR_STOP=1 -q \
             -f scripts/security/check-setup-catalog-mutation-rls.sql
+          psql "$DB_URL" -v ON_ERROR_STOP=1 -q \
+            -f scripts/security/check-booking-write-role-rls.sql
           psql "$DB_URL" -v ON_ERROR_STOP=1 -q \
             -f scripts/security/rehearse-setup-catalog-mutation-rls-rollback.sql
           psql "$DB_URL" -v ON_ERROR_STOP=1 -q \
