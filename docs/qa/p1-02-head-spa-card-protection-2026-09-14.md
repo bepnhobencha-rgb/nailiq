@@ -7,8 +7,9 @@
 - Production inspection: read-only aggregate queries; no customer name, phone, email,
   card identifier, customer identifier, or provider secret was returned.
 - Provider calls, messages, charges, booking mutations and Production writes: none.
-- Publication status: committed as `fe2caa552c1f574c476a602f0767dcd4f2895b7a`,
-  pushed to `audit/p1-02-head-spa-20260914`, and opened as PR #1408.
+- Publication status: implementation committed as
+  `fe2caa552c1f574c476a602f0767dcd4f2895b7a`, pushed to
+  `audit/p1-02-head-spa-20260914`, and opened as PR #1408.
 - Isolated QA Preview: deployment `dpl_FbmD5riF8pzYhXZEX7XDcVXizZm4` on project
   `nailiq-sdk-save-qa-20260912`; target `preview`, state `READY`.
 
@@ -63,15 +64,27 @@ boundaries are unchanged.
 | TypeScript `tsc --noEmit` after build | PASS |
 | QA Preview build and `/api/health` | PASS — deployment READY and health returned `status: ok` |
 | Real-browser public UI smoke | PASS — NailIQ login rendered with zero browser console errors |
+| Authenticated Owner Preview | PASS — the exception panel rendered two future exceptions and excluded the past completed fixture |
+| Minimal disclosure on Preview | PASS — masked customer labels rendered; synthetic full names, phone and email were absent |
+| Owner actions on Preview | PASS — two Open booking, two secure-retry and two Mark reviewed controls rendered; one retry capability and one reviewed state persisted |
+| Preview auth rate limit | PASS — the shared QA auth bucket returned HTTP 429 after its configured threshold; QA-only hashed auth buckets were reset once to complete this controlled test |
 
 The first build attempt failed before compilation because Turbopack rejects a
 `node_modules` symlink outside the worktree root. Installing the lockfile dependencies
 inside the worktree resolved the environment issue; the unchanged build command then
 passed.
 
+The first authenticated Preview attempts were blocked by the disposable QA environment's
+already-exhausted shared-IP `public-edge:auth` buckets. Direct QA Auth succeeded with the
+same synthetic credentials. After resetting only those hashed QA auth buckets, the real
+browser reached the Owner page and verified the panel and actions above. Vercel Preview
+toolbar CSP warnings and cancelled speculative requests were observed; neither prevented
+the application panel or its server actions from completing. Cleanup then confirmed zero
+active memberships, live bookings and active capabilities for the synthetic fixture.
+
 ## Remaining operational acceptance
 
-1. Complete required checks and review PR #1408 before any merge or Production release.
+1. Review PR #1408 before any merge or Production release.
 2. Owner reviews the eight future `awaiting_card` appointments and generates secure,
    expiring retry links only for the intended customers.
 3. The one Head Spa `manual_review` appointment must collect fresh policy consent and use
@@ -85,6 +98,6 @@ passed.
 - Local exception-list defect and regression: **PASS**
 - QA Auth, tenant, race and cleanup: **PASS**
 - QA Preview build/API/public UI smoke: **PASS**
-- Authenticated Owner exception-list verification on Preview: **NOT RUN**
+- Authenticated Owner exception-list and action verification on Preview: **PASS**
 - Head Spa provider recovery journey: **NOT RUN**
 - P1-02 overall: **NOT YET COMPLETE**
