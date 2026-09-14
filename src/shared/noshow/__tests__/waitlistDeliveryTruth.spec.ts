@@ -51,6 +51,18 @@ describe("waitlist delivery truth", () => {
     });
   });
 
+  it.each(["accepted", "delivered"] as const)(
+    "preserves the typed %s provider state",
+    (status) => {
+      const truth = summarizeWaitlistDeliveryTruth(
+        new Map([[ENTRY, 2]]),
+        [row({ status })],
+      ).get(ENTRY);
+
+      expect(truth?.sms).toMatchObject({ status, reason: null });
+    },
+  );
+
   it("ignores stale epochs so an old failure cannot repaint a new offer", () => {
     const truth = summarizeWaitlistDeliveryTruth(
       new Map([[ENTRY, 3]]),

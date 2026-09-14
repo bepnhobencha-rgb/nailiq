@@ -120,6 +120,71 @@ BEGIN
   IF v_result->>'status'<>'sent' OR v_replay->>'code'<>'already_completed' THEN
     RAISE EXCEPTION 'truthful delivery completion/replay failed: % / %',v_result,v_replay;
   END IF;
+  INSERT INTO public.sms_delivery_attempts(
+    id,salon_id,notification_type,recipient_fingerprint,body_fingerprint,status,
+    provider_message_sid,provider_accepted_at,failed_at,completed_at
+  ) VALUES(
+    'd7000000-0000-4000-8000-000000000029','d7000000-0000-4000-8000-000000000001',
+    'waitlist_offer',v_phone_hash,repeat('2',64),'undelivered',
+    'SMaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa',transaction_timestamp(),
+    transaction_timestamp(),transaction_timestamp()
+  );
+  IF (SELECT status FROM public.load_waitlist_offer_delivery_truth(
+      'd7000000-0000-4000-8000-000000000001',
+      ARRAY['d7000000-0000-4000-8000-000000000010'::uuid]
+    ) WHERE channel='sms')<>'failed' THEN
+    RAISE EXCEPTION 'terminal Twilio failure was still projected as provider accepted';
+  END IF;
+  UPDATE public.waitlist_offer_delivery_outbox
+  SET status='sent',provider_receipt='email-waitlist-qa',
+    recipient_fingerprint=repeat('3',64),error_code=NULL,
+    completed_at=transaction_timestamp(),updated_at=transaction_timestamp()
+  WHERE waitlist_entry_id='d7000000-0000-4000-8000-000000000010'
+    AND channel='email';
+  PERFORM public.record_resend_registered_email_delivery_event(
+    'email-waitlist-delivered','email-waitlist-qa','waitlist_offer','customer',
+    'email.delivered',repeat('3',64),1,transaction_timestamp()-interval '2 minutes',
+    repeat('4',64)
+  );
+  IF (SELECT status FROM public.load_waitlist_offer_delivery_truth(
+      'd7000000-0000-4000-8000-000000000001',
+      ARRAY['d7000000-0000-4000-8000-000000000010'::uuid]
+    ) WHERE channel='email')<>'delivered' THEN
+    RAISE EXCEPTION 'terminal Resend delivery was not projected';
+  END IF;
+  PERFORM public.record_resend_registered_email_delivery_event(
+    'email-waitlist-bounced','email-waitlist-qa','waitlist_offer','customer',
+    'email.bounced',repeat('3',64),1,transaction_timestamp()-interval '1 minute',
+    repeat('5',64)
+  );
+  PERFORM public.record_resend_registered_email_delivery_event(
+    'email-waitlist-late-sent','email-waitlist-qa','waitlist_offer','customer',
+    'email.sent',repeat('3',64),1,transaction_timestamp(),repeat('6',64)
+  );
+  IF (SELECT status FROM public.load_waitlist_offer_delivery_truth(
+      'd7000000-0000-4000-8000-000000000001',
+      ARRAY['d7000000-0000-4000-8000-000000000010'::uuid]
+    ) WHERE channel='email')<>'failed' THEN
+    RAISE EXCEPTION 'late accepted callback downgraded terminal Resend failure';
+  END IF;
+  IF EXISTS(SELECT 1 FROM public.load_waitlist_offer_delivery_truth(
+      'd7000000-0000-4000-8000-000000000099',
+      ARRAY['d7000000-0000-4000-8000-000000000010'::uuid]
+    )) THEN
+    RAISE EXCEPTION 'waitlist delivery truth crossed salon boundary';
+  END IF;
+  IF EXISTS(SELECT 1 FROM public.load_waitlist_offer_delivery_truth(
+      'd7000000-0000-4000-8000-000000000001',
+      ARRAY(SELECT gen_random_uuid() FROM generate_series(1,101))
+    )) THEN
+    RAISE EXCEPTION 'oversized waitlist delivery truth request was accepted';
+  END IF;
+  IF has_function_privilege(
+      'anon','public.load_waitlist_offer_delivery_truth(uuid,uuid[])','EXECUTE')
+     OR has_function_privilege(
+      'authenticated','public.load_waitlist_offer_delivery_truth(uuid,uuid[])','EXECUTE') THEN
+    RAISE EXCEPTION 'waitlist delivery truth RPC became browser-callable';
+  END IF;
   v_result:=public.claim_waitlist_with_management_capability(v_token,
     'd7000000-0000-4000-8000-000000000020');
   v_replay:=public.claim_waitlist_with_management_capability(v_token,

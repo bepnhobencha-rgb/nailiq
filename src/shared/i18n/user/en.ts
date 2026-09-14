@@ -1733,6 +1733,7 @@ export type UserMessages = {
       emailChannel: string;
       deliveryStatus: {
         sent: string;
+        delivered: string;
         sending: string;
         failed: string;
         unknown: string;
@@ -4466,7 +4467,8 @@ export const userEn: UserMessages = {
       smsChannel: "SMS",
       emailChannel: "Email",
       deliveryStatus: {
-        sent: "Sent",
+        sent: "Provider accepted",
+        delivered: "Delivered",
         sending: "Sending",
         failed: "Failed",
         unknown: "Not verified",

@@ -364,7 +364,8 @@ const RELEASE_SHAPE = {
   // +17 R09 SMS incentive/CRM helpers and replay-only paid-booking recovery.
   // +3 R10 private phone/terminal-proof and existing-card receipt helpers.
   // +1 R11 service-only atomic expired-grace pause with audit.
-  functions: 594,
+  // +1 P1-01 service-only Waitlist terminal-delivery truth projection.
+  functions: 595,
   // +4 pending-receipt correlation triggers across notification/staff INSERT
   // and provider-SID transitions.
   // +1 V1 terminal-booking policy trigger.
@@ -785,6 +786,7 @@ const CRITICAL_FUNCTIONS = [
   "reconcile_due_booking_card_management_continuations",
   "ensure_waitlist_offer_delivery_outbox",
   "load_waitlist_offer_delivery_material",
+  "load_waitlist_offer_delivery_truth",
   "mint_waitlist_claim_capability",
   "promote_waitlist_for_freed_slot",
   "promote_waitlist_for_booking",
