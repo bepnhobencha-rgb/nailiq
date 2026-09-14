@@ -12,7 +12,7 @@ describe("exact measured release schema contract", () => {
 
   it.each([
     ["tables", 246], ["columns", 3798], ["policies", 225],
-    ["functions", 594], ["triggers", 162], ["indexes", 1012],
+    ["functions", 595], ["triggers", 162], ["indexes", 1012],
     ["anon", 56], ["authenticated", 78], ["service_role", 233],
   ] as const)("rejects a changed %s count even if an old expected value remains in a comment", (key, value) => {
     const pattern = new RegExp(`\\b${key}: ${value}\\b`, "g");

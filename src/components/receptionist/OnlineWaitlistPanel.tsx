@@ -130,9 +130,10 @@ export function OnlineWaitlistPanel({
           ...prev,
           [entry.id]: { status: "notified", delivery: res.delivery },
         }));
+        const acceptedStatuses = new Set(["sent", "accepted", "delivered"]);
         const sentChannels = [
-          res.delivery.sms.status === "sent" ? t.smsChannel : null,
-          res.delivery.email.status === "sent" ? t.emailChannel : null,
+          acceptedStatuses.has(res.delivery.sms.status) ? t.smsChannel : null,
+          acceptedStatuses.has(res.delivery.email.status) ? t.emailChannel : null,
         ].filter((channel): channel is string => channel !== null);
         const channels = [res.delivery.sms, res.delivery.email];
         const needsAttention = channels.some((channel) =>
@@ -187,9 +188,12 @@ export function OnlineWaitlistPanel({
   ) {
     let label = t.deliveryStatus.unavailable;
     let variant: BadgeVariant = "neutral";
-    if (delivery.status === "sent") {
-      label = t.deliveryStatus.sent;
+    if (delivery.status === "delivered") {
+      label = t.deliveryStatus.delivered;
       variant = "success";
+    } else if (delivery.status === "accepted" || delivery.status === "sent") {
+      label = t.deliveryStatus.sent;
+      variant = "info";
     } else if (delivery.status === "pending" || delivery.status === "sending") {
       label = t.deliveryStatus.sending;
       variant = "info";

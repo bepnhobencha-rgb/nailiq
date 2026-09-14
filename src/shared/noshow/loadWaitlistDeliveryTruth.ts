@@ -70,14 +70,13 @@ export async function loadWaitlistDeliveryTruth(input: {
 
     const epochs = [...new Set(entryEpochs.values())];
     if (epochs.length === 0) return unavailableTruth(entryIds);
-    const { data, error } = await service
-      .from("waitlist_offer_delivery_outbox" as never)
-      .select(
-        "waitlist_entry_id, offer_epoch, channel, status, error_code, updated_at",
-      )
-      .eq("salon_id", input.salonId)
-      .in("waitlist_entry_id", entryIds)
-      .in("offer_epoch", epochs);
+    const { data, error } = await service.rpc(
+      "load_waitlist_offer_delivery_truth" as never,
+      {
+        p_salon_id: input.salonId,
+        p_waitlist_entry_ids: entryIds,
+      } as never,
+    );
     if (error) return unavailableTruth(entryIds);
 
     const truthByEntry = summarizeWaitlistDeliveryTruth(

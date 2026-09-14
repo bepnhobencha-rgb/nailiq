@@ -3,6 +3,8 @@ export type WaitlistDeliveryChannel = "sms" | "email";
 export type WaitlistDeliveryStatus =
   | "pending"
   | "sending"
+  | "accepted"
+  | "delivered"
   | "sent"
   | "failed"
   | "unknown"
@@ -41,6 +43,8 @@ export type WaitlistDeliveryTruthRow = {
 const DELIVERY_STATUSES = new Set<WaitlistDeliveryStatus>([
   "pending",
   "sending",
+  "accepted",
+  "delivered",
   "sent",
   "failed",
   "unknown",

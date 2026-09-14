@@ -10,12 +10,13 @@ import { expect } from "vitest";
 // r10-schema-before-contract.log on the isolated QA clone.
 // R11 combines current Production: +8 columns, +6 functions, +1 trigger,
 // +3 indexes; plus +1 service-only expired-grace pause function.
+// P1-01 adds one service-only Waitlist terminal-delivery truth projection.
 // This is the local release contract, not a claim about Production's schema.
 const EXPECTED_RELEASE_SHAPE = {
   tables: 246,
   columns: 3798,
   policies: 225,
-  functions: 594,
+  functions: 595,
   triggers: 162,
   indexes: 1012,
 };

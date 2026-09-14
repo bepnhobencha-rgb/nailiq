@@ -1908,7 +1908,8 @@ export const userVi: UserMessages = {
       smsChannel: "SMS",
       emailChannel: "Email",
       deliveryStatus: {
-        sent: "Đã gửi",
+        sent: "Provider đã nhận",
+        delivered: "Đã giao",
         sending: "Đang gửi",
         failed: "Gửi thất bại",
         unknown: "Chưa xác minh",
