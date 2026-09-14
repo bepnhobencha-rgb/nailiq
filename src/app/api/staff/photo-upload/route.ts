@@ -6,6 +6,7 @@ import { NextResponse } from "next/server";
 import { createClient } from "@/shared/lib/supabase/server";
 import { createServiceRoleClient } from "@/shared/lib/supabase/serviceRole";
 import { isSameOriginMutation } from "@/shared/security/sameOriginMutation";
+import { consumePublicRequestRateLimit } from "@/shared/security/publicServerActionRateLimit";
 
 export const dynamic = "force-dynamic";
 
@@ -18,7 +19,16 @@ type ConsentToggles = {
 
 function parseConsentToggles(raw: string): ConsentToggles | null {
   try {
-    const parsed = JSON.parse(raw) as Partial<ConsentToggles>;
+    const parsed = JSON.parse(raw) as Partial<ConsentToggles> | null;
+    if (!parsed || typeof parsed !== "object" || Array.isArray(parsed)) return null;
+    for (const key of [
+      "consent_receive_sms",
+      "consent_save_to_profile",
+      "consent_share_public",
+      "consent_use_marketing",
+    ] as const) {
+      if (parsed[key] !== undefined && typeof parsed[key] !== "boolean") return null;
+    }
     return {
       consent_receive_sms: parsed.consent_receive_sms ?? true,
       consent_save_to_profile: parsed.consent_save_to_profile ?? true,
@@ -63,12 +73,10 @@ export async function POST(req: Request) {
     return NextResponse.json({ error: "Missing photo" }, { status: 400 });
   }
 
-  const consents = parseConsentToggles(consentsRaw) ?? {
-    consent_receive_sms: true,
-    consent_save_to_profile: true,
-    consent_share_public: false,
-    consent_use_marketing: false,
-  };
+  const consents = parseConsentToggles(consentsRaw);
+  if (!consents) {
+    return NextResponse.json({ error: "Invalid consent settings" }, { status: 400 });
+  }
 
   // Validate file size (max 20MB)
   const MAX_SIZE_BYTES = 20 * 1024 * 1024;
@@ -110,8 +118,44 @@ export async function POST(req: Request) {
     return NextResponse.json({ error: "Forbidden" }, { status: 403 });
   }
 
+  const rate = await consumePublicRequestRateLimit({
+    request: req,
+    scope: "staff-photo-upload",
+    identity: [salonId, user.id],
+    ipLimits: [[20, 60], [100, 3_600]],
+    identityLimits: [[20, 60], [100, 3_600]],
+  });
+  if (rate !== "allowed") {
+    return NextResponse.json(
+      { error: rate === "limited" ? "Rate limit reached" : "Temporarily unavailable" },
+      { status: rate === "limited" ? 429 : 503 },
+    );
+  }
+
+  const { data: actorStaff, error: actorStaffError } = await db
+    .from("staff")
+    .select("id")
+    .eq("salon_id", salonId)
+    .eq("user_id", user.id)
+    .is("deleted_at", null)
+    .maybeSingle();
+  if (actorStaffError) {
+    return NextResponse.json({ error: "Unable to verify staff identity" }, { status: 503 });
+  }
+
   // Upsert customer_photo_consents if booking has a client phone
   const clientPhone = (booking.client_phone as string | null)?.trim() ?? null;
+  if (
+    !clientPhone &&
+    (consents.consent_receive_sms ||
+      consents.consent_share_public ||
+      consents.consent_use_marketing)
+  ) {
+    return NextResponse.json(
+      { error: "A client phone is required for SMS, public, or marketing consent" },
+      { status: 422 },
+    );
+  }
   if (clientPhone) {
     const { error: consentErr } = await db
       .from("customer_photo_consents")
@@ -123,10 +167,12 @@ export async function POST(req: Request) {
           consent_save_to_profile: consents.consent_save_to_profile,
           consent_share_public: consents.consent_share_public,
           consent_use_marketing: consents.consent_use_marketing,
-          granted_by_staff_id: membership.id,
-          granted_via: "staff_photo_upload",
+          granted_by_staff_id: actorStaff?.id ?? null,
+          granted_via: "in_salon",
           granted_at: new Date().toISOString(),
           updated_at: new Date().toISOString(),
+          revoked_at: null,
+          revoked_reason: null,
         },
         {
           onConflict: "salon_id,client_phone",
@@ -136,7 +182,7 @@ export async function POST(req: Request) {
 
     if (consentErr) {
       console.error("[photo-upload] Consent upsert error:", consentErr);
-      // Non-fatal — continue with upload
+      return NextResponse.json({ error: "Unable to save client consent" }, { status: 503 });
     }
   }
 

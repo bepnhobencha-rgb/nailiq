@@ -1,6 +1,7 @@
 import { createClient } from "npm:@supabase/supabase-js@2";
 import { rejectUnauthorizedInternalRequest } from "../_shared/internalAuth.ts";
 import { supabaseSecretKey } from "../_shared/supabaseApiKeys.ts";
+import { filterCurrentPublicTrendPhotos } from "../_shared/trendPhotoEligibility.ts";
 
 const supabaseUrl = Deno.env.get("SUPABASE_URL")!;
 const serviceRoleKey = supabaseSecretKey();
@@ -65,8 +66,8 @@ async function refreshTrendsForSalon(salonId: string): Promise<number> {
       ai_quality_score,
       created_at,
       booking_id,
-      bookings!inner(service_id, client_phone),
-      customer_photo_consents!inner(consent_share_public, revoked_at)
+      salon_id,
+      bookings!inner(service_id, client_phone, salon_id)
     `)
     .eq("salon_id", salonId)
     .gte("created_at", new Date(Date.now() - 7 * 24 * 60 * 60 * 1000).toISOString())
@@ -77,11 +78,28 @@ async function refreshTrendsForSalon(salonId: string): Promise<number> {
 
   if (error) throw new Error(`photo query: ${error.message}`);
 
-  // Filter for public consent + not revoked
-  const eligible = (photos ?? []).filter((p: Record<string, unknown>) => {
-    const consents = p.customer_photo_consents as Array<{ consent_share_public: boolean; revoked_at: string | null }>;
-    return consents?.some((c) => c.consent_share_public && !c.revoked_at);
-  });
+  const phones = [...new Set((photos ?? []).flatMap((photo: Record<string, unknown>) => {
+    const rawBooking = photo.bookings;
+    const booking = Array.isArray(rawBooking) ? rawBooking[0] : rawBooking;
+    return booking && typeof booking === "object" && "client_phone" in booking &&
+      typeof booking.client_phone === "string" && booking.client_phone
+      ? [booking.client_phone]
+      : [];
+  }))];
+
+  const { data: consents, error: consentsError } = phones.length > 0
+    ? await db
+      .from("customer_photo_consents")
+      .select("salon_id, client_phone, consent_share_public, revoked_at")
+      .eq("salon_id", salonId)
+      .in("client_phone", phones)
+      .eq("consent_share_public", true)
+      .is("revoked_at", null)
+    : { data: [], error: null };
+
+  if (consentsError) throw new Error(`consent query: ${consentsError.message}`);
+
+  const eligible = filterCurrentPublicTrendPhotos(photos ?? [], consents ?? []);
 
   // Group by detected_style and build trend objects
   const styleGroups: Record<string, typeof eligible> = {};
