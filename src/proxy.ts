@@ -284,6 +284,7 @@ const PUBLIC_API_RATE_LIMIT_PREFIXES = [
   "/api/errors",
   "/api/gift-card/purchase",
   "/api/nail-tryon/",
+  "/api/photos/",
   "/api/public/salon-suggestions",
   "/api/quick-rebook",
   "/api/referrals/",

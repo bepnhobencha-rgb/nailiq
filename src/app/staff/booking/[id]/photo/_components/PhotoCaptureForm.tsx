@@ -42,7 +42,7 @@ export default function PhotoCaptureForm({
   const [uploadState, setUploadState] = useState<UploadState>({ status: "idle" });
   const [consents, setConsents] = useState<ConsentToggles>({
     // PIPEDA defaults: receive SMS on, save profile on, public share off, marketing off
-    consent_receive_sms: true,
+    consent_receive_sms: Boolean(clientPhone?.trim()),
     consent_save_to_profile: true,
     consent_share_public: false,
     consent_use_marketing: false,
@@ -156,7 +156,7 @@ export default function PhotoCaptureForm({
         {isCompleted && (
           <>
             {uploadState.status === "done" ? (
-              <DoneState photoId={uploadState.photoId} clientName={clientName} />
+              <DoneState clientName={clientName} />
             ) : uploadState.status === "processing" ? (
               <ProcessingState />
             ) : uploadState.status === "error" ? (
@@ -266,7 +266,7 @@ export default function PhotoCaptureForm({
                     minHeight: "56px",
                   }}
                 >
-                  {uploadState.status === "uploading" ? "Uploading…" : "Send to Client"}
+                  {uploadState.status === "uploading" ? "Uploading…" : "Save Photo"}
                 </button>
               </form>
             )}
@@ -350,7 +350,7 @@ function ProcessingState() {
   );
 }
 
-function DoneState({ photoId: _photoId, clientName }: { photoId: string; clientName: string }) {
+function DoneState({ clientName }: { clientName: string }) {
   return (
     <div
       className="rounded-2xl p-8 flex flex-col items-center gap-4 text-center"
@@ -363,9 +363,9 @@ function DoneState({ photoId: _photoId, clientName }: { photoId: string; clientN
         <span className="text-2xl">✅</span>
       </div>
       <div>
-        <p className="text-base font-semibold text-white">Photo sent!</p>
+        <p className="text-base font-semibold text-white">Photo saved!</p>
         <p className="text-sm text-[#a1a1aa] mt-1">
-          {clientName} will receive a link to view and rate their nails.
+          {clientName}&apos;s photo is available in the salon gallery.
         </p>
       </div>
     </div>
