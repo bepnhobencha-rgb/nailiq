@@ -7,7 +7,10 @@
 - Production inspection: read-only aggregate queries; no customer name, phone, email,
   card identifier, customer identifier, or provider secret was returned.
 - Provider calls, messages, charges, booking mutations and Production writes: none.
-- Local code status: implemented and verified; not committed, pushed, previewed or deployed.
+- Publication status: committed as `fe2caa552c1f574c476a602f0767dcd4f2895b7a`,
+  pushed to `audit/p1-02-head-spa-20260914`, and opened as PR #1408.
+- Isolated QA Preview: deployment `dpl_FbmD5riF8pzYhXZEX7XDcVXizZm4` on project
+  `nailiq-sdk-save-qa-20260912`; target `preview`, state `READY`.
 
 ## Production truth at 2026-09-14 21:36 UTC
 
@@ -58,6 +61,8 @@ boundaries are unchanged.
 | Touched-file ESLint | PASS |
 | Next production build | PASS |
 | TypeScript `tsc --noEmit` after build | PASS |
+| QA Preview build and `/api/health` | PASS — deployment READY and health returned `status: ok` |
+| Real-browser public UI smoke | PASS — NailIQ login rendered with zero browser console errors |
 
 The first build attempt failed before compilation because Turbopack rejects a
 `node_modules` symlink outside the worktree root. Installing the lockfile dependencies
@@ -66,7 +71,7 @@ passed.
 
 ## Remaining operational acceptance
 
-1. Publish the active-appointment filter through a reviewed PR and Preview.
+1. Complete required checks and review PR #1408 before any merge or Production release.
 2. Owner reviews the eight future `awaiting_card` appointments and generates secure,
    expiring retry links only for the intended customers.
 3. The one Head Spa `manual_review` appointment must collect fresh policy consent and use
@@ -79,6 +84,7 @@ passed.
 - Existing Production charge safety: **PASS**
 - Local exception-list defect and regression: **PASS**
 - QA Auth, tenant, race and cleanup: **PASS**
-- Preview verification of this change: **NOT RUN**
+- QA Preview build/API/public UI smoke: **PASS**
+- Authenticated Owner exception-list verification on Preview: **NOT RUN**
 - Head Spa provider recovery journey: **NOT RUN**
 - P1-02 overall: **NOT YET COMPLETE**
