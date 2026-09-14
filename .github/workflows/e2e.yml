@@ -255,6 +255,14 @@ jobs:
             project: "settings"
             browser: "chromium webkit"
             testpath: "e2e/superadmin-password-recovery.spec.ts e2e/superadmin-mfa-real-auth.spec.ts e2e/auth-cookie-security.spec.ts"
+          # P0 authorization acceptance must execute, not merely be checked in.
+          # Keep it on its own real-Auth stack: membership removal/demotion and
+          # session revocation must not affect another suite's fixtures.
+          - shard: 6
+            name: "tenant roles and session revocation — real auth"
+            project: "settings"
+            browser: "chromium webkit"
+            testpath: "e2e/p0-tenant-auth.spec.ts"
     env:
       # ── NO PRODUCTION SECRETS. NONE. ────────────────────────────────────────
       #
@@ -290,6 +298,10 @@ jobs:
       # is the secondary net. NEVER set on Vercel production.
       DISABLE_OUTBOUND_SMS: "1"
       DISABLE_OUTBOUND_CALLS: "1"
+      # The tenant harness fails closed without these explicit local-only
+      # guards. Apply to its server/build/test processes, not just Playwright.
+      NAILIQ_DISPOSABLE_DB: ${{ matrix.shard == 6 && '1' || '' }}
+      DISABLE_OUTBOUND_EMAIL: ${{ matrix.shard == 6 && '1' || '' }}
       # Short-circuits the Anthropic Vision call in aiPrefillServicesAction
       # so setup-ai-prefill E2E specs work without an API key.
       AI_PREFILL_E2E_MOCK: "services"
