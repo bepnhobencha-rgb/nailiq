@@ -49,6 +49,41 @@ async function bookingSnapshot(fixture: ReceptionistCenterFixture) {
   return result.data;
 }
 
+async function captureEditReceipt(page: Page, urlPattern: string) {
+  let dispatchCount = 0;
+  let resolveReceipt!: (value: { status: number; unauthorized: boolean }) => void;
+  const receipt = new Promise<{ status: number; unauthorized: boolean }>((resolve) => {
+    resolveReceipt = resolve;
+  });
+  await page.route(urlPattern, async (route) => {
+    const request = route.request();
+    if (request.method() !== "POST"
+      || !request.headers()["next-action"]
+      || !request.postData()?.includes('"newStaffId"')) {
+      await route.continue();
+      return;
+    }
+    dispatchCount += 1;
+    // Forward the original request exactly once and preserve a normal reply.
+    // APIResponse retains the body independently of Chromium's transient CDP
+    // response buffer. Never retry a mutation or follow a redirect implicitly.
+    const response = await route.fetch({ maxRetries: 0, maxRedirects: 0 });
+    const result = {
+      status: response.status(),
+      unauthorized: (await response.text()).includes('"error":"unauthorized"'),
+    };
+    if (result.status >= 300 && result.status < 400) {
+      // WebKit cannot fulfill a redirect. Preserve its observed status for the
+      // assertion below, but never follow/replay an unexpected mutation redirect.
+      await route.abort("blockedbyresponse");
+    } else {
+      await route.fulfill({ response });
+    }
+    resolveReceipt(result);
+  });
+  return { receipt, dispatchCount: () => dispatchCount };
+}
+
 test.beforeAll(async () => {
   for (const suffix of ["a", "b"]) {
     const slug = `e2e-p0-tenant-${suffix}-${randomUUID()}`;
@@ -195,19 +230,20 @@ test(`${lang}: an already-open edit form loses write permission after admin is d
     .eq("salon_id", a.salonId).eq("user_id", member.userId).select("role");
   expect(demotion.error?.code ?? null).toBeNull();
   expect(demotion.data).toEqual([{ role: "nail_tech" }]);
-  const responsePromise = page.waitForResponse((response) => response.request().method() === "POST"
-    && Boolean(response.request().headers()["next-action"])
-    && Boolean(response.request().postData()?.includes('"newStaffId"')));
+  const urlPattern = `**/dashboard/${a.slug}/center**`;
+  const capture = await captureEditReceipt(page, urlPattern);
   await page.getByTestId("edit-save-button").click();
-  const response = await responsePromise;
-  expect(response.status()).toBe(200);
-  expect((await response.text()).includes('"error":"unauthorized"')).toBe(true);
+  const response = await capture.receipt;
+  expect(response.status).toBe(200);
+  expect(response.unauthorized).toBe(true);
+  expect(capture.dispatchCount()).toBe(1);
   await expect(page.getByTestId("edit-error-message")).toHaveText(
     lang === "en"
       ? "Your current access does not allow booking edits. Sign in again or ask the salon owner to check your permissions."
       : "Quyền truy cập hiện tại không cho phép sửa lịch hẹn. Hãy đăng nhập lại hoặc nhờ chủ tiệm kiểm tra quyền của bạn.",
   );
   expect(await bookingSnapshot(a)).toEqual(before);
+  await page.unroute(urlPattern);
   if (process.env.NAILIQ_QA_ARTIFACT_DIR) {
     await page.getByTestId("edit-error-message").screenshot({
       path: `${process.env.NAILIQ_QA_ARTIFACT_DIR}/p0-03-demoted-${testInfo.project.name}-${lang}.png`,
