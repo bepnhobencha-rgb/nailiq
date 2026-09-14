@@ -33,10 +33,11 @@ for (const fault of ["abort", "503", "response-loss", "throw", "verification_una
     const errors: string[] = []; page.on("pageerror", e => errors.push(e.message));
     await page.goto("/challenge");
     const input = page.getByPlaceholder("000000");
-    await input.fill("123456"); await input.press("Enter");
+    const verify = page.getByRole("button", { name: "Verify", exact: true });
+    await input.fill("123456"); await verify.click();
     await expect(page.locator(alert)).toHaveText(unavailable);
     await expect(input).toHaveValue("123456");
-    await expect(page.getByRole("button", { name: "Verify", exact: true })).toBeEnabled();
+    await expect(verify).toBeEnabled();
     await expect(page.getByTestId("fixture-error")).toHaveCount(0);
     await expect(page.getByText("private Auth detail")).toHaveCount(0);
     await expect(page).toHaveURL(/\/challenge$/);
@@ -44,7 +45,7 @@ for (const fault of ["abort", "503", "response-loss", "throw", "verification_una
     expect(await page.evaluate(() => document.documentElement.scrollWidth > innerWidth)).toBe(false);
     if (fault === "abort") await page.screenshot({ path: info.outputPath("mfa-challenge-error.png"), fullPage: true });
     state.fault = "success"; await context.clearCookies();
-    await input.press("Enter");
+    await verify.click();
     await expect(page.getByText("QA verification destination")).toBeVisible();
     expect(state.calls).toBe(2); expect(state.blocked).toEqual([]); expect(errors).toEqual([]);
   });
