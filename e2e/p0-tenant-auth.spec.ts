@@ -210,6 +210,12 @@ test("browser denies another salon and denies reload after membership removal", 
   }
 });
 
+test.describe("authorization receipt with network interception", () => {
+// A service-worker-controlled WebKit page bypasses page.route, even when the
+// worker leaves this POST uncached. Block workers only for these receipt tests;
+// the other tenant/session scenarios retain the normal application worker.
+test.use({ serviceWorkers: "block" });
+
 for (const lang of ["en", "vi"] as const) {
 test(`${lang}: an already-open edit form loses write permission after admin is demoted`, async ({ page }, testInfo) => {
   await page.addInitScript((language) => localStorage.setItem("nailiq-user-lang", language), lang);
@@ -221,6 +227,7 @@ test(`${lang}: an already-open edit form loses write permission after admin is d
   await login(page, member);
   await page.goto(`/dashboard/${a.slug}/center?date=${a.ymdUtc}`);
   await waitForReceptionistHydration(page, a.slug);
+  expect(await page.evaluate(() => Boolean(navigator.serviceWorker?.controller))).toBe(false);
   await page.getByTestId(`booking-block-${a.displayApptBookingId}`).click();
   await page.getByTestId("edit-booking-button").click();
   await page.getByTestId("edit-staff-select").selectOption(a.staffIds[1]);
@@ -255,3 +262,4 @@ test(`${lang}: an already-open edit form loses write permission after admin is d
   await expect(page.getByTestId("edit-booking-button")).toHaveCount(0);
 });
 }
+});
