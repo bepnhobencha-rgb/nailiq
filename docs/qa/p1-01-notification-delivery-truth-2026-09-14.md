@@ -2,12 +2,14 @@
 
 ## Scope and evidence class
 
-- Branch: `audit/p1-01-notification-delivery-20260914`
-- Base and current Production SHA at audit start: `4480f7d9ee42409622b171c78dd67a8a25d16bf7`
-- Production mutation: none
+- Implementation branch: `audit/p1-01-notification-delivery-20260914`
+- Browser-acceptance follow-up: `qa/p1-01-acceptance-20260914`
+- Base Production SHA at audit start: `4480f7d9ee42409622b171c78dd67a8a25d16bf7`
+- Production SHA reverified after merge: `9db731b6860f77f6eef85c3686f80cb4bb5f22c5`
+- Production migration: `20260914155026 waitlist_offer_terminal_delivery_truth`
 - Provider dispatch: none
 - Synthetic data only
-- Overall release state: **LOCAL PASS; QA/Preview/Production NOT YET VERIFIED**
+- Overall release state: **DEPLOYMENT PASS; SYNTHETIC BROWSER PASS; PROVIDER QA NOT YET VERIFIED**
 
 ## Existing before this task
 
@@ -52,17 +54,27 @@
 | Reordered callback behavior | PASS — late provider-accepted callback cannot downgrade failure |
 | Tenant isolation and browser-role grants | PASS |
 | Oversized request (101 IDs) | PASS — returns no rows |
+| PR and CI | PASS — PR #1406 merged; build, blank-Supabase rehearsal, receptionist desktop/mobile E2E, security and visual checks succeeded |
+| Production version/health | PASS — `/api/version` returned `9db731b6860f77f6eef85c3686f80cb4bb5f22c5`; `/api/health` returned HTTP 200 |
+| Isolated fixture build | PASS — imports the production `OnlineWaitlistPanel`; Next webpack production build and TypeScript passed |
+| Browser matrix | PASS — 4/4: Chromium desktop and iPhone 14 WebKit, English and Vietnamese |
+| Browser state truth | PASS — accepted, delivered, failed, suppressed, unknown, and sending all rendered; only delivered uses the success token |
+| Mobile layout | PASS — no horizontal overflow; full-page screenshot visually inspected |
+| Fixture network boundary | PASS — non-local requests and every non-GET/HEAD request were blocked; no provider or database call |
+| Follow-up focused unit tests | PASS — 10/10 |
+| Follow-up touched-file ESLint | PASS |
+| Follow-up root typecheck | PASS |
 
 ## What remains before acceptance can close
 
-1. Commit/push only after owner approval.
-2. Run CI blank-Supabase migration rehearsal, including the extended waitlist script.
-3. Create an isolated QA Preview and apply the additive migration to disposable QA.
-4. Verify the Receptionist Center in a real browser for accepted, delivered, failed,
-   suppressed, and unknown states in both languages and mobile/desktop widths.
-5. If provider credentials are provisioned for disposable QA, run one synthetic Twilio
+1. Commit/push the reusable browser-acceptance fixture only after owner approval.
+2. Create an isolated QA Preview and apply the additive migration to disposable QA.
+3. If provider credentials are provisioned for disposable QA, run one synthetic Twilio
    and one synthetic Resend delivery/callback case with Production notifications and
    payment dispatch disabled.
+
+The browser requirement is now proven locally against the production component. It is
+not called Preview evidence until the same fixture has been deployed to isolated QA.
 
 ## Rollout and rollback boundary
 
@@ -76,6 +88,7 @@
 
 ## Acceptance verdict
 
-- Waitlist terminal delivery read-model defect: **LOCAL PASS**
-- P1-01 end-to-end QA/provider/Preview acceptance: **NOT YET COMPLETE**
+- Waitlist terminal delivery read-model defect: **PRODUCTION DEPLOYMENT PASS**
+- Synthetic desktop/mobile EN/VI browser acceptance: **PASS**
+- P1-01 provider/Preview acceptance: **NOT YET COMPLETE**
 - V1/Master Plan/784-function completion: **NOT CLAIMED**
