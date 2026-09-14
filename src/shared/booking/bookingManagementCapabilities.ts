@@ -386,8 +386,10 @@ export function parseBookingManagementInspection(
       sequenceReceipt.bookingId !== bookingId ||
       sequenceReceipt.salonId !== salonId ||
       sequenceReceipt.status !== status ||
-      sequenceReceipt.parentStartTimeUtc !== startTimeUtc ||
-      sequenceReceipt.parentEndTimeUtc !== endTimeUtc
+      // PostgreSQL serializes timestamptz with +00:00; nested receipts use Z.
+      // Both were validated above. Compare instants, preserving the binding.
+      Date.parse(sequenceReceipt.parentStartTimeUtc) !== Date.parse(startTimeUtc!) ||
+      Date.parse(sequenceReceipt.parentEndTimeUtc) !== Date.parse(endTimeUtc!)
     )
   ) return { ok: false, code: "invalid_management_response" };
 

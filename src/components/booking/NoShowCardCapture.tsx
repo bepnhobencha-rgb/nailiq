@@ -211,7 +211,7 @@ function SavedCardReuseTile({
         onClick={onReuse}
         disabled={saving}
         data-testid="noshow-card-reuse-confirm"
-        className="mt-3 h-11 w-full rounded-xl bg-[var(--salon-primary)] text-sm font-semibold text-white disabled:opacity-50"
+        className="mt-3 h-11 w-full rounded-xl bg-[var(--cta-bg)] text-sm font-semibold text-[var(--cta-text)] disabled:opacity-50"
       >
         {saving ? (t.noShowCardSaving ?? "Saving…") : (t.noShowCardSave ?? "Use saved card")}
       </button>
@@ -459,7 +459,7 @@ function SquareCardCapture({ onSettled, bookingId, managementToken, currencyForm
         onClick={onSave}
         disabled={formState !== "ready" || status === "saving" || !consented}
         data-testid="noshow-card-save"
-        className="mt-3 h-11 w-full rounded-xl bg-[var(--salon-primary)] text-sm font-semibold text-white disabled:opacity-50"
+        className="mt-3 h-11 w-full rounded-xl bg-[var(--cta-bg)] text-sm font-semibold text-[var(--cta-text)] disabled:opacity-50"
       >
         {status === "saving"
           ? (t.noShowCardSaving ?? "Saving…")

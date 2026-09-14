@@ -51,6 +51,8 @@ DECLARE
   v_otp_session uuid := '60000000-0000-4000-8000-000000000001';
   v_other_otp_session uuid := '60000000-0000-4000-8000-000000000002';
   v_wrong_phone_otp_session uuid := '60000000-0000-4000-8000-000000000003';
+  v_incentive_otp uuid := '60000000-0000-4000-8000-000000000004';
+  v_changed_incentive_otp uuid := '60000000-0000-4000-8000-000000000005';
   v_other_salon uuid := '10000000-0000-4000-8000-000000000002';
   v_otp_booking_id uuid;
   v_sequence_quote jsonb;
@@ -193,6 +195,21 @@ BEGIN
   );
 
   v_quote := public.quote_public_booking_sequence(v_request);
+  IF v_quote->>'code' IS DISTINCT FROM 'phone_verification_required'
+     OR EXISTS (SELECT 1 FROM public.client_profiles WHERE phone = '16045550199')
+     OR EXISTS (SELECT 1 FROM public.bookings WHERE salon_id = v_salon AND idempotency_key = v_request_id) THEN
+    RAISE EXCEPTION 'sequence incentives accepted no SMS proof: %', v_quote;
+  END IF;
+  INSERT INTO public.phone_otp_sessions(
+    id, salon_id, phone, verified_at, expires_at, verified_channel
+  ) VALUES
+    (v_incentive_otp, v_salon, '16045550199', clock_timestamp(),
+      clock_timestamp() + interval '30 minutes', 'sms'),
+    (v_changed_incentive_otp, v_salon, '16045550199', clock_timestamp(),
+      clock_timestamp() + interval '30 minutes', 'sms');
+  -- Optional SMS proof authorizes incentives even when booking OTP is OFF.
+  v_request := v_request || pg_catalog.jsonb_build_object('otp_session_id', v_incentive_otp);
+  v_quote := public.quote_public_booking_sequence(v_request);
   IF coalesce((v_quote->>'success')::boolean, false) IS NOT TRUE
      OR v_quote->>'code' <> 'quoted'
      OR pg_catalog.jsonb_array_length(v_quote->'segments') <> 2
@@ -223,6 +240,11 @@ BEGIN
     RAISE EXCEPTION 'sequence create failed: %', v_created;
   END IF;
   v_booking_id := (v_created->>'booking_id')::uuid;
+  IF NOT EXISTS (SELECT 1 FROM public.phone_otp_sessions
+      WHERE id = v_incentive_otp AND consumed_at IS NOT NULL
+        AND consumed_by_booking_id = v_booking_id) THEN
+    RAISE EXCEPTION 'optional incentive SMS proof was not consumed by its booking';
+  END IF;
   v_segment_ids := v_created->'segment_ids';
   IF (SELECT count(*) FROM public.booking_service_segments seg
       WHERE seg.booking_id = v_booking_id) <> 2
@@ -451,7 +473,7 @@ BEGIN
   v_request := pg_catalog.jsonb_set(
     pg_catalog.jsonb_set(v_request, '{request_id}', pg_catalog.to_jsonb(v_request_id)),
     '{voucher_code}', 'null'::jsonb
-  );
+  ) || pg_catalog.jsonb_build_object('otp_session_id', v_changed_incentive_otp);
   v_quote := public.quote_public_booking_sequence(v_request);
   SELECT count(*) INTO v_before_count FROM public.bookings b
   WHERE b.salon_id = v_salon AND b.idempotency_key = v_request_id;
@@ -496,8 +518,8 @@ BEGIN
   UPDATE public.square_integrations SET deposit_enabled = false
   WHERE salon_id = v_salon;
 
-  -- OTP-disabled salons reject, rather than silently attach, a supplied
-  -- session. Then enable OTP and prove missing, cross-phone, success,
+  -- Booking OTP may be OFF, but incentives still require explicit SMS proof.
+  -- Then enable booking OTP and prove missing, cross-phone, success,
   -- consumption/stamping, and exact committed replay.
   INSERT INTO public.salons(
     id, slug, name, phone, timezone, currency_code,
@@ -507,14 +529,14 @@ BEGIN
     '+16045550102', 'UTC', 'CAD', 'premium', 'active', true, '{}'::jsonb
   );
   INSERT INTO public.phone_otp_sessions(
-    id, salon_id, phone, verified_at, expires_at
+    id, salon_id, phone, verified_at, expires_at, verified_channel
   ) VALUES
     (v_otp_session, v_salon, '16045550195', transaction_timestamp(),
-      transaction_timestamp()+interval '15 minutes'),
+      transaction_timestamp()+interval '15 minutes', 'sms'),
     (v_other_otp_session, v_other_salon, '16045550195', transaction_timestamp(),
-      transaction_timestamp()+interval '15 minutes'),
+      transaction_timestamp()+interval '15 minutes', 'sms'),
     (v_wrong_phone_otp_session, v_salon, '16045550999', transaction_timestamp(),
-      transaction_timestamp()+interval '15 minutes');
+      transaction_timestamp()+interval '15 minutes', 'sms');
   v_one_line_request := pg_catalog.jsonb_set(
     v_one_line_request, '{request_id}',
     '"40000000-0000-4000-8000-000000000006"'::jsonb
@@ -529,15 +551,15 @@ BEGIN
   v_quote := public.quote_public_booking_sequence(v_one_line_request);
   v_changed := public.create_public_booking_sequence(
     v_one_line_request || pg_catalog.jsonb_build_object(
-      'otp_session_id', v_otp_session,
+      'apply_email_discount', true,
       'expected_pricing_fingerprint', v_quote->>'pricing_fingerprint'
     )
   );
-  IF v_changed->>'code' <> 'otp_not_required'
+  IF v_changed->>'code' IS DISTINCT FROM 'phone_verification_required'
      OR EXISTS (SELECT 1 FROM public.bookings b
        WHERE b.salon_id=v_salon
          AND b.idempotency_key='40000000-0000-4000-8000-000000000006') THEN
-    RAISE EXCEPTION 'OTP-disabled supplied session was not rejected: %', v_changed;
+    RAISE EXCEPTION 'OTP-disabled incentive create accepted missing proof: %', v_changed;
   END IF;
 
   UPDATE public.salons SET phone_otp_enabled = true WHERE id = v_salon;

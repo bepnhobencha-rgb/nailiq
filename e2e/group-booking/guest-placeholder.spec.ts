@@ -10,6 +10,7 @@
  *
  * Run: npm run test:e2e -- e2e/group-booking/guest-placeholder.spec.ts
  */
+import { randomUUID } from "node:crypto";
 import { expect, test } from "@playwright/test";
 import { createClient } from "@supabase/supabase-js";
 import { cleanupTestSalon, GATE_NAME } from "../helpers/db";
@@ -26,18 +27,22 @@ const supabase = createClient(
   process.env.SUPABASE_SERVICE_ROLE_KEY!,
 );
 
-const SLUG = "e2e-group-placeholder";
+let slug: string;
 let salon: GroupTestSalon;
 
 // Every case needs a NEW customer. Deleting client_profiles alone is insufficient:
 // customer lookup also recognizes previous bookings in this salon. A shared
 // beforeAll salon let the successful booking case contaminate the next case.
 test.beforeEach(async () => {
-  salon = await seedGroupTestSalon(SLUG);
+  // A deleted/recreated slug can still resolve to the previous salon through
+  // the one-second public snapshot cache. Use a new URL as well as a new row
+  // so switching to ?mode=group cannot change salon identity mid-interaction.
+  slug = `e2e-group-placeholder-${randomUUID()}`;
+  salon = await seedGroupTestSalon(slug);
 });
 
 test.afterEach(async () => {
-  await cleanupTestSalon(SLUG);
+  await cleanupTestSalon(slug);
 });
 
 // ─── Helper: complete group flow without filling member names ─────
@@ -45,7 +50,7 @@ test.afterEach(async () => {
 async function completeFlowWithoutNames(
   page: Parameters<typeof gotoGroupFlow>[0],
 ) {
-  await gotoGroupFlow(page, SLUG);
+  await gotoGroupFlow(page, slug);
 
   // STEP 1 — size 2
   await page.getByTestId("group-size-2").click();
@@ -80,7 +85,7 @@ async function completeFlowWithoutNames(
 // ─── Test: Guest placeholder fields are pre-filled ───────────────
 
 test("member name fields are pre-filled with Guest N placeholders", async ({ page }) => {
-  await gotoGroupFlow(page, SLUG);
+  await gotoGroupFlow(page, slug);
 
   await page.getByTestId("group-size-2").click();
   await page.getByTestId("group-size-next").click();
@@ -113,7 +118,7 @@ test("group booking succeeds when member names are not manually edited", async (
 // ─── Test: Organizer name not copied to members ───────────────────
 
 test("organizer phone is not copied as member names", async ({ page }) => {
-  await gotoGroupFlow(page, SLUG);
+  await gotoGroupFlow(page, slug);
   await page.getByTestId("group-size-2").click();
   await page.getByTestId("group-size-next").click();
 
@@ -171,7 +176,7 @@ test("DB stores Guest placeholder when organizer leaves names as default", async
 // ─── Test: Helper text about Party Link is visible ────────────────
 
 test("party link member hint is shown in step 2", async ({ page }) => {
-  await gotoGroupFlow(page, SLUG);
+  await gotoGroupFlow(page, slug);
   await page.getByTestId("group-size-2").click();
   await page.getByTestId("group-size-next").click();
 
@@ -186,7 +191,7 @@ test("party link member hint is shown in step 2", async ({ page }) => {
 // ─── Test: Larger group numbers the unclaimed slots correctly ─────
 
 test("3-person group: organizer + Guest 2 + Guest 3", async ({ page }) => {
-  await gotoGroupFlow(page, SLUG);
+  await gotoGroupFlow(page, slug);
 
   await page.getByTestId("group-size-3").click();
   await page.getByTestId("group-size-next").click();

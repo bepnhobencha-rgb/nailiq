@@ -59,7 +59,7 @@ describe("email booking OTP delivery truth", () => {
     mocks.getResendClient.mockImplementation(() => mocks.resendClient);
   });
 
-  afterEach(() => vi.unstubAllEnvs());
+  afterEach(() => { vi.restoreAllMocks(); vi.unstubAllEnvs(); });
 
   it("fails closed and consumes the code when Resend is not configured", async () => {
     const table = codeTable();
@@ -153,4 +153,29 @@ describe("email booking OTP delivery truth", () => {
     expect(mocks.createAttempt).not.toHaveBeenCalled();
     expect(mocks.getResendClient).not.toHaveBeenCalled();
   });
+  it.each(["rejected", "thrown"])("redacts %s provider diagnostics", async (mode) => {
+    mocks.from.mockReturnValue(codeTable());
+    const canary = "synthetic-email-secret-and-code-123456";
+    const log = vi.spyOn(console, "error").mockImplementation(() => undefined);
+    const send = mode === "rejected"
+      ? vi.fn().mockResolvedValue({ data: null, error: { message: canary } })
+      : vi.fn().mockRejectedValue(new Error(canary));
+    mocks.resendClient = { emails: { send } };
+    expect((await createAndSendEmailOtp(args)).ok).toBe(false);
+    expect(log).toHaveBeenCalled();
+    expect(JSON.stringify(log.mock.calls)).not.toContain(canary);
+  });
+
+  it("redacts database insert details before returning failure", async () => {
+    const table = codeTable();
+    const canary = "synthetic-insert-details-qa@example.test";
+    table.insert.mockResolvedValue({ error: { message: canary } } as never);
+    mocks.from.mockReturnValue(table);
+    const log = vi.spyOn(console, "error").mockImplementation(() => undefined);
+    expect((await createAndSendEmailOtp(args)).ok).toBe(false);
+    expect(log).toHaveBeenCalled();
+    expect(JSON.stringify(log.mock.calls)).not.toContain(canary);
+    expect(mocks.getResendClient).not.toHaveBeenCalled();
+  });
+
 });

@@ -1,3 +1,5 @@
+import { OwnerCardRemovalExceptions } from "@/components/dashboard/OwnerCardRemovalExceptions";
+import { loadOwnerCardRemovalExceptions } from "@/shared/booking/ownerCardRemovalActions";
 import { CardProtectionExceptions } from "@/components/dashboard/CardProtectionExceptions";
 import { loadCardProtectionExceptions } from "@/shared/booking/cardProtectionExceptionActions";
 import type { Metadata } from "next";
@@ -26,7 +28,7 @@ export default async function NoShowProtectionPage({ params }: Props) {
     redirect(`/dashboard/${encodeURIComponent(slug)}`);
   }
 
-  const cardExceptions = await loadCardProtectionExceptions(slug);
+  const [cardExceptions, removalExceptions] = await Promise.all([loadCardProtectionExceptions(slug), loadOwnerCardRemovalExceptions(slug)]);
   const guidedSetupEnabled = await isCocoSetupExperienceVisible(ctx.salon);
   if (guidedSetupEnabled) {
     const [loaded, { loadNoShowFeeReviewQueue }, { loadGroupCancellationFeeReviewQueue }, { loadLateCancellationFeeReviewQueue }] = await Promise.all([
@@ -96,6 +98,7 @@ export default async function NoShowProtectionPage({ params }: Props) {
     return (
       <div className="mx-auto w-full max-w-3xl px-4 pb-8 sm:px-6">
         <CardProtectionExceptions slug={slug} result={cardExceptions} timezone={ctx.salon.timezone || "America/Vancouver"} />
+        <OwnerCardRemovalExceptions slug={slug} result={removalExceptions} timezone={ctx.salon.timezone || "America/Vancouver"} />
         <GuidedSetupReturnCard slug={slug} currentStep="booking-policies" />
         <GuidedBookingPolicySetup
           slug={slug}
@@ -288,6 +291,7 @@ export default async function NoShowProtectionPage({ params }: Props) {
       feeReviewQueue={feeReviewQueue}
     />
     <CardProtectionExceptions slug={slug} result={cardExceptions} timezone={ctx.salon.timezone || "America/Vancouver"} />
+        <OwnerCardRemovalExceptions slug={slug} result={removalExceptions} timezone={ctx.salon.timezone || "America/Vancouver"} />
     <SquareSyncCard
       slug={slug}
       isOwner={isOwnerOrAdmin(ctx.role)}

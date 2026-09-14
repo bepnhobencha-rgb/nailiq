@@ -46,6 +46,7 @@ const groupBookingRequestObject = z.object({
     bookings: z.array(memberSchema).min(2).max(20),
     voucherCode: z.string().trim().min(1).max(32).regex(/^[A-Za-z0-9_-]+$/).nullable().optional(),
     applyEmailDiscount: z.boolean().default(false),
+    otpSessionId: UUID.nullable().optional(),
   })
   .strict();
 
@@ -90,6 +91,7 @@ type GroupQuoteResult =
       code:
         | "invalid_request"
         | "voucher_invalid"
+        | "phone_verification_required"
         | "slot_conflict"
         | "selection_invalid"
         | "quote_unavailable"
@@ -109,6 +111,7 @@ export type GroupCreateResult =
       code:
         | "invalid_request"
         | "voucher_invalid"
+        | "phone_verification_required"
         | "pricing_changed"
         | "idempotency_conflict"
         | "slot_conflict"
@@ -164,7 +167,7 @@ export async function authorizeGroupBookingBoundary(args: {
     if (!sessionId) return { ok: false, code: "otp_required" };
     stage = "otp_read";
     const { data: valid, error: otpError } = await client.rpc(
-      "validate_phone_otp_session" as never,
+      "validate_booking_otp_session" as never,
       {
         p_session_id: sessionId,
         p_salon_id: args.salonId,
@@ -248,6 +251,7 @@ export async function resolveGroupBookingQuote(input: unknown): Promise<GroupQuo
         p_client_phone: organizer.clientPhone!,
         p_client_email: organizer.clientEmail ?? null,
         p_apply_email_discount: request.applyEmailDiscount && Boolean(organizer.clientEmail),
+        p_otp_session_id: request.otpSessionId ?? null,
       } as never,
     );
   } catch {
@@ -262,6 +266,7 @@ export async function resolveGroupBookingQuote(input: unknown): Promise<GroupQuo
   const raw = Array.isArray(data) ? data[0] : data;
   if (raw && typeof raw === "object" && (raw as { success?: unknown }).success === false) {
     const code = (raw as { code?: unknown }).code;
+    if (code === "phone_verification_required") return { ok: false, code };
     logGroupBookingFailure("pricing_validation", "business_rejection", code);
     if (code === "slot_conflict" || code === "invalid_time" || code === "outside_hours") {
       return { ok: false, code: "slot_conflict" };
@@ -305,6 +310,7 @@ export async function createGroupBookingsAuthoritative(input: unknown): Promise<
       p_apply_email_discount: request.applyEmailDiscount && Boolean(organizer.clientEmail),
       p_group_idempotency_key: request.idempotencyKey,
       p_expected_pricing_fingerprint: request.expectedPricingFingerprint,
+      p_otp_session_id: request.otpSessionId ?? null,
     } as never,
   );
   if (error || data == null) return { ok: false, code: "create_unavailable" };
@@ -319,6 +325,7 @@ export async function createGroupBookingsAuthoritative(input: unknown): Promise<
         : { ok: false, code: "pricing_invalid" };
     }
     if (response.code === "idempotency_conflict") return { ok: false, code: "idempotency_conflict" };
+    if (response.code === "phone_verification_required") return { ok: false, code: "phone_verification_required" };
     if (response.code === "slot_conflict") return { ok: false, code: "slot_conflict" };
     if (response.code === "monthly_booking_limit_reached") {
       return { ok: false, code: "monthly_booking_limit_reached" };

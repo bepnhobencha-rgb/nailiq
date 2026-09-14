@@ -25,7 +25,9 @@ const staff = "a2000000-0000-4000-8000-000000000004";
 const idem = "a2000000-0000-4000-8000-000000000005";
 const raceIdem = "a2000000-0000-4000-8000-000000000006";
 const voucher = "a2000000-0000-4000-8000-000000000007";
-const phone = "16045550299";
+const otp = "a2000000-0000-4000-8000-000000000008";
+const raceOtp = "a2000000-0000-4000-8000-000000000009";
+const phone = "16045550129";
 
 const runSql = async (statement) => {
   const { stdout } = await execFileAsync(
@@ -58,7 +60,7 @@ try {
     insert into public.salons (
       id, slug, name, phone, timezone, currency_code, opening_hours, tax_lines
     ) values (
-      '${salon}', 'pricing-concurrency', 'Pricing concurrency', '+16045550200',
+      '${salon}', 'pricing-concurrency', 'Pricing concurrency', '+16045550120',
       'UTC', 'CAD',
       '{
         "sun":{"open":"00:00","close":"23:59","closed":false},
@@ -94,6 +96,14 @@ try {
       5, clock_timestamp() - interval '1 day',
       clock_timestamp() + interval '10 days'
     );
+    -- Synthetic SMS evidence only: no provider verification or notification.
+    insert into public.phone_otp_sessions (
+      id, salon_id, phone, verified_at, expires_at, verified_channel
+    ) values
+      ('${otp}', '${salon}', '${phone}', clock_timestamp(),
+        clock_timestamp() + interval '30 minutes', 'sms'),
+      ('${raceOtp}', '${salon}', '${phone}', clock_timestamp(),
+        clock_timestamp() + interval '30 minutes', 'sms');
   `);
 
   const timing = await runSql(`
@@ -108,7 +118,7 @@ try {
     select set_config('request.jwt.claim.role', 'service_role', true);
     select public.quote_public_booking(
       '${salon}', '${service}', '${staff}', '${start}', '${end}',
-      array['${addon}'::uuid], null, null, '${phone}', null, false
+      array['${addon}'::uuid], null, null, '${phone}', null, false, '${otp}'
     )::text;
   `));
   assert.equal(quote.success, true);
@@ -120,7 +130,7 @@ try {
       '${salon}', '${service}', '${staff}', 'Concurrency Guest', '${phone}',
       '${start}', '${end}', 'confirmed', 'same payload',
       array['${addon}'::uuid], null, null, null, null, false,
-      '${idem}', '${quote.pricing_fingerprint}'
+      '${idem}', '${quote.pricing_fingerprint}', '${otp}'
     )::text;
   `;
 
@@ -145,8 +155,13 @@ try {
     )
   `);
   assert.equal(persisted, "1|1|1");
+  assert.equal(await runSql(`
+    select count(*) from public.phone_otp_sessions
+    where id = '${otp}' and consumed_at is not null
+      and consumed_by_booking_id = '${first.booking_id}'
+  `), "1");
 
-  const raceQuote = lastJson(await runSql(`
+  const unprovenQuote = lastJson(await runSql(`
     select set_config('request.jwt.claim.role', 'service_role', true);
     select public.quote_public_booking(
       '${salon}', '${service}', '${staff}',
@@ -155,7 +170,39 @@ try {
       array[]::uuid[], null, '${voucher}', '${phone}', null, false
     )::text;
   `));
+  assert.equal(unprovenQuote.code, "phone_verification_required");
+
+  const raceQuote = lastJson(await runSql(`
+    select set_config('request.jwt.claim.role', 'service_role', true);
+    select public.quote_public_booking(
+      '${salon}', '${service}', '${staff}',
+      '${start}'::timestamptz + interval '2 hours',
+      '${end}'::timestamptz + interval '2 hours',
+      array[]::uuid[], null, '${voucher}', '${phone}', null, false, '${raceOtp}'
+    )::text;
+  `));
   assert.equal(raceQuote.success, true);
+
+  const unprovenCreate = lastJson(await runSql(`
+    select set_config('request.jwt.claim.role', 'service_role', true);
+    select public.create_public_booking(
+      '${salon}', '${service}', '${staff}', 'New Lock Order', '${phone}',
+      '${start}'::timestamptz + interval '2 hours',
+      '${end}'::timestamptz + interval '2 hours',
+      'confirmed', 'new lock order', array[]::uuid[], null, null, null,
+      '${voucher}', false, '${raceIdem}', '${raceQuote.pricing_fingerprint}'
+    )::text;
+  `));
+  assert.equal(unprovenCreate.code, "phone_verification_required");
+  assert.equal(await runSql(`
+    select concat_ws('|',
+      (select count(*) from public.bookings where salon_id = '${salon}'),
+      (select visit_count from public.client_profiles where phone = '${phone}'),
+      (select used_count from public.vouchers where id = '${voucher}'),
+      (select count(*) from public.phone_otp_sessions
+        where id = '${raceOtp}' and consumed_at is not null)
+    )
+  `), "1|1|0|0");
 
   const newVoucherCreate = `
     select set_config('request.jwt.claim.role', 'service_role', true);
@@ -164,7 +211,7 @@ try {
       '${start}'::timestamptz + interval '2 hours',
       '${end}'::timestamptz + interval '2 hours',
       'confirmed', 'new lock order', array[]::uuid[], null, null, null,
-      '${voucher}', false, '${raceIdem}', '${raceQuote.pricing_fingerprint}'
+      '${voucher}', false, '${raceIdem}', '${raceQuote.pricing_fingerprint}', '${raceOtp}'
     )::text;
   `;
   const legacyCreate = `

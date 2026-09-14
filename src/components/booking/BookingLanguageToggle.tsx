@@ -1,6 +1,6 @@
 "use client";
 
-import { useTransition } from "react";
+import { useEffect, useTransition } from "react";
 import { useRouter } from "next/navigation";
 import { cn } from "@/shared/lib/cn";
 import { bookingLanguagePath } from "@/shared/i18n/booking/languageUrl";
@@ -24,6 +24,12 @@ export function BookingLanguageToggle({
 }) {
   const router = useRouter();
   const [pending, startTransition] = useTransition();
+
+  useEffect(() => {
+    // A shared ?lang= link is also a language choice. Persist it before the
+    // booking hands off to management pages that read the booking cookie.
+    document.cookie = `nq-booking-lang=${currentLang}; Path=/; Max-Age=${60 * 60 * 24 * 365}; SameSite=Lax`;
+  }, [currentLang]);
 
   const setLang = (lang: "en" | "vi") => {
     if (lang === currentLang || pending) return;

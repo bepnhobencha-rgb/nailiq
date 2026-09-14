@@ -1,8 +1,13 @@
-"use server";
 import "server-only";
+import { z } from "zod";
 import { looseServiceClient, type Row } from "@/shared/integrations/square/looseDb";
 import { defaultSip } from "@/shared/ai/defaultSip";
 import type { SalonIntelligenceProfile } from "@/shared/ai/types";
+
+const protectionIdentity = z.object({
+  bookingId: z.string().trim().uuid().transform((id) => id.toLowerCase()),
+  salonId: z.string().trim().uuid().transform((id) => id.toLowerCase()),
+});
 
 /**
  * Unified no-show protection gate for ALL booking channels.
@@ -17,6 +22,8 @@ import type { SalonIntelligenceProfile } from "@/shared/ai/types";
  *    the AI agent runs (shadow=log-only, live=AI decision drives the flag).
  *  - Otherwise falls back to the deterministic ensureNoShowCardRequirement.
  *
+ * Internal helper only. Public entry points must establish their own authority
+ * before calling; this must never be exported as a standalone Server Action.
  * Idempotent + best-effort: never throws to the caller, never blocks a booking.
  */
 export async function handleBookingProtection(
@@ -25,21 +32,32 @@ export async function handleBookingProtection(
   channel: "online" | "voice" | "desk" | "group" | "wix" | "quick_rebook",
 ): Promise<void> {
   try {
-    const id = (bookingId ?? "").trim();
-    const sid = (salonId ?? "").trim();
-    if (!id || !sid) return;
+    const identity = protectionIdentity.safeParse({ bookingId, salonId });
+    if (!identity.success) return;
+    const { bookingId: id, salonId: sid } = identity.data;
     void channel; // The booking row is the source of truth for channel context.
+
+    const db = looseServiceClient();
+    // Never combine one salon's AI flags with another salon's booking. Fail
+    // closed on a missing row or read failure before either policy can write.
+    const { data: booking, error: bookingError } = await db
+      .from("bookings")
+      .select("id, salon_id")
+      .eq("id", id)
+      .eq("salon_id", sid)
+      .maybeSingle();
+    if (bookingError || booking?.id !== id || booking?.salon_id !== sid) return;
 
     // Read salon to determine AI flag state and build the SIP (Salon Intelligence
     // Profile). The ai_profile column is NULL until the Manager Briefing (P1) is
     // completed; defaultSip() derives a safe fallback from existing fields.
-    const db = looseServiceClient();
-    const { data: salonRow } = await db
+    const { data: salonRow, error: salonError } = await db
       .from("salons")
       .select("id, ai_profile, feature_flags")
       .eq("id", sid)
       .maybeSingle();
-    const salon = (salonRow as Row | null) ?? {};
+    if (salonError || salonRow?.id !== sid) return;
+    const salon = salonRow as Row;
 
     const flags = (salon.feature_flags as Record<string, unknown> | null) ?? {};
     const shadowOn = flags.ai_noshow_policy_shadow === true;
@@ -88,7 +106,9 @@ export async function handleBookingProtection(
       "@/shared/noshow/ensureNoShowCardRequirement"
     );
     await ensureNoShowCardRequirement(id);
-  } catch (e) {
-    console.error("[handleBookingProtection]", e);
+  } catch {
+    // Database/provider exceptions may contain customer data. Keep the failure
+    // diagnostic stable and safe; booking creation remains committed.
+    console.error("[handleBookingProtection] protection_evaluation_unavailable");
   }
 }

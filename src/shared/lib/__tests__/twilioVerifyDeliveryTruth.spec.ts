@@ -90,3 +90,24 @@ describe("Twilio Verify booking OTP delivery truth", () => {
     expect(fetchMock).not.toHaveBeenCalled();
   });
 });
+
+describe("Twilio Verify diagnostics privacy", () => {
+  beforeEach(() => {
+    mocks.suppressReason.mockReturnValue(null);
+    vi.stubEnv("TWILIO_ACCOUNT_SID", `AC${"c".repeat(32)}`);
+    vi.stubEnv("TWILIO_AUTH_TOKEN", "test-auth-token");
+    vi.stubEnv("TWILIO_VERIFY_SERVICE_SID", `VA${"d".repeat(32)}`);
+  });
+  afterEach(() => { vi.restoreAllMocks(); vi.unstubAllEnvs(); vi.unstubAllGlobals(); });
+  it.each(["send", "verify"])("%s never logs provider response text or thrown request details", async (phase) => {
+    const log = vi.spyOn(console, "error").mockImplementation(() => undefined);
+    const canary = "synthetic-sensitive-payload-otp-123456";
+    const fetchMock = vi.fn().mockResolvedValueOnce(new Response(canary, { status: 500 })).mockRejectedValueOnce(new Error(canary));
+    vi.stubGlobal("fetch", fetchMock);
+    const { checkVerification } = await import("../twilioVerify");
+    const call = phase === "send" ? () => sendVerification("+16045550199") : () => checkVerification("+16045550199", "123456");
+    expect((await call()).ok).toBe(false); expect((await call()).ok).toBe(false);
+    expect(log).toHaveBeenCalled(); expect(JSON.stringify(log.mock.calls)).not.toContain(canary);
+    expect(fetchMock).toHaveBeenCalledTimes(2);
+  });
+});

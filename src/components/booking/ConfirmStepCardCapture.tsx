@@ -4,6 +4,7 @@ import * as ErrorReporter from "@/shared/observability/errorReporter";
 import {
   forwardRef,
   useEffect,
+  useLayoutEffect,
   useImperativeHandle,
   useId,
   useRef,
@@ -16,6 +17,8 @@ import { CardWebviewFallback } from "@/components/booking/CardWebviewFallback";
 import { isInAppBrowser } from "@/shared/lib/inAppBrowser";
 import { useInAppBrowser } from "@/shared/lib/useInAppBrowser";
 import { buildSquareStoreBillingContact } from "@/shared/noshow/squareStoreBillingContact";
+
+import { createCardTokenizationAttempt } from "@/shared/booking/cardTokenizationAttempt";
 
 export type ConfirmStepCardHandle = {
   /** Tokenize the entered card AND run Square buyer verification (SCA/AVS/CVV).
@@ -30,6 +33,8 @@ export type ConfirmStepCardHandle = {
 };
 
 type Props = {
+  /** Null until current quote and mandatory consent are ready. */
+  confirmationKey: string | null;
   applicationId: string;
   locationId: string;
   environment: "production" | "sandbox";
@@ -47,6 +52,7 @@ type Props = {
  */
 export const ConfirmStepCardCapture = forwardRef<ConfirmStepCardHandle, Props>(
   function ConfirmStepCardCapture({
+    confirmationKey,
     applicationId,
     locationId,
     environment,
@@ -68,6 +74,14 @@ export const ConfirmStepCardCapture = forwardRef<ConfirmStepCardHandle, Props>(
     const formKey = [cardContainerId, applicationId, locationId, environment].join(":");
     const ready = readyFor === formKey;
     const inAppBrowser = useInAppBrowser();
+    const [tokenization] = useState(createCardTokenizationAttempt);
+    const captureKey = confirmationKey === null ? null : JSON.stringify([
+      confirmationKey, formKey, feeLabel, customerName, customerPhone, customerEmail,
+    ]);
+    useLayoutEffect(() => {
+      tokenization.update(captureKey);
+      return () => tokenization.update(null);
+    }, [captureKey, tokenization]);
 
     useEffect(() => {
       cardRef.current = null;
@@ -108,7 +122,8 @@ export const ConfirmStepCardCapture = forwardRef<ConfirmStepCardHandle, Props>(
           // Square now performs buyer verification as part of tokenization.
           // A failed or timed-out 3DS/CVV/AVS check must stop the save-card
           // flow instead of silently falling back to an unverified card.
-          const res = await cardRef.current.tokenize({
+          const card = cardRef.current;
+          const res = await tokenization.run(captureKey, () => card.tokenize({
             intent: "STORE",
             billingContact: buildSquareStoreBillingContact({
               name: customerName,
@@ -117,7 +132,8 @@ export const ConfirmStepCardCapture = forwardRef<ConfirmStepCardHandle, Props>(
             }),
             customerInitiated: true,
             sellerKeyedIn: false,
-          });
+          }));
+          if (!res) return null;
           if (res.status !== "OK" || !res.token) {
             ErrorReporter.captureMessage("square_card_tokenization_failed", {
               level: "warning",

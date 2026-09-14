@@ -11,6 +11,7 @@ const migration = read(
 const rollback = read(
   "scripts/security/rehearse-public-rpc-role-grants-rollback.sql",
 );
+const currentProof = read("scripts/security/check-public-rpc-role-grants.sql");
 
 const publicRpcs = [
   "add_booking_addons",
@@ -26,6 +27,38 @@ const publicRpcs = [
 ] as const;
 
 describe("public RPC role grant boundary", () => {
+  it("registers both current OTP boolean validators with anon/service-role access only", () => {
+    for (const name of ["validate_phone_otp_session", "validate_booking_otp_session"]) {
+      expect(currentProof).toContain(`('public.${name}(uuid,uuid,text)', true, false, true)`);
+    }
+    expect(currentProof).toContain("IF v_public_execute THEN");
+    expect(currentProof).toContain("IS DISTINCT FROM v_target.allow_authenticated");
+    expect(currentProof).toMatch(/IF has_function_privilege\('service_role', v_oid, 'EXECUTE'\)\s+IS DISTINCT FROM v_target.allow_service_role THEN/);
+    // Keep the old rollback historically exact; the booking-only validator is
+    // new and must never receive an invented pre-migration authenticated grant.
+    expect(rollback).not.toContain("validate_booking_otp_session");
+  });
+
+  it("denies direct execution of private CRM and card authority helpers even to service role", () => {
+    const privateSignatures = [
+      "public.attach_desk_booking_client_profiles(uuid,uuid[],uuid)",
+      "public.lock_booking_crm_phones(text[])",
+      "public.update_party_booking_contact(uuid,uuid,text,text)",
+      "public.square_card_booking_phone_authorized(uuid,uuid,jsonb)",
+      "public.square_card_prior_attempts_terminal(uuid,uuid)",
+      "public.bind_booking_existing_card_receipt(uuid,uuid,text,text,text)",
+    ];
+    const privateRows = [...currentProof.matchAll(/\('(public\.[^']+)', false, false, false\)/g)]
+      .map((match) => match[1]);
+    expect(privateRows).toEqual(privateSignatures);
+    for (const signature of [
+      "public.booking_incentive_phone_ownership(uuid,uuid,text,boolean)",
+      "public.create_group_bookings_for_desk(uuid,jsonb,uuid,text,text,boolean,uuid,text,uuid)",
+      "public.claim_party_slot_for_desk(text,uuid,text,text,boolean,uuid,uuid)",
+      "public.replay_public_booking_with_deposit_payment(uuid,uuid,uuid,text,text,timestamp with time zone,timestamp with time zone,text,text,uuid[],text,uuid,uuid,uuid,boolean,uuid,text,uuid,uuid,text,uuid)",
+    ]) expect(currentProof).toContain(`('${signature}', false, false, true)`);
+    expect(currentProof).toContain("expected(signature, allow_anon, allow_authenticated, allow_service_role)");
+  });
   it("removes inherited PUBLIC execute and proves the explicit role matrix", () => {
     for (const rpc of publicRpcs) {
       expect(migration).toContain(`public.${rpc}`);

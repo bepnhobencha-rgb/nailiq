@@ -18,7 +18,10 @@ let owner: Awaited<ReturnType<typeof seedTestSalonMember>>;
 async function openSettings(page: Page) {
   await page.goto(path);
   for (const card of cards) {
-    await expect(page.getByTestId(card.id).getByRole("button", { name: /^(Lưu|Lưu cài đặt mẫu)$/ })).toBeEnabled();
+    // These controls mount after an async settings read. WebKit CI captured
+    // the loading state beyond the default 5s, then the ready form shortly after.
+    // Bound readiness separately; keep every save/recovery assertion below.
+    await expect(page.getByTestId(card.id).getByRole("button", { name: /^(Lưu|Lưu cài đặt mẫu)$/ })).toBeEnabled({ timeout: 15_000 });
   }
 }
 

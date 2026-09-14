@@ -1,6 +1,7 @@
 "use client";
 
 import { useState, useTransition } from "react";
+import Link from "next/link";
 
 import { Badge } from "@/components/ui/Badge";
 import { Button } from "@/components/ui/Button";
@@ -11,6 +12,7 @@ import {
 } from "@/shared/dashboard/stripeActions";
 import type { ReceptionistMessages } from "@/shared/i18n/user";
 import { cn } from "@/shared/lib/cn";
+import { v1AllowsAutomatedSubscriptionBilling } from "@/shared/release/v1IntegrationScope";
 import {
   PLAN_LIMITS,
   type SubscriptionPlan,
@@ -48,8 +50,10 @@ export function PricingPanel({
 }: PricingPanelProps) {
   const [pending, startTransition] = useTransition();
   const [error, setError] = useState<string | null>(null);
+  const automatedBilling = v1AllowsAutomatedSubscriptionBilling();
 
   const onUpgrade = (plan: "pro" | "premium") => {
+    if (!automatedBilling) return;
     setError(null);
     startTransition(async () => {
       const res = await createCheckoutSession(slug, plan);
@@ -62,6 +66,7 @@ export function PricingPanel({
   };
 
   const onManage = () => {
+    if (!automatedBilling) return;
     setError(null);
     startTransition(async () => {
       const res = await createCustomerPortalSession(slug);
@@ -87,6 +92,15 @@ export function PricingPanel({
         </h2>
         <p className="mt-1 text-xs text-nq-muted">{messages.sectionIntro}</p>
       </div>
+
+      {!automatedBilling ? (
+        <div data-testid="pricing-manual-billing" className="space-y-2 text-sm text-nq-muted">
+          <p>{messages.manualBillingNotice}</p>
+          <Link href="/contact" className="inline-flex min-h-11 items-center text-nq-primary underline underline-offset-4">
+            {messages.contactSupport}
+          </Link>
+        </div>
+      ) : null}
 
       {error ? (
         <p
@@ -173,7 +187,7 @@ export function PricingPanel({
                   </li>
                 </ul>
                 <div className="mt-auto pt-2">
-                  {plan === "free" ? null : isCurrent ? (
+                  {!automatedBilling || plan === "free" ? null : isCurrent ? (
                     <Button
                       type="button"
                       variant="secondary"

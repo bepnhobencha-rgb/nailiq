@@ -229,6 +229,9 @@ describe("query grammar injection inventory", () => {
       "20260903065811_harden_turniq_shadow_rollback_availability.sql",
       "20260903075954_allow_head_spa_turniq_shadow_readiness.sql",
       "20260903083410_honor_turniq_legacy_readiness_fallback.sql",
+      "20260913034721_scope_booking_otp_channel_authority.sql",
+      "20260913130949_require_sms_for_phone_bound_incentives.sql",
+      "20260913131209_scope_booking_crm_mutation_authority.sql",
     ]);
 
     const sequenceCardPolicy = fs.readFileSync(
@@ -413,5 +416,112 @@ describe("query grammar injection inventory", () => {
     expect(staffRaceRepair).toContain("'ORDER BY s.id FOR UPDATE;'");
     expect(staffRaceRepair).toContain("EXECUTE v_definition");
     expect(staffRaceRepair).not.toMatch(/EXECUTE\s+(?:p_|NEW\.|OLD\.)/i);
+
+    // R07 rewrites only two literal function identities obtained from the
+    // catalog. Every replacement anchor must occur exactly once before the
+    // sole EXECUTE; no caller input or runtime identifier enters the statement.
+    const otpAuthority = fs.readFileSync(
+      path.join(migrationRoot, "20260913034721_scope_booking_otp_channel_authority.sql"),
+      "utf8",
+    );
+    const otpPatch = otpAuthority.slice(
+      otpAuthority.indexOf("DO $migration$"),
+      otpAuthority.indexOf("$migration$;"),
+    );
+    const functionNames = otpPatch.match(/FOREACH v_name IN ARRAY ARRAY\[([\s\S]*?)\] LOOP/);
+    expect(functionNames?.[1].match(/'([^']+)'/g)).toEqual([
+      "'public.create_public_booking_sequence(jsonb)'",
+      "'public.create_public_group_booking_sequences(jsonb)'",
+    ]);
+    expect(otpPatch).toContain("IF to_regprocedure(v_name) IS NULL THEN");
+    expect(otpPatch).toContain("v_def := pg_get_functiondef(to_regprocedure(v_name))");
+    expect(otpPatch.match(/\/ length\(v_old\) <> 1/g)).toHaveLength(3);
+    for (const anchorFailure of ["validation anchor mismatch", "profile anchor mismatch", "profile invariant mismatch"]) {
+      expect(otpPatch).toContain(`RAISE EXCEPTION 'OTP authority ${anchorFailure}: %'`);
+    }
+    expect(otpPatch).toContain("OR strpos(v_def, v_old) < v_profile_start");
+    expect(otpPatch).toContain("v_otp_session.verified_channel NOT IN (''sms'', ''email'', ''staff_attested'', ''demo'')");
+    expect(otpPatch).toContain("IF v_otp_session.verified_channel = ''sms'' THEN");
+    expect(otpPatch.match(/\bEXECUTE\s+v_def\s*;/g)).toHaveLength(1);
+    expect(otpPatch).not.toMatch(/\bEXECUTE\s+(?:format\s*\(|p_|NEW\.|OLD\.)/i);
+  });
+
+  it("limits the SMS incentive migration to hash-checked catalog definitions and literal replacements", () => {
+    const sql = fs.readFileSync(path.join(REPO, "supabase/migrations/20260913130949_require_sms_for_phone_bound_incentives.sql"), "utf8");
+    const patches = [...sql.matchAll(/DO \$migration\$([\s\S]*?)\$migration\$;/g)]
+      .map((match) => match[1]);
+    expect(patches).toHaveLength(14);
+    expect(patches.map((patch) => patch.match(/pg_get_functiondef\('public\.([a-z_]+)\([^']+\)'::regprocedure\)/)?.[1])).toEqual([
+      "resolve_public_booking_pricing",
+      "quote_public_booking",
+      "resolve_group_booking_pricing",
+      "quote_group_booking",
+      "create_public_booking",
+      "create_group_bookings",
+      "resolve_booking_sequence_pricing_and_schedule",
+      "resolve_public_group_sequence_quote",
+      "create_public_booking_sequence",
+      "create_public_group_booking_sequences",
+      "resolve_public_deposit_payment_material",
+      "load_public_deposit_payment_material",
+      "claim_public_deposit_payment_operation",
+      "create_public_booking_with_deposit_payment",
+    ]);
+    for (const patch of patches) {
+      expect(patch.match(/pg_get_functiondef\(/g)).toHaveLength(1);
+      expect(patch).toMatch(/IF md5\(rtrim\(v_definition, E' \\n\\r\\t'\)\) <> '[a-f0-9]{32}' THEN\s+RAISE EXCEPTION 'R09 source drift:/);
+      expect(patch.match(/^\s*EXECUTE\s+([^;]+);/gm)?.map((statement) => statement.trim())).toEqual(["EXECUTE v_definition;"]);
+      expect(patch.indexOf("RAISE EXCEPTION 'R09 source drift:")).toBeLessThan(patch.indexOf("EXECUTE v_definition;"));
+      // Identifiers come from the literal catalog target above; replacement
+      // bodies are reviewed dollar-quoted SQL, never values from a caller.
+      const assignments = [...patch.matchAll(/v_definition := ([^\n]+)/g)].map((match) => match[1]);
+      expect(assignments.length).toBeGreaterThan(1);
+      expect(assignments[0]).toMatch(/^pg_get_functiondef\('public\.[^']+'::regprocedure\);$/);
+      for (const replacement of assignments.slice(1)) {
+        expect(replacement).toMatch(/^replace\(v_definition, \$old\d+\$/);
+      }
+      expect(patch).not.toMatch(/\bEXECUTE\s+(?:format\s*\(|p_|NEW\.|OLD\.)/i);
+    }
+  });
+
+  it("limits the CRM migration to enumerated catalog targets and fail-closed source anchors", () => {
+    const sql = fs.readFileSync(path.join(REPO, "supabase/migrations/20260913131209_scope_booking_crm_mutation_authority.sql"), "utf8");
+    const patches = [...sql.matchAll(/DO \$(\w+)\$([\s\S]*?)\$\1\$;/g)].map((match) => match[2]);
+    expect(patches).toHaveLength(6);
+    const patch = patches.join("\n");
+    expect([...patch.matchAll(/to_regprocedure\('([^']+)'\)/g)].map((match) => match[1])).toEqual([
+      "public.create_public_booking_unlimited_14(uuid,uuid,uuid,text,text,timestamptz,timestamptz,text,integer,text,uuid,integer,text,uuid)",
+      "public.resolve_booking_sequence_pricing_and_schedule(jsonb,boolean)",
+      "public.resolve_public_group_sequence_quote(jsonb,boolean)",
+      "public.create_group_bookings(uuid,jsonb,uuid,text,text,boolean,uuid,text,uuid)",
+      "public.create_public_booking_for_desk_with_staff_notification(uuid,uuid,uuid,text,text,timestamptz,timestamptz,text,text,uuid[],text,uuid,uuid,uuid,boolean,uuid,text,uuid,boolean,boolean,integer)",
+    ]);
+    expect([...patch.matchAll(/v_name:='([^']+)';/g)].map((match) => match[1])).toEqual([
+      "public.create_public_booking_sequence(jsonb)",
+      "public.create_public_group_booking_sequences(jsonb)",
+    ]);
+    expect(patch).toContain("FOREACH v_name IN ARRAY ARRAY['claim_party_slot','update_party_claim_details'] LOOP");
+    expect(patch).toContain("to_regprocedure('public.'||v_name||'(text,uuid,text,text,boolean)')");
+    expect([...patch.matchAll(/^\s*EXECUTE\s+([^;]+);/gm)].map((match) => match[1])).toEqual([
+      "v_def", "replace(v_def,v_old,v_new)", "replace(v_def,v_old,v_new)",
+      "v_def", "v_def", "v_def", "v_def", "v_def",
+    ]);
+    expect(patch.match(/\/length\(v_old\)<>1/g)).toHaveLength(11);
+    for (const failure of [
+      "single resolver anchor mismatch", "sequence early lock anchor mismatch",
+      "group sequence early lock anchor mismatch", "sequence resolver anchor mismatch",
+      "group sequence resolver anchor mismatch", "group sequence contact flag anchor mismatch",
+      "group contact flag anchor mismatch", "desk single lock anchor mismatch",
+      "desk single attach anchor mismatch", "party declaration mismatch: %",
+      "party salon anchor mismatch: %", "party mutation block mismatch: %",
+    ]) expect(patch).toContain(`RAISE EXCEPTION 'CRM ${failure}'`);
+    expect(patch).toContain("/length(v_old)=1 THEN");
+    expect(patch).toContain("OR strpos(v_def,'v_profile_id IS NULL,')>0 THEN");
+    expect(patch).toContain("IF v_start=0 OR v_end<=v_start OR strpos(substr(v_def,v_start,v_end-v_start),'public.resolve_client_profile(')=0 THEN");
+    expect(patch).not.toMatch(/\bEXECUTE\s+(?:format\s*\(|p_|NEW\.|OLD\.)/i);
+    for (const block of patches) {
+      expect(block).toContain("pg_get_functiondef(");
+      expect(block.indexOf("RAISE EXCEPTION")).toBeLessThan(block.indexOf("EXECUTE "));
+    }
   });
 });

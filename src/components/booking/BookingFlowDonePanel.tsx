@@ -35,6 +35,7 @@ export function BookingFlowDonePanel({
   displayEndUtc,
   bookingId,
   cardManagementToken,
+  cardManagementRecoveryHref,
   cardManagementPending,
   confirmationDelivery,
   salonPhone,
@@ -56,6 +57,7 @@ export function BookingFlowDonePanel({
   displayEndUtc: string;
   bookingId: string;
   cardManagementToken: string | null;
+  cardManagementRecoveryHref?: string | null;
   /** Booking is confirmed; only the separate no-show card step remains. */
   cardManagementPending: boolean;
   /** Separate post-commit email/SMS state. This must never control booking success. */
@@ -80,8 +82,10 @@ export function BookingFlowDonePanel({
     // booking's card status without keeping a source token or contact in storage.
     if (cardManagementToken) {
       router.replace(`/booking/save-card?token=${encodeURIComponent(cardManagementToken)}`);
+    } else if (cardManagementPending && cardManagementRecoveryHref) {
+      router.replace(cardManagementRecoveryHref);
     }
-  }, [cardManagementToken, router]);
+  }, [cardManagementToken, cardManagementPending, cardManagementRecoveryHref, router]);
   const refLabel = formatNailiqBookingRef(bookingId);
   const [shareHint, setShareHint] = useState<string | null>(null);
   const [calendarHint, setCalendarHint] = useState<string | null>(null);
@@ -252,6 +256,7 @@ export function BookingFlowDonePanel({
             <span className="font-semibold text-[var(--booking-text)]">{t.confirmationEmailLabel}: </span>
             {confirmationDelivery.email === "processing"
               ? t.confirmationEmailProcessing
+              : confirmationDelivery.email === "unverified" ? t.confirmationEmailUnverified
               : t.confirmationEmailNotRequested}
           </p>
           <p data-testid="booking-sms-delivery-status">

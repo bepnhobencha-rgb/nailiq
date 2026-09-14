@@ -159,7 +159,7 @@ describe("MQA-0039 public booking across browser tabs", () => {
     expect(flow).toContain("stablePublicBookingRequestId(bookingRequestMaterial)");
     expect(flow).toContain("acknowledgePublicBookingRequestId(");
     expect(flow).toContain(
-      "const bookingRequestIdForAttempt = bookingSubmitIdempotencyKeyRef.current",
+      "const bookingRequestIdForAttempt = paidSnapshot?.requestId ?? bookingSubmitIdempotencyKeyRef.current",
     );
     expect(flow).toContain("idempotencyKey: bookingRequestIdForAttempt");
     const unknownBranch = flow.slice(

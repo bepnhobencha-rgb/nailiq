@@ -120,6 +120,7 @@ export const bookingVi: BookingMessages = {
   confirmationEmailProcessing:
     "Đang xử lý — vui lòng giữ mã đặt lịch cho đến khi email đến.",
   confirmationEmailNotRequested: "Bạn chưa cung cấp email.",
+  confirmationEmailUnverified: "Chưa xác minh được email đã gửi. Lịch hẹn của bạn vẫn được xác nhận.",
   confirmationSmsAccepted:
     "Nhà cung cấp đã nhận để gửi. Tin nhắn có thể đến sau ít phút.",
   confirmationSmsSuppressed:
@@ -231,7 +232,20 @@ export const bookingVi: BookingMessages = {
   clientPhoneHint: "✨ Khách quen? Thông tin của bạn sẽ tự động điền vào.",
   clientPhonePlaceholder: PHONE_INPUT_PLACEHOLDER_NANP,
   clientEmailLabel: "Email",
-  clientEmailHint: "Thêm email để giảm $2 lần đặt này + nhắc lịch và link đổi/huỷ dễ dàng.",
+  clientEmailHint: "Thêm email để nhận nhắc lịch và link quản lý. Ưu đãi $2 áp dụng một lần cho mỗi số điện thoại sau khi xác minh SMS.",
+  phoneOfferPaidDepositHint: "Giá này đã gắn với tiền đặt cọc. Cần kiểm tra trạng thái thanh toán trước khi đổi ưu đãi; không thanh toán lại.",
+  phoneOfferPaymentRecovery: "Đã có giao dịch đặt cọc. Cần đối soát trạng thái thanh toán và lịch hẹn trước khi tiếp tục. Không thanh toán lại.",
+  depositRefundCompleted: "Lịch hẹn chưa được tạo và khoản hoàn tiền đặt cọc đã được xác nhận. Ngân hàng có thể cần thêm thời gian để hiển thị tiền hoàn.",
+  depositRefundDraftRetained: "Thông tin đặt lịch của bạn vẫn được giữ. Khi sẵn sàng, hãy bắt đầu lại để xem giá và khoản đặt cọc mới nếu có.",
+  depositRefundStartFresh: "Bắt đầu đặt lịch mới",
+  phoneDiscountHint: "Giảm $2 một lần cho mỗi số điện thoại khi có email và xác minh SMS. Bạn vẫn có thể đặt lịch không dùng ưu đãi.",
+  phoneDiscountVerify: "Xác minh SMS để nhận ưu đãi $2",
+  phoneDiscountSkip: "Tiếp tục không giảm $2",
+  phoneDiscountRequested: "Đã yêu cầu ưu đãi — báo giá được kiểm tra sẽ xác định điều kiện và tổng tiền cuối cùng.",
+  phoneOfferVerificationRequired: "Xác minh số điện thoại bằng SMS để dùng ưu đãi, hoặc tiếp tục không giảm giá/voucher cá nhân. Xem lại tổng tiền mới trước khi xác nhận.",
+  phoneOfferVerify: "Xác minh số điện thoại bằng SMS",
+  phoneOfferSkip: "Tiếp tục không dùng ưu đãi này",
+  phoneOnlyOtpHint: "Nhập mã được gửi qua SMS. Xác minh email vẫn dùng được để đặt lịch, nhưng không mở ưu đãi này.",
   clientNotesLabel: "Ghi chú",
   clientNotesOptionalHint:
     "Không bắt buộc — dị ứng, ý tưởng thiết kế, chỗ đỗ xe, v.v.",
@@ -469,6 +483,7 @@ export const bookingVi: BookingMessages = {
 
   /** Strings used on the public /party/[token] page. */
   partyPage: {
+    errCardContactReview: "Lịch hẹn của bạn vẫn được giữ. Vui lòng liên hệ tiệm để đổi số điện thoại khi lịch hẹn đang liên kết với thẻ.",
     invited: "Bạn được mời!",
     groupBookingAt: "Đặt lịch nhóm tại",
     modeStart: "Mọi người bắt đầu cùng nhau",

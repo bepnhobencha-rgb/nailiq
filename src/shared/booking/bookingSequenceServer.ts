@@ -102,6 +102,7 @@ export type BookingSequenceCreateResult =
         | "not_ready"
         | "payment_not_supported"
         | "otp_required"
+        | "phone_verification_required"
         | "invalid_otp_session"
         | "otp_session_used"
         | "otp_not_required"
@@ -442,6 +443,7 @@ export function bookingSequenceQuoteMatchesIntent(
 
 export type BookingSequenceQuoteFailureCode =
   | "invalid_request"
+  | "phone_verification_required"
   | "parallel_pair_not_allowed"
   | "parallel_resource_unproven"
   | "parallel_requires_distinct_staff"
@@ -452,6 +454,7 @@ export type BookingSequenceQuoteFailureCode =
   | "quote_unavailable";
 
 const SAFE_QUOTE_FAILURE_CODES = new Set<BookingSequenceQuoteFailureCode>([
+  "phone_verification_required",
   "parallel_pair_not_allowed",
   "parallel_resource_unproven",
   "parallel_requires_distinct_staff",
@@ -548,6 +551,7 @@ async function runPublicBookingSequenceCreateRpc(
       }
       if (
         row.code === "otp_required" ||
+        row.code === "phone_verification_required" ||
         row.code === "invalid_otp_session" ||
         row.code === "otp_session_used" ||
         row.code === "otp_not_required" ||

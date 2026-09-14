@@ -23,6 +23,7 @@ const policyContext = (overrides: Partial<PolicyContext> = {}): PolicyContext =>
   hasEmail: true,
   hasPhone: true,
   hasCardOnFile: false,
+  cardRecoveryRequired: false,
   hasActiveDeposit: false,
   leadTimeHours: 48,
   isNew: false,

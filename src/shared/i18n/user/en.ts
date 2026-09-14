@@ -1943,6 +1943,9 @@ export type UserMessages = {
       conflictMessage: string;
       not_foundMessage: string;
       invalid_statusMessage: string;
+      unauthorizedMessage: string;
+      saveOutcomeUnknownMessage: string;
+      reloadButton: string;
       serverErrorMessage: string;
       pastDateMessage: string;
       outsideHoursMessage: string;
@@ -2280,6 +2283,8 @@ export type UserMessages = {
     pricing: {
       sectionTitle: string;
       sectionIntro: string;
+      manualBillingNotice: string;
+      contactSupport: string;
       currentBadge: string;
       perMonth: string;
       unlimited: string;
@@ -4657,6 +4662,10 @@ export const userEn: UserMessages = {
       conflictMessage: "Slot taken by {name}. Pick another time.",
       not_foundMessage: "Booking not found",
       invalid_statusMessage: "Cannot edit this booking",
+      unauthorizedMessage:
+        "Your current access does not allow booking edits. Sign in again or ask the salon owner to check your permissions.",
+      saveOutcomeUnknownMessage: "We could not confirm the save result. Reload to check the booking and your access before trying again.",
+      reloadButton: "Reload and check booking",
       serverErrorMessage: "Server error. Try again.",
       pastDateMessage: "Can't move a booking to the past.",
       outsideHoursMessage:
@@ -4664,7 +4673,8 @@ export const userEn: UserMessages = {
     },
     actionErrorFallback: "Could not complete that action. Try again.",
     actionErrors: {
-      unauthorized: "Sign in is required.",
+      unauthorized:
+        "Your current access does not allow this action. Sign in again or ask the salon owner to check your permissions.",
       salon_mismatch: "Salon did not match your session.",
       server_error: "Something went wrong. Try again shortly.",
       invalid_name: "Enter a guest name.",
@@ -4982,6 +4992,8 @@ export const userEn: UserMessages = {
       sectionTitle: "Subscription",
       sectionIntro:
         "Choose the plan that fits your salon. V1 billing changes are handled manually by NailIQ support.",
+      manualBillingNotice: "Contact NailIQ to change your plan or get help with your subscription.",
+      contactSupport: "Contact NailIQ",
       currentBadge: "Current",
       perMonth: "/ month",
       unlimited: "Unlimited",
@@ -5203,4 +5215,20 @@ export const userEn: UserMessages = {
     labelEvidenceDue: "Evidence due",
     noInfo: "—",
   },
+};
+
+export const ownerRemovalCopyEn = {
+  title: "Card removal requests", intro: "Check an earlier removal request, including when the customer link has expired.",
+  empty: "No unresolved removal requests.", loadError: "Could not load removal requests.",
+  pending: "Removal not yet confirmed", check: "Check removal result", open: "Open booking", last: "Last recorded update: ",
+  success: "Card removal confirmed. The appointment remains reserved.",
+  unresolved: "Removal is still unconfirmed. Review the connection and previous request before taking further action.",
+  failed: "Could not check the result. Please try again.", more: "Showing up to 100 recent requests.",
+  reviewRequired: "This request needs review before reconciliation is available. Do not submit another removal request.",
+  reasons: { context: "Previous request needs review", authority: "Permission or booking state needs review",
+    configuration: "Card service connection unavailable", provider_read: "Provider confirmation needs review",
+    dispatch_preparation: "The removal request could not be prepared", provider_preflight: "Card details could not be verified",
+    provider_mutation: "The card service has not confirmed the removal", receipt_validation: "The removal confirmation could not be verified",
+    provider_unknown: "The previous removal request needs review",
+    database_completion: "Removal confirmation needs review", unknown: "Waiting for a verified removal result" },
 };

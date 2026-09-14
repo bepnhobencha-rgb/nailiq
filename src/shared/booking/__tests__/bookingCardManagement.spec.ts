@@ -11,7 +11,9 @@ const mocks = vi.hoisted(() => ({
 
 vi.mock("server-only", () => ({}));
 vi.mock("@/shared/lib/supabase/serviceRole", () => ({
-  createServiceRoleClient: () => ({ rpc: mocks.rpc }),
+  createServiceRoleClient: () => ({ rpc: (name: string, args: unknown) => name === "record_booking_card_removal_delivery_failure"
+  ? Promise.resolve({data:{ok:true,code:"failure_recorded"},error:null}) : name === "prepare_booking_card_removal_dispatch"
+  ? Promise.resolve({ data: { ok: true, code: "removal_dispatch_prepared" }, error: null }) : mocks.rpc(name, args) }),
 }));
 vi.mock("@/shared/integrations/payments", () => ({
   resolvePaymentProvider: mocks.resolveProvider,
@@ -76,7 +78,10 @@ describe("durable card-management provider boundary", () => {
     mocks.setupRetrieve.mockReset();
     mocks.resolveProvider.mockResolvedValue({
       kind: "square",
-      removeSavedCard: mocks.removeSavedCard,
+      removeSavedCard: async (input: { cardId: string; customerId: string; beforeRemovalDispatch?: (identity: {provider: "square"; merchantId: string; environment: "sandbox"}) => Promise<void> }) => {
+        await input.beforeRemovalDispatch?.({ provider: "square", merchantId: "merchant_qa", environment: "sandbox" });
+        return mocks.removeSavedCard({ cardId: input.cardId, customerId: input.customerId });
+      },
       saveCardOnFile: mocks.saveCardOnFile,
     });
   });

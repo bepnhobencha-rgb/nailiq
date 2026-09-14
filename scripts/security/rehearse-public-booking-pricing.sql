@@ -17,6 +17,8 @@ DECLARE
   v_multi_idem constant uuid := 'a1000000-0000-4000-8000-000000000011';
   v_deleted_staff constant uuid := 'a1000000-0000-4000-8000-000000000012';
   v_inactive_staff constant uuid := 'a1000000-0000-4000-8000-000000000013';
+  v_otp constant uuid := 'a1000000-0000-4000-8000-000000000014';
+  v_changed_otp constant uuid := 'a1000000-0000-4000-8000-000000000015';
   v_start timestamptz := date_trunc('day', clock_timestamp()) + interval '2 days 12 hours';
   v_end timestamptz;
   v_quote jsonb;
@@ -114,6 +116,22 @@ BEGIN
     v_salon, v_service, v_staff, v_start, v_end, ARRAY[v_addon],
     NULL, v_voucher, '+1 (604) 555-0199', 'qa@example.test', true
   );
+  IF v_quote->>'code' IS DISTINCT FROM 'phone_verification_required' THEN
+    RAISE EXCEPTION 'phone-bound incentives accepted no SMS proof: %', v_quote;
+  END IF;
+
+  -- Synthetic proof is explicit, fresh, and bound to this salon/phone. No send.
+  INSERT INTO public.phone_otp_sessions(
+    id, salon_id, phone, verified_at, expires_at, verified_channel
+  ) VALUES
+    (v_otp, v_salon, '16045550199', clock_timestamp(),
+      clock_timestamp() + interval '30 minutes', 'sms'),
+    (v_changed_otp, v_salon, '16045550199', clock_timestamp(),
+      clock_timestamp() + interval '30 minutes', 'sms');
+  v_quote := public.quote_public_booking(
+    v_salon, v_service, v_staff, v_start, v_end, ARRAY[v_addon],
+    NULL, v_voucher, '+1 (604) 555-0199', 'qa@example.test', true, v_otp
+  );
 
   IF v_quote->>'success' <> 'true'
      OR v_quote->>'code' <> 'quoted'
@@ -138,12 +156,31 @@ BEGIN
     'qa@example.test', NULL, NULL, v_voucher, true, v_idem,
     v_quote->>'pricing_fingerprint'
   );
+  IF v_result->>'code' IS DISTINCT FROM 'phone_verification_required'
+     OR EXISTS (SELECT 1 FROM public.bookings WHERE salon_id = v_salon)
+     OR EXISTS (SELECT 1 FROM public.client_profiles WHERE phone = '16045550199')
+     OR EXISTS (SELECT 1 FROM public.voucher_redemptions WHERE salon_id = v_salon)
+     OR EXISTS (SELECT 1 FROM public.phone_otp_sessions WHERE id = v_otp AND consumed_at IS NOT NULL) THEN
+    RAISE EXCEPTION 'unproven incentive create was not zero-write: %', v_result;
+  END IF;
+
+  v_result := public.create_public_booking(
+    v_salon, v_service, v_staff, 'QA Guest', '+1 (604) 555-0199',
+    v_start, v_end, 'confirmed', 'rehearsal', ARRAY[v_addon],
+    'qa@example.test', NULL, NULL, v_voucher, true, v_idem,
+    v_quote->>'pricing_fingerprint', v_otp
+  );
   IF v_result->>'success' <> 'true'
      OR v_result->>'code' <> 'booked'
      OR (v_result->>'idempotent')::boolean THEN
     RAISE EXCEPTION 'create failed: %', v_result;
   END IF;
   v_booking_id := (v_result->>'booking_id')::uuid;
+  IF NOT EXISTS (SELECT 1 FROM public.phone_otp_sessions
+      WHERE id = v_otp AND consumed_at IS NOT NULL
+        AND consumed_by_booking_id = v_booking_id) THEN
+    RAISE EXCEPTION 'incentive SMS proof was not consumed by its booking';
+  END IF;
 
   IF (SELECT count(*) FROM public.booking_card_management_continuations c
       WHERE c.booking_id = v_booking_id
@@ -182,7 +219,7 @@ BEGIN
     v_salon, v_service, v_staff, 'QA Guest', '+1 (604) 555-0199',
     v_start, v_end, 'confirmed', 'rehearsal', ARRAY[v_addon],
     'qa@example.test', NULL, NULL, v_voucher, true, v_idem,
-    v_quote->>'pricing_fingerprint'
+    v_quote->>'pricing_fingerprint', v_otp
   );
   IF v_result->>'success' <> 'true'
      OR NOT (v_result->>'idempotent')::boolean
@@ -298,7 +335,7 @@ BEGIN
     v_salon, v_service, v_staff, 'QA Guest', '+1 (604) 555-0199',
     v_start + interval '2 hours', v_end + interval '2 hours', 'confirmed',
     'pricing changed', ARRAY[v_addon], 'qa@example.test', NULL, NULL,
-    v_voucher, true, v_changed_idem, v_quote->>'pricing_fingerprint'
+    v_voucher, true, v_changed_idem, v_quote->>'pricing_fingerprint', v_changed_otp
   );
   IF v_result->>'success' <> 'false'
      OR v_result->>'code' <> 'pricing_changed'

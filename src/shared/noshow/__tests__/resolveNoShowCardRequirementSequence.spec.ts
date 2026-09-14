@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 
 const mocks = vi.hoisted(() => ({
   looseServiceClient: vi.fn(),
@@ -33,6 +33,7 @@ const serviceB = "33333333-3333-4333-8333-333333333333";
 describe("sequence no-show card fee base", () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    vi.stubEnv("NAILIQ_CARD_SAVE_DISPATCH_DISABLED", "false");
     mocks.resolvePaymentProvider.mockResolvedValue({ kind: "square" });
     mocks.getSquareConfig.mockResolvedValue({
       applicationId: "sq-app",
@@ -82,6 +83,26 @@ describe("sequence no-show card fee base", () => {
         throw new Error(`unexpected table ${table}`);
       },
     });
+  });
+
+  afterEach(() => vi.unstubAllEnvs());
+
+  it.each(["individual", "group", "sequence"])("does not request a %s card while capture is paused", async (mode) => {
+    vi.stubEnv("NAILIQ_CARD_SAVE_DISPATCH_DISABLED", "true");
+    await expect(resolveNoShowCardRequirement({
+      salonId,
+      serviceId: serviceA,
+      clientPhone: "6045550101",
+      ...(mode === "group" ? { groupServiceIds: [serviceA, serviceB] } : {}),
+      ...(mode === "sequence" ? {
+        sequenceIntent: { ordered: [serviceA, serviceB] },
+        sequencePricingFingerprint: "a".repeat(64),
+      } : {}),
+    })).resolves.toEqual({ required: false });
+    expect(mocks.looseServiceClient).not.toHaveBeenCalled();
+    expect(mocks.resolvePaymentProvider).not.toHaveBeenCalled();
+    expect(mocks.getSquareConfig).not.toHaveBeenCalled();
+    expect(mocks.quotePublicBookingSequence).not.toHaveBeenCalled();
   });
 
   it("counts every sequence occurrence, including the same service twice", async () => {

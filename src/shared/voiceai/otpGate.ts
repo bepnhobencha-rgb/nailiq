@@ -1,5 +1,6 @@
 import type { SupabaseClient } from "@supabase/supabase-js";
 import { toCanonicalPhone } from "@/shared/lib/toCanonicalPhone";
+import { hasActivePhoneOwnershipProof } from "@/shared/booking/otpIdentityAssurance";
 
 /**
  * Adaptive identity gate for a MUTATING AI-receptionist action (book / cancel /
@@ -57,20 +58,19 @@ export async function requirePhoneVerified(
 
   const { data } = await supabase
     .from("phone_otp_sessions")
-    .select("phone, consumed_at, expires_at")
+    .select("phone, consumed_at, expires_at, verified_channel")
     .eq("id", id)
     .eq("salon_id", salonId)
     .maybeSingle();
 
   const row = data as
-    | { phone: string; consumed_at: string | null; expires_at: string }
+    | { phone: string; consumed_at: string | null; expires_at: string; verified_channel?: unknown }
     | null;
 
   if (
     !row ||
     toCanonicalPhone(row.phone) !== phone ||
-    row.consumed_at !== null ||
-    new Date(row.expires_at).getTime() < Date.now()
+    !hasActivePhoneOwnershipProof(row)
   ) {
     return { ok: false, error: "otp_required", hint: RETRY_HINT };
   }

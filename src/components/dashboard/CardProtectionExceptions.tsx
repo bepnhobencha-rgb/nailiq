@@ -3,6 +3,7 @@ import { Button } from "@/components/ui/Button";
 import { useRef, useState } from "react";
 import { useRouter } from "next/navigation";
 import { useUserLanguage } from "@/shared/lib/useUserLanguage";
+import { salonYmdOfUtc } from "@/shared/lib/salonTime";
 import { actOnCardProtectionException, type CardProtectionException } from "@/shared/booking/cardProtectionExceptionActions";
 const button = "min-h-11 rounded-xl border border-nq-border px-3 py-2 text-sm font-medium text-nq-text disabled:opacity-50";
 const reasons: Record<string, [string,string]> = {
@@ -51,7 +52,7 @@ export function CardProtectionExceptions({ slug, result, timezone }: {
       <p className="mt-1 text-sm text-nq-muted">{vi ? "Lần thử gần nhất: " : "Last attempt: "}{item.lastAttemptAt ? date(item.lastAttemptAt) : "—"}</p>
       {item.reviewedAt ? <p className="text-sm text-nq-muted">{vi ? "Đã xem xét: " : "Reviewed: "}{date(item.reviewedAt)}</p> : null}
       <div className="mt-3 flex flex-wrap gap-2">
-        <a className={button} href={`/dashboard/${encodeURIComponent(slug)}/center?booking=${encodeURIComponent(item.bookingId)}`}>{vi ? "Mở lịch hẹn" : "Open booking"}</a>
+        <a className={button} href={`/dashboard/${encodeURIComponent(slug)}/center?date=${salonYmdOfUtc(item.startTime, timezone)}&booking=${encodeURIComponent(item.bookingId)}`}>{vi ? "Mở lịch hẹn" : "Open booking"}</a>
         <Button variant="secondary" size="lg" className={button} disabled={pending !== null} onClick={() => void act(item,"retry_link")}>{vi ? "Tạo liên kết thử lại" : "Generate secure retry link"}</Button>
         {item.canReconcile ? <Button variant="secondary" size="lg" className={button} disabled={pending !== null} onClick={() => void act(item,"reconcile")}>{vi ? "Đối soát lại" : "Reconcile again"}</Button> : null}
         <Button variant="secondary" size="lg" className={button} disabled={pending !== null || !!item.reviewedAt} onClick={() => void act(item,"reviewed")}>{vi ? "Đánh dấu đã xem" : "Mark reviewed"}</Button>

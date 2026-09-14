@@ -1,5 +1,7 @@
 "use client";
 
+import { BookingPhoneDiscountChoice } from "./BookingPhoneDiscountChoice";
+
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import { usePathname, useRouter } from "next/navigation";
 import type { BookingServiceItem } from "@/shared/booking/catalog";
@@ -388,12 +390,14 @@ export function BookingGroupFlow({
   // the proof into the re-submit.
   const [otpSessionId, setOtpSessionId] = useState<string | null>(initialOtpSessionId);
   const [otpPanelOpen, setOtpPanelOpen] = useState(false);
+  const [emailDiscountRequested, setEmailDiscountRequested] = useState(false);
+  const [discountVerifying, setDiscountVerifying] = useState(false);
   // No-show card capture at CONFIRM (Option A — like the individual flow):
   // a new/risky organizer must leave a card BEFORE the group is created, not
   // after success. cardRequirement is resolved pre-booking by organizer phone.
-  const [cardRequirement, setCardRequirement] =
+  const [fetchedCardRequirement, setCardRequirement] =
     useState<NoShowCardRequirement | null>(null);
-  const [cardRequirementLoading, setCardRequirementLoading] = useState(false);
+  const [resolvedCardRequirementKey, setResolvedCardRequirementKey] = useState<string | null>(null);
   const [noShowConsent, setNoShowConsent] = useState(false);
   // Mirrors ConfirmStep's own consent checkbox so the submit payload carries the
   // box the organizer actually ticked, rather than a hardcoded `true`.
@@ -409,6 +413,7 @@ export function BookingGroupFlow({
     bookingIds: string[];
     pricing: GroupBookingPricingQuote;
     cardManagementToken: string | null;
+    cardManagementRecoveryHref: string | null;
     cardManagementPending: boolean;
   } | null>(null);
   /** Party Link URL — set asynchronously after submitGroupBooking succeeds. */
@@ -604,9 +609,12 @@ export function BookingGroupFlow({
             };
           }),
         voucherCode: nextVoucherCode,
-        applyEmailDiscount: Boolean(email),
+        applyEmailDiscount: emailDiscountRequested && Boolean(email),
+        otpSessionId,
       };
     }, [
+      emailDiscountRequested,
+      otpSessionId,
       language,
       members,
       primaryEmail,
@@ -622,7 +630,7 @@ export function BookingGroupFlow({
     () => buildPricingRequest(voucherCode),
     [buildPricingRequest, voucherCode],
   );
-  const currentPricingKey = pricingRequest
+  const currentPricingKey = pricingRequest && !discountVerifying
     ? groupBookingPricingIntentKey(pricingRequest)
     : null;
   const pricingReady = Boolean(
@@ -631,6 +639,11 @@ export function BookingGroupFlow({
     pricingQuoteKey === currentPricingKey &&
     groupBookingQuoteMatchesRequest(pricingQuote, pricingRequest),
   );
+  const cardRequirementKey = CUSTOMER_PAYMENT_GATEWAY_ENABLED && step === 5 && pricingReady && pricingQuote
+    ? JSON.stringify([currentPricingKey, pricingQuote.pricingFingerprint]) : null;
+  const cardRequirement = cardRequirementKey && resolvedCardRequirementKey === cardRequirementKey
+    ? fetchedCardRequirement : null;
+  const cardRequirementLoading = cardRequirementKey !== null && resolvedCardRequirementKey !== cardRequirementKey;
   const appliedVoucher = useMemo(
     () => pricingReady && voucherCode && pricingQuote?.voucherId
       ? {
@@ -655,11 +668,13 @@ export function BookingGroupFlow({
             bookings: request.bookings,
             voucherCode: request.voucherCode ?? null,
             applyEmailDiscount: request.applyEmailDiscount,
+            otpSessionId: request.otpSessionId ?? null,
           }),
         });
         const data = await response.json().catch(() => null) as Record<string, unknown> | null;
         if (!response.ok || !data || data.ok !== true) {
-          const error = data?.code === "voucher_invalid" ? "invalid"
+          const error = data?.code === "phone_verification_required" ? "phone_verification_required"
+            : data?.code === "voucher_invalid" ? "invalid"
             : data?.code === "slot_conflict" ? "slot_conflict"
             : data?.code === "invalid_request" ? "invalid_request"
             : data?.code === "selection_invalid" ? "selection_invalid"
@@ -728,7 +743,10 @@ export function BookingGroupFlow({
       setPricingLoading(true);
       const result = await requestPricingQuote(request);
       setPricingLoading(false);
-      if (!result.quote) return { error: result.error ?? "generic" };
+      if (!result.quote) {
+        if (result.error === "phone_verification_required") setPricingError(result.error);
+        return { error: result.error ?? "generic" };
+      }
       setVoucherCode(normalized);
       setPricingQuote(result.quote);
       setPricingQuoteKey(groupBookingPricingIntentKey(request));
@@ -864,7 +882,7 @@ export function BookingGroupFlow({
   // individual flow — drives the card-entry form shown BEFORE the group is
   // created.
   useEffect(() => {
-    if (!CUSTOMER_PAYMENT_GATEWAY_ENABLED || step !== 5) {
+    if (!cardRequirementKey || !pricingRequest || !pricingQuote) {
       return;
     }
     const svcId = members[0]?.serviceId;
@@ -873,35 +891,35 @@ export function BookingGroupFlow({
       // Deliberate reset when inputs go invalid — not a render-loop.
       // eslint-disable-next-line react-hooks/set-state-in-effect
       setCardRequirement(null);
-      setCardRequirementLoading(false);
       return;
     }
     let alive = true;
-    setCardRequirementLoading(true);
+    // A new quote requires fresh consent and a new SDK token. Loading above
+    // blocks submission immediately, before this effect runs.
+    setNoShowConsent(false);
+    cardTokenRef.current = null;
+    cardVerificationRef.current = null;
     void resolveNoShowCardRequirement({
       salonId: salon.id,
       serviceId: svcId,
       clientPhone: v.digits,
-      // Whole-party protection: the organizer's card fee covers every member's
-      // service, so show the party total upfront (matches what's saved/charged).
-      groupServiceIds: members
-        .map((m) => m.serviceId)
-        .filter((id): id is string => Boolean(id)),
+      groupIntent: pricingRequest,
+      groupPricingFingerprint: pricingQuote.pricingFingerprint,
     })
       .then((r) => {
         if (!alive) return;
         setCardRequirement(r);
-        setCardRequirementLoading(false);
+        setResolvedCardRequirementKey(cardRequirementKey);
       })
       .catch(() => {
         if (!alive) return;
         setCardRequirement(null);
-        setCardRequirementLoading(false);
+        setResolvedCardRequirementKey(cardRequirementKey);
       });
     return () => {
       alive = false;
     };
-  }, [step, primaryPhone, members, salon.id]);
+  }, [cardRequirementKey, pricingRequest, pricingQuote, primaryPhone, members, salon.id]);
 
   // ── Helpers ────────────────────────────────────────────────────
   function applySize(n: number) {
@@ -1382,6 +1400,7 @@ export function BookingGroupFlow({
           bookingIds: res.bookingIds,
           pricing: res.pricing,
           cardManagementToken: res.cardManagementToken,
+          cardManagementRecoveryHref: res.cardManagementRecoveryHref ?? null,
           cardManagementPending: res.cardManagementPending,
         });
         // Only an acknowledged success starts a new logical booking intent.
@@ -1399,7 +1418,11 @@ export function BookingGroupFlow({
         // success panel itself is still rendered from component
         // state — the URL change is purely a history-stack hygiene
         // tweak.
-        router.replace(pathname);
+        if (!res.cardManagementToken && res.cardManagementPending && res.cardManagementRecoveryHref) {
+          router.replace(res.cardManagementRecoveryHref);
+        } else {
+          router.replace(pathname);
+        }
 
         // Phase 2 — generate Party Link in the background so the
         // success panel can display the shareable URL.  Non-blocking:
@@ -1445,6 +1468,26 @@ export function BookingGroupFlow({
             setPartyLinkFailed(true);
           });
         }
+        return;
+      }
+      if (res.reason === "create_outcome_unknown" && res.recoveryHref) {
+        cardTokenRef.current = null;
+        cardVerificationRef.current = null;
+        router.replace(res.recoveryHref);
+        return;
+      }
+      if (res.reason === "create_recovery_unavailable") {
+        setErrorMessage(language === "vi" ? "Chưa thể bắt đầu đặt lịch an toàn. Vui lòng tải lại trang và thử lại." : "We could not safely start your booking. Reload this page and try again.");
+        return;
+      }
+      if (res.reason === "phone_verification_required") {
+        setPricingQuote(null);
+        setPricingQuoteKey(null);
+        setPricingError("phone_verification_required");
+        setNoShowConsent(false);
+        cardTokenRef.current = null;
+        cardVerificationRef.current = null;
+        setErrorMessage(t.phoneOfferVerificationRequired);
         return;
       }
       if (res.reason === "pricing_changed") {
@@ -2068,11 +2111,25 @@ export function BookingGroupFlow({
         </div>
       ) : null}
 
+      {step === 5 && !otpPanelOpen ? (
+        <BookingPhoneDiscountChoice
+          t={t} shopSlug={shopSlug} phone={primaryPhone} salonPhone={salon.salonPhone}
+          hasEmail={Boolean(primaryEmail.trim())} requested={emailDiscountRequested}
+          verifying={discountVerifying} verificationRequired={pricingError === "phone_verification_required"}
+          disabled={submitting}
+          onStart={() => { setDiscountVerifying(true); setPricingQuote(null); setNoShowConsent(false); cardTokenRef.current = null; cardVerificationRef.current = null; }}
+          onVerified={(sessionId) => { setOtpSessionId(sessionId); setEmailDiscountRequested(Boolean(primaryEmail.trim())); setDiscountVerifying(false); setPricingError(null); setErrorMessage(null); }}
+          onSkip={() => { setEmailDiscountRequested(false); setDiscountVerifying(false); if (pricingError === "phone_verification_required") setVoucherCode(null); setPricingError(null); setErrorMessage(null); }}
+        />
+      ) : null}
       {step === 5 && otpPanelOpen ? (
         <BookingFlowOtpPanel
           t={t}
           shopSlug={shopSlug}
           clientPhone={primaryPhone}
+          clientEmail={primaryEmail}
+          emailChannelEnabled={salon.emailLinksEnabled !== false}
+          salonPhone={salon.salonPhone}
           stepDir={1}
           reducedMotion={false}
           stepTransition={{ duration: 0.18, ease: BOOKING_STEP_EASE }}
@@ -2080,12 +2137,16 @@ export function BookingGroupFlow({
           onVerified={(sessionId) => {
             setOtpSessionId(sessionId);
             setOtpPanelOpen(false);
-            void onSubmit(sessionId);
+            setPricingQuote(null);
+            setPricingQuoteKey(null);
+            setNoShowConsent(false);
+            cardTokenRef.current = null;
+            cardVerificationRef.current = null;
           }}
           onBack={() => setOtpPanelOpen(false)}
         />
       ) : null}
-      {step === 5 && !otpPanelOpen ? (
+      {step === 5 && !otpPanelOpen && !discountVerifying ? (
         <ConfirmStep
           language={language}
           t={t}
@@ -4452,6 +4513,9 @@ function ConfirmStep({
           </p>
           <ConfirmStepCardCapture
             ref={cardRef}
+            confirmationKey={noShowConsent && pricingQuote && !pricingLoading && !pricingError &&
+              !cardRequirementLoading && contactReady && (!smsConsentRequired || smsConsent)
+              ? JSON.stringify([pricingQuote.pricingFingerprint, arrangement, members, organizerIsGuest]) : null}
             applicationId={cardRequirement.applicationId}
             locationId={cardRequirement.locationId}
             environment={cardRequirement.environment}
@@ -4620,6 +4684,7 @@ function SuccessPanel({
     bookingIds: string[];
     pricing: GroupBookingPricingQuote;
     cardManagementToken: string | null;
+    cardManagementRecoveryHref: string | null;
     cardManagementPending: boolean;
   };
   showStaff: boolean;

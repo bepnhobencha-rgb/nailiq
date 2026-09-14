@@ -157,6 +157,7 @@ export async function settleCommittedBookingCardManagement(
 
   return {
     cardManagementToken,
-    cardManagementPending: cardManagementToken !== null,
+    // No token and no explicit required:false is unresolved, including malformed receipts.
+    cardManagementPending: true,
   };
 }

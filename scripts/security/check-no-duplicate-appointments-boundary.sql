@@ -44,26 +44,30 @@ BEGIN
   END IF;
 
   SELECT pg_get_functiondef(p.oid) INTO v_def FROM pg_proc p JOIN pg_namespace n ON n.oid=p.pronamespace
-  WHERE n.nspname='public' AND p.proname='create_public_booking' AND pg_get_function_identity_arguments(p.oid) LIKE '%p_expected_pricing_fingerprint text';
-  IF v_def NOT LIKE '%pg_advisory_xact_lock%' OR v_def NOT LIKE '%public-booking-idempotency:%'
+  WHERE p.oid = to_regprocedure(
+    'public.create_public_booking(uuid,uuid,uuid,text,text,timestamptz,timestamptz,text,text,uuid[],text,uuid,uuid,uuid,boolean,uuid,text,uuid)'
+  );
+  IF v_def IS NULL OR v_def NOT LIKE '%pg_advisory_xact_lock%' OR v_def NOT LIKE '%public-booking-idempotency:%'
      OR v_def NOT LIKE '%WHEN exclusion_violation THEN%' OR v_def NOT LIKE '%slot_conflict%' THEN
     RAISE EXCEPTION 'single create idempotency/overlap handling drifted';
   END IF;
   SELECT pg_get_functiondef(p.oid) INTO v_def FROM pg_proc p JOIN pg_namespace n ON n.oid=p.pronamespace
-  WHERE n.nspname='public' AND p.proname='create_group_bookings';
-  IF v_def NOT LIKE '%pg_advisory_xact_lock%' OR v_def NOT LIKE '%group-booking-idempotency:%'
+  WHERE p.oid = to_regprocedure(
+    'public.create_group_bookings(uuid,jsonb,uuid,text,text,boolean,uuid,text,uuid)'
+  );
+  IF v_def IS NULL OR v_def NOT LIKE '%pg_advisory_xact_lock%' OR v_def NOT LIKE '%group-booking-idempotency:%'
      OR v_def NOT LIKE '%WHEN exclusion_violation THEN%' THEN
     RAISE EXCEPTION 'group create idempotency/overlap handling drifted';
   END IF;
   SELECT pg_get_functiondef(p.oid) INTO v_def FROM pg_proc p JOIN pg_namespace n ON n.oid=p.pronamespace
   WHERE n.nspname='public' AND p.proname='create_public_booking_sequence';
-  IF v_def NOT LIKE '%pg_advisory_xact_lock%' OR v_def NOT LIKE '%booking-sequence-idempotency:%'
+  IF v_def IS NULL OR v_def NOT LIKE '%pg_advisory_xact_lock%' OR v_def NOT LIKE '%booking-sequence-idempotency:%'
      OR v_def NOT LIKE '%WHEN exclusion_violation THEN%' THEN
     RAISE EXCEPTION 'sequence create idempotency/overlap handling drifted';
   END IF;
   SELECT pg_get_functiondef(p.oid) INTO v_def FROM pg_proc p JOIN pg_namespace n ON n.oid=p.pronamespace
   WHERE n.nspname='public' AND p.proname='create_public_booking_for_desk_with_staff_notification';
-  IF v_def NOT LIKE '%public.create_public_booking(%' OR v_def NOT LIKE '%p_idempotency_key%'
+  IF v_def IS NULL OR v_def NOT LIKE '%public.create_public_booking(%' OR v_def NOT LIKE '%p_idempotency_key%'
      OR v_def NOT LIKE '%idempotency_mismatch%' THEN
     RAISE EXCEPTION 'desk wrapper no longer delegates to canonical idempotent create';
   END IF;

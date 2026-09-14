@@ -1,4 +1,7 @@
 import { NextResponse } from "next/server";
+import { z } from "zod";
+
+import { readJsonObjectWithLimit } from "@/shared/security/readJsonObjectWithLimit";
 import { createServiceRoleClient } from "@/shared/lib/supabase/serviceRole";
 import { validateGuestPhone } from "@/shared/booking/validateGuestPhone";
 import { sendVerification } from "@/shared/lib/twilioVerify";
@@ -25,6 +28,13 @@ function rateResponse(result: Exclude<DurableRateLimitResult, "allowed">) {
   );
 }
 
+const bodySchema = z.object({
+  phone: z.string().nullish(),
+  shopSlug: z.string().nullish(),
+  channel: z.enum(["sms", "email"]).nullish(),
+  email: z.string().nullish(),
+});
+
 export async function POST(req: Request) {
   const ipRate = await consumeDurableRateLimitBuckets("booking-otp-send", [
     { name: "ip-burst", material: [clientIp(req)], limit: 20, windowSeconds: 900 },
@@ -32,12 +42,11 @@ export async function POST(req: Request) {
   ]);
   if (ipRate !== "allowed") return rateResponse(ipRate);
 
-  let body: { phone?: string; shopSlug?: string; channel?: string; email?: string };
-  try {
-    body = await req.json();
-  } catch {
+  const parsed = bodySchema.safeParse(await readJsonObjectWithLimit(req, 2048));
+  if (!parsed.success) {
     return NextResponse.json({ error: "bad_request" }, { status: 400 });
   }
+  const body = parsed.data;
 
   const phone = (body.phone ?? "").trim();
   const shopSlug = (body.shopSlug ?? "").trim();

@@ -635,6 +635,10 @@ export function ClientProfile360Drawer({
       }
       applySession(requestKey, { loading: false, data: res.data });
 
+      // The server projects financial access; never request a shared financial
+      // summary for a receptionist, including after a role change.
+      if (res.data.stats.lifetimeSpentCents === null) return;
+
       // If AI summary already present, use it; otherwise generate in background
       if (res.data.aiSummary) {
         applySession(requestKey, { aiSummary: res.data.aiSummary });
@@ -707,7 +711,7 @@ export function ClientProfile360Drawer({
 
   /** Re-generate AI summary. */
   const handleRegenerateSummary = useCallback(() => {
-    if (!clientPhone || aiGenerating) return;
+    if (!clientPhone || aiGenerating || data?.stats.lifetimeSpentCents == null) return;
     // This request outlives the click: if the drawer moves to another client
     // before it resolves, the result belongs to nobody and must be dropped.
     const requestKey = fetchKey;
@@ -732,7 +736,7 @@ export function ClientProfile360Drawer({
         // Best-effort — the profile itself is already on screen.
         applySession(requestKey, { aiGenerating: false });
       });
-  }, [slug, clientPhone, language, aiGenerating, fetchKey, applySession]);
+  }, [slug, clientPhone, language, aiGenerating, fetchKey, applySession, data?.stats.lifetimeSpentCents]);
 
   // ── Build title ──────────────────────────────────────────────────────────
   const drawerTitle = data?.profile.name?.trim() ?? m.title;
@@ -879,10 +883,10 @@ export function ClientProfile360Drawer({
               </div>
 
               {/* KPI strip */}
-              <dl className="grid grid-cols-4 gap-2 rounded-2xl border border-nq-border/40 bg-nq-surface/50 px-3 py-3">
-                <KpiCell label={m.lifetimeSpent} value={formatCentsCompact(data.stats.lifetimeSpentCents)} />
+              <dl className={cn("grid gap-2 rounded-2xl border border-nq-border/40 bg-nq-surface/50 px-3 py-3", data.stats.lifetimeSpentCents === null ? "grid-cols-2" : "grid-cols-4")}>
+                {data.stats.lifetimeSpentCents !== null ? <KpiCell label={m.lifetimeSpent} value={formatCentsCompact(data.stats.lifetimeSpentCents)} /> : null}
                 <KpiCell label={m.visits} value={String(data.stats.visitCount)} />
-                <KpiCell label={m.avgTicket} value={formatCentsCompact(data.stats.avgTicketCents)} />
+                {data.stats.avgTicketCents !== null ? <KpiCell label={m.avgTicket} value={formatCentsCompact(data.stats.avgTicketCents)} /> : null}
                 <KpiCell label={m.lastVisit} value={formatDate(data.stats.lastVisitAt, lang)} />
               </dl>
             </section>

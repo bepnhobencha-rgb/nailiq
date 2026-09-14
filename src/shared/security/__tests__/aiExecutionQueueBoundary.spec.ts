@@ -1,3 +1,4 @@
+import { assertReleaseSchemaContract } from "@/shared/security/__tests__/releaseSchemaContract";
 import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
 import { describe, expect, it } from "vitest";
@@ -77,15 +78,8 @@ describe("AI execution queue boundary", () => {
 
   it("updates the blank-database schema tripwire", () => {
     const parity = read("scripts/check-schema-parity.ts");
-    expect(parity).toContain("tables: 241");
-    expect(parity).toContain("columns: 3734");
-    expect(parity).toContain("policies: 221");
-    expect(parity).toContain("indexes: 992");
-    expect(parity).toContain("functions: 560");
+    assertReleaseSchemaContract(parity);
     expect(parity).toContain('"ai_execution_jobs"');
     expect(parity).toContain('"decide_ai_approval_request"');
-    expect(parity).toContain(
-      "const GRANTS = { anon: 56, authenticated: 78, service_role: 228 }",
-    );
   });
 });

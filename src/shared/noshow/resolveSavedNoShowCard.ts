@@ -2,6 +2,7 @@
 
 import { resolvePaymentProvider } from "@/shared/integrations/payments";
 import { createServiceRoleClient } from "@/shared/lib/supabase/serviceRole";
+import { hasActivePhoneOwnershipProof } from "@/shared/booking/otpIdentityAssurance";
 
 export type SavedNoShowCard =
   | { hasSavedCard: false }
@@ -31,16 +32,15 @@ export async function resolveSavedNoShowCard(args: {
     const sb = createServiceRoleClient();
     const { data: sessRow } = await sb
       .from("phone_otp_sessions" as never)
-      .select("phone, salon_id, expires_at, consumed_at")
+      .select("phone, salon_id, expires_at, consumed_at, verified_channel")
       .eq("id", args.otpSessionId)
       .maybeSingle();
     const sess = sessRow as
-      | { phone: string; salon_id: string; expires_at: string; consumed_at: string | null }
+      | { phone: string; salon_id: string; expires_at: string; consumed_at: string | null; verified_channel?: unknown }
       | null;
     if (!sess) return { hasSavedCard: false };
     if (sess.salon_id !== args.salonId) return { hasSavedCard: false };
-    if (sess.consumed_at) return { hasSavedCard: false };
-    if (Date.parse(sess.expires_at) < Date.now()) return { hasSavedCard: false };
+    if (!hasActivePhoneOwnershipProof(sess)) return { hasSavedCard: false };
 
     const phone = (sess.phone || "").replace(/\D/g, "");
     if (phone.length < 8) return { hasSavedCard: false };
@@ -53,8 +53,8 @@ export async function resolveSavedNoShowCard(args: {
     if (!card || !card.last4) return { hasSavedCard: false };
 
     return { hasSavedCard: true, brand: card.brand, last4: card.last4 };
-  } catch (e) {
-    console.error("[resolveSavedNoShowCard]", e);
+  } catch {
+    console.error("[resolveSavedNoShowCard] lookup_unavailable");
     return { hasSavedCard: false }; // fail-safe: just offer new-card entry
   }
 }

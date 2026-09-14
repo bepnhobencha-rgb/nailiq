@@ -1,3 +1,4 @@
+import { dispatchGroupCreate, clearPendingGroupCreate, pendingGroupCreateHref } from "@/shared/booking/pendingGroupCreate";
 import * as ErrorReporter from "@/shared/observability/errorReporter";
 import {
   ConflictCheckBooking,
@@ -146,6 +147,7 @@ export type GroupBookingResult =
       pricing: GroupBookingPricingQuote | null;
       /** Server-minted action proof for organizer card capture, when required. */
       cardManagementToken: string | null;
+      cardManagementRecoveryHref?: string | null;
       /** True when the party is committed but no-show card work still needs
        * reconciliation. This is a success-state concern, never a reason to
        * ask the organizer to submit the party again. */
@@ -172,6 +174,8 @@ export type GroupBookingResult =
   | {
       ok: false;
       reason:
+        | "create_outcome_unknown"
+        | "create_recovery_unavailable"
         | "duplicate_submission"
         | "pricing_required"
         | "pricing_invalid"
@@ -180,6 +184,7 @@ export type GroupBookingResult =
         | "salon_not_found"
         // Organizer phone not OTP-verified (salon has phone_otp_enabled).
         | "otp_required"
+        | "phone_verification_required"
         | "otp_invalid"
         // PR3 — release flag `group_booking` is OFF for this salon.
         // Defense-in-depth: PR2 already hides the group UI, but a direct
@@ -229,6 +234,7 @@ export type GroupBookingResult =
         // this group submit. Recoverable only by the salon owner
         // upgrading the plan.
         | "monthly_booking_limit_reached";
+      recoveryHref?: string;
       /** 1-indexed member number for granular per-member errors so
        *  the UI can say "Person 2 has an invalid phone". `null` when
        *  the error is global (e.g. invalid group size). */
@@ -369,6 +375,7 @@ async function executeGroupBooking(
       bookingIds: [],
       pricing: null,
       cardManagementToken: null,
+      cardManagementRecoveryHref: null,
       cardManagementPending: false,
     };
   }
@@ -973,7 +980,7 @@ async function executeGroupBooking(
     if (!leadDigits) return fail("otp_invalid");
     if (trustedExecution) {
       const { data: otpValid, error: otpValidationError } = await supabase.rpc(
-        "validate_phone_otp_session" as never,
+        "validate_booking_otp_session" as never,
         {
           p_session_id: sessionId,
           p_salon_id: String(salonRow.id),
@@ -1012,6 +1019,7 @@ async function executeGroupBooking(
   let authoritativePricing: GroupBookingPricingQuote | null = null;
   let publicCardManagementToken: string | null = null;
   let publicCardManagementPending = false;
+  let publicCardManagementRecoveryHref: string | null = null;
   if (controlledAfterHoursExecution) {
     let rpcData: unknown;
     let rpcErr: { code?: string; message?: string } | null;
@@ -1127,12 +1135,11 @@ async function executeGroupBooking(
           member.addonServiceIds.some((id, addonIndex) => id !== current.addonIds[addonIndex]);
       })
     ) return fail("pricing_required");
-    let response: Response;
+    const recoveryBinding = { salonId: String(salonRow.id), idempotencyKey: idem, pricingFingerprint: expected.pricingFingerprint };
+    const unknownOutcome = (): GroupBookingResult => ({ ok: false, reason: "create_outcome_unknown", memberNumber: null, recoveryHref: pendingGroupCreateHref(recoveryBinding) ?? undefined });
+    let delivery;
     try {
-      response = await fetch("/api/booking/group-create", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
+      delivery = await dispatchGroupCreate(recoveryBinding, {
           salonId: String(salonRow.id),
           bookings: canonicalBookings,
           voucherCode: params.voucherCode?.trim().toUpperCase() || null,
@@ -1143,13 +1150,11 @@ async function executeGroupBooking(
           cardSourceId: params.noShowCardSourceId?.trim() || undefined,
           cardVerificationToken: params.noShowCardVerificationToken?.trim() || undefined,
           noShowConsent: params.noShowConsent === true || undefined,
-        }),
-      });
-    } catch {
-      return fail("server_error");
-    }
-    const apiResult = await response.json().catch(() => null) as Record<string, unknown> | null;
-    if (!apiResult || typeof apiResult !== "object") return fail("server_error");
+        }, window.sessionStorage);
+    } catch { return fail("create_recovery_unavailable"); }
+    if (delivery.status === "storage_unavailable") return fail("create_recovery_unavailable");
+    if (delivery.status === "unknown") return { ok: false, reason: "create_outcome_unknown", memberNumber: null, recoveryHref: delivery.recoveryHref };
+    const apiResult = delivery.body;
     if (apiResult.ok !== true) {
       const code = typeof apiResult.code === "string" ? apiResult.code : "";
       if (code === "pricing_changed") {
@@ -1168,6 +1173,7 @@ async function executeGroupBooking(
         return fail("monthly_booking_limit_reached");
       }
       if (code === "otp_required") return fail("otp_required");
+      if (code === "phone_verification_required") return fail("phone_verification_required");
       if (code === "otp_invalid") return fail("otp_invalid");
       return fail("server_error");
     }
@@ -1183,7 +1189,8 @@ async function executeGroupBooking(
       !apiResult.groupId ||
       responseIds.length !== params.members.length ||
       pricing.groupSize !== responseIds.length
-    ) return fail("pricing_invalid");
+    ) return unknownOutcome();
+    try { clearPendingGroupCreate(window.sessionStorage, recoveryBinding); } catch { /* Keep recovery conservative if storage becomes unavailable. */ }
     groupId = apiResult.groupId;
     bookingIdList = responseIds;
     authoritativePricing = pricing;
@@ -1191,6 +1198,8 @@ async function executeGroupBooking(
       ? apiResult.cardManagementToken
       : null;
     publicCardManagementPending = apiResult.cardManagementPending === true;
+    publicCardManagementRecoveryHref = typeof apiResult.cardManagementRecoveryHref === "string"
+      ? apiResult.cardManagementRecoveryHref : null;
   }
 
   // Phase-A compatibility only for the separately authorized controlled
@@ -1342,6 +1351,7 @@ async function executeGroupBooking(
     bookingIds: bookingIdList,
     pricing: authoritativePricing,
     cardManagementToken: publicCardManagementToken,
+    cardManagementRecoveryHref: publicCardManagementRecoveryHref,
     cardManagementPending: publicCardManagementPending,
   };
 }

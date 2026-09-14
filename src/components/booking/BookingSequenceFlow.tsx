@@ -1,7 +1,10 @@
 "use client";
 
+import { BookingPhoneDiscountChoice } from "./BookingPhoneDiscountChoice";
+
 import { useEffect, useMemo, useRef, useState } from "react";
 import { useRouter } from "next/navigation";
+import { dispatchPendingBookingCreate, DEFINITE_CREATE_REJECTIONS, BookingCreateOutcomeUnknownError, BookingCreateRecoveryUnavailableError } from "@/shared/booking/pendingBookingCreate";
 
 import {
   ConfirmStepCardCapture,
@@ -18,6 +21,7 @@ import type {
 } from "@/shared/booking/bookingSequenceServer";
 import { salonToday, salonWallTimeToUtcIso } from "@/shared/lib/salonTime";
 import { formatCurrency } from "@/shared/lib/currencyFormat";
+import { isBookingCreateRetired } from "@/shared/booking/retiredBookingCreate";
 import { bookingSequenceDraftStorageKey } from "@/shared/booking/bookingSequenceDraft";
 import { submitCapacityRescueRequest } from "@/shared/booking/submitCapacityRescueRequest";
 import type { BookingMessages } from "@/shared/i18n/booking/en";
@@ -63,7 +67,9 @@ export function BookingSequenceFlow({
   salon,
   language,
   customer,
-  otpSessionId,
+  otpSessionId: inheritedOtpSessionId,
+  shopSlug = "",
+  onOtpSessionInvalid,
   initialSmsConsent,
 }: {
   t: BookingMessages;
@@ -75,9 +81,20 @@ export function BookingSequenceFlow({
   language: "en" | "vi";
   customer: { name: string; phone: string; email: string | null };
   otpSessionId: string | null;
+  shopSlug?: string;
+  onOtpSessionInvalid?: () => void;
   initialSmsConsent: boolean;
 }) {
+  const [discountSession, setDiscountSession] = useState<{ phone: string; sessionId: string } | null>(null);
+  const otpSessionId = discountSession?.phone === customer.phone ? discountSession.sessionId : inheritedOtpSessionId;
+  const [discountVerifying, setDiscountVerifying] = useState(false);
+  const [phoneVerificationRequired, setPhoneVerificationRequired] = useState(false);
   const vi = language === "vi";
+  // Anonymous returning-customer lookup deliberately does not disclose a name.
+  // Keep user-entered identity only in memory, scoped to this phone.
+  const [enteredName, setEnteredName] = useState({ phone: customer.phone, name: "" });
+  const customerName = customer.name.trim() ||
+    (enteredName.phone === customer.phone ? enteredName.name.trim() : "");
   const [lines, setLines] = useState<EditableLine[]>([
     { lineId: newId(), serviceId: "", staffPreference: "any", addOnServiceIds: [], timingPreference: "sequential" },
   ]);
@@ -91,6 +108,10 @@ export function BookingSequenceFlow({
   const [done, setDone] = useState(false);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState<string | null>(null);
+  const [rejectedOtpSessionId, setRejectedOtpSessionId] = useState<string | null | undefined>(undefined);
+  const otpRecoveryRequired = rejectedOtpSessionId !== undefined &&
+    (!otpSessionId || otpSessionId === rejectedOtpSessionId);
+  const rateLimitMessage = vi ? "Bạn thao tác quá nhanh. Vui lòng chờ vài phút rồi kiểm tra lại lịch. Thông tin đã nhập vẫn được giữ." : "You are trying too quickly. Wait a few minutes, then check the appointment again. Your details are kept.";
   const [reconfirmRequired, setReconfirmRequired] = useState(false);
   const [acceptedTerms, setAcceptedTerms] = useState(false);
   const [healthAcknowledged, setHealthAcknowledged] = useState(false);
@@ -116,6 +137,7 @@ export function BookingSequenceFlow({
   const [capacityRescueSubmitting, setCapacityRescueSubmitting] = useState(false);
   const [capacityRescueError, setCapacityRescueError] = useState<string | null>(null);
   const cardRef = useRef<ConfirmStepCardHandle>(null);
+  const createInFlightRef = useRef(false);
 
   useEffect(() => {
     let active = true;
@@ -168,7 +190,7 @@ export function BookingSequenceFlow({
         setSameStaffForAll(saved.sameStaffForAll);
         setVoucherCode(saved.voucherCode ?? "");
         setApplyEmailDiscount(saved.applyEmailDiscount === true);
-        setRequestId(saved.requestId);
+        setRequestId(isBookingCreateRetired(salon.id, saved.requestId) ? newId() : saved.requestId);
       }
     } catch {
       // Malformed local state is untrusted and ignored.
@@ -222,11 +244,14 @@ export function BookingSequenceFlow({
       sameStaffForAll,
       voucherCode: voucherCode.trim() || null,
       applyEmailDiscount: applyEmailDiscount && Boolean(customer.email),
-      customer,
+      otpSessionId,
+      customer: { ...customer, name: customerName },
     };
   }, [
     applyEmailDiscount,
+    otpSessionId,
     customer,
+    customerName,
     lines,
     requestId,
     requestedStartTimeUtc,
@@ -315,6 +340,7 @@ export function BookingSequenceFlow({
     setCapacityRescueEligible(false);
     setCapacityRescueJoined(false);
     setCapacityRescueError(null);
+    setPhoneVerificationRequired(false);
   }
 
   function updateLine(index: number, patch: Partial<EditableLine>) {
@@ -324,6 +350,11 @@ export function BookingSequenceFlow({
   }
 
   async function fetchQuote() {
+    if (otpRecoveryRequired || discountVerifying) return;
+    if (customerName.length < 2) {
+      setError(vi ? "Vui lòng nhập họ tên (ít nhất 2 ký tự)." : "Please enter your name (at least 2 characters).");
+      return;
+    }
     const material = currentIntent;
     if (!material) {
       setError(vi ? "Chọn đủ dịch vụ, ngày và giờ." : "Choose every service, date, and time.");
@@ -343,8 +374,16 @@ export function BookingSequenceFlow({
         code?: string;
         quote?: BookingSequenceQuote;
       };
+      if (result.ok === false && result.code === "phone_verification_required") {
+        setQuote(null);
+        setPhoneVerificationRequired(true);
+        setError(t.phoneOfferVerificationRequired);
+        return;
+      }
       if (!response.ok || result.ok !== true || !result.quote) {
-        const parallelError = result.code === "parallel_pair_not_allowed"
+        const parallelError = response.status === 429 && result.code === "rate_limited"
+          ? "rate_limited"
+          : result.code === "parallel_pair_not_allowed"
           ? (vi
               ? "Hai dịch vụ này chưa được salon xác nhận là có thể làm cùng lúc. Vui lòng chọn nối tiếp."
               : "The salon has not approved these services to run together. Choose sequential timing.")
@@ -431,6 +470,7 @@ export function BookingSequenceFlow({
   }
 
   async function createBooking() {
+    if (createInFlightRef.current || busy || done || otpRecoveryRequired || discountVerifying) return;
     const material = currentIntent;
     if (
       !material ||
@@ -443,6 +483,7 @@ export function BookingSequenceFlow({
       setError(vi ? "Vui lòng xác nhận điều khoản bắt buộc." : "Please accept the required terms.");
       return;
     }
+    createInFlightRef.current = true;
     setBusy(true);
     setError(null);
     try {
@@ -457,10 +498,12 @@ export function BookingSequenceFlow({
         setCardSourceId(sourceId);
         setCardVerificationToken(verificationToken);
       }
-      const response = await fetch("/api/booking/sequence-create", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify({
+      const { response, result } = await dispatchPendingBookingCreate({
+        binding: { kind: "sequence", salonId: salon.id, idempotencyKey: material.requestId, pricingFingerprint: quote.pricingFingerprint },
+        invoke: async signal => {
+          const response = await fetch("/api/booking/sequence-create", {
+            method: "POST", headers: { "Content-Type": "application/json" }, signal,
+            body: JSON.stringify({
           intent: material,
           expectedPricingFingerprint: quote.pricingFingerprint,
           otpSessionId,
@@ -470,15 +513,52 @@ export function BookingSequenceFlow({
           cardSourceId: sourceId,
           cardVerificationToken: verificationToken,
           noShowConsent,
-        }),
+            }),
+          });
+          const result = await response.json() as {
+            ok?: boolean; code?: string; bookingId?: string; quote?: BookingSequenceQuote;
+            cardManagementPending?: boolean; cardManagementToken?: string | null; cardManagementRecoveryHref?: string | null;
+          };
+          return { response, result };
+        },
+        classify: ({ response, result }) => {
+          if (response.status >= 400 && response.status < 500 && result.ok === false && DEFINITE_CREATE_REJECTIONS.has(result.code ?? "")) return "rejected";
+          return response.ok && result.ok === true && typeof result.bookingId === "string" && UUID_RE.test(result.bookingId) &&
+            result.quote?.requestId === material.requestId && result.quote.salonId === salon.id &&
+            result.quote.pricingFingerprint === quote.pricingFingerprint && result.quote.lines.length === material.lines.length
+            ? "succeeded" : "unknown";
+        },
       });
-      const result = await response.json() as {
-        ok?: boolean;
-        code?: string;
-        quote?: BookingSequenceQuote;
-        cardManagementPending?: boolean;
-        cardManagementToken?: string | null;
-      };
+      if (result.ok === false && result.code === "phone_verification_required") {
+        // Definite rejection: retain draft/request ID, discard old quote and
+        // card authority, then require a new quote and explicit confirmation.
+        setQuote(null); setStage("build"); setPhoneVerificationRequired(true);
+        setFetchedCardRequirement(null); setFetchedSavedCard(null); setNoShowConsent(false);
+        setCardSourceId(null); setCardVerificationToken(null);
+        setError(t.phoneOfferVerificationRequired);
+        return;
+      }
+      if (
+        response.status === 403 && result.ok === false &&
+        (result.code === "otp_required" || result.code === "invalid_otp_session" || result.code === "otp_session_used")
+      ) {
+        // Only a definite pre-commit rejection can re-arm OTP. Keep the draft
+        // and idempotency key, but discard everything authorized by the old
+        // session/quote before allowing a fresh quote and card decision.
+        setRejectedOtpSessionId(otpSessionId);
+        setDiscountSession(null);
+        setQuote(null);
+        setStage("build");
+        setReconfirmRequired(false);
+        setFetchedCardRequirement(null);
+        setFetchedSavedCard(null);
+        setNoShowConsent(false);
+        setUseDifferentCard(false);
+        setCardSourceId(null);
+        setCardVerificationToken(null);
+        onOtpSessionInvalid?.();
+        return;
+      }
       if (result.code === "pricing_changed" && result.quote) {
         setQuote(result.quote);
         setFetchedCardRequirement(null);
@@ -490,19 +570,44 @@ export function BookingSequenceFlow({
         setError(vi ? "Giá hoặc lịch đã đổi. Vui lòng xem lại và bấm xác nhận lần nữa." : "Price or timing changed. Review it and confirm again.");
         return;
       }
+      if (!response.ok && result.ok === false && result.code === "slot_conflict") {
+        // A definite rejection permits a new intent; an unknown result must keep recovery authority.
+        beginNewIntent();
+        setError(vi
+          ? "Giờ này vừa hết chỗ. Vui lòng chọn giờ khác hoặc nhân viên khác rồi kiểm tra lại."
+          : "This time just became unavailable. Choose another time or staff member, then check again.");
+        return;
+      }
+      if (response.status === 429 && result.ok === false && result.code === "rate_limited") {
+        beginNewIntent();
+        setError("rate_limited");
+        return;
+      }
       if (!response.ok || result.ok !== true) throw new Error("create");
       if (!result.quote) throw new Error("receipt");
       setQuote(result.quote);
       setCardManagementPending(result.cardManagementPending === true);
       if (result.cardManagementToken) router.replace(`/booking/save-card?token=${encodeURIComponent(result.cardManagementToken)}`);
+      else if (result.cardManagementPending && result.cardManagementRecoveryHref) {
+        router.replace(result.cardManagementRecoveryHref);
+      }
       setDone(true);
       setReconfirmRequired(false);
       if (storageKey) sessionStorage.removeItem(storageKey);
       setCardSourceId(null);
       setCardVerificationToken(null);
-    } catch {
-      setError(vi ? "Chưa thể hoàn tất. Booking chưa được tạo thêm; vui lòng thử lại." : "We could not finish. No extra booking was created; please retry.");
+    } catch (error) {
+      setCardSourceId(null);
+      setCardVerificationToken(null);
+      if (error instanceof BookingCreateOutcomeUnknownError) {
+        router.replace(error.recoveryHref);
+      } else {
+        setError(error instanceof BookingCreateRecoveryUnavailableError
+          ? (vi ? "Chưa thể bắt đầu đặt lịch an toàn. Vui lòng tải lại trang và thử lại." : "We could not safely start your booking. Reload this page and try again.")
+          : (vi ? "Chưa thể hoàn tất bước này. Vui lòng kiểm tra lại thông tin." : "We could not finish this step. Please review your information."));
+      }
     } finally {
+      createInFlightRef.current = false;
       setBusy(false);
     }
   }
@@ -553,9 +658,7 @@ export function BookingSequenceFlow({
             data-testid="booking-sequence-card-pending"
             className="mt-4 rounded-xl border border-[var(--booking-border)] bg-[var(--booking-bg-input)] p-3 text-sm text-[var(--booking-text-muted)]"
           >
-            {vi
-              ? "Lịch hẹn đã được xác nhận. Việc lưu thẻ vẫn đang được đối soát — vui lòng không đặt lại lịch. Salon có thể hỗ trợ nếu cần."
-              : "Your booking is confirmed. Card storage is still being reconciled—please do not book again. The salon can help if needed."}
+            {t.cardManagementPendingNotice}
           </p>
         ) : null}
       </section>
@@ -568,6 +671,23 @@ export function BookingSequenceFlow({
         <h2 className="text-lg font-semibold">{vi ? "Chuỗi 1–5 dịch vụ" : "1–5 service sequence"}</h2>
         <p className="text-sm text-[var(--booking-text-muted)]">{vi ? "Chúng tôi kiểm tra nhân viên, thời gian chuẩn bị và giá cho toàn bộ chuỗi." : "We verify staff, prep time, and pricing for the whole sequence."}</p>
       </div>
+
+      {!customer.name.trim() ? (
+        <label className="block space-y-2 text-sm font-medium">
+          <span>{vi ? "Họ và tên" : "Full name"}</span>
+          <input
+            name="sequenceCustomerName"
+            autoComplete="name"
+            maxLength={120}
+            value={enteredName.phone === customer.phone ? enteredName.name : ""}
+            onChange={(event) => {
+              setEnteredName({ phone: customer.phone, name: event.target.value });
+              beginNewIntent();
+            }}
+            className="nq-booking-field w-full"
+          />
+        </label>
+      ) : null}
 
       {lines.map((line, index) => (
         <div key={line.lineId} className="space-y-3 rounded-xl border border-[var(--booking-border)] p-3">
@@ -693,12 +813,14 @@ export function BookingSequenceFlow({
         onChange={(event) => { setVoucherCode(event.target.value); beginNewIntent(); }}
         className="nq-booking-field w-full"
       />
-      {customer.email ? (
-        <label className="flex items-center gap-2 text-sm">
-          <input type="checkbox" checked={applyEmailDiscount} onChange={(event) => { setApplyEmailDiscount(event.target.checked); beginNewIntent(); }} />
-          {vi ? "Áp dụng ưu đãi email nếu đủ điều kiện" : "Apply eligible email incentive"}
-        </label>
-      ) : null}
+      <BookingPhoneDiscountChoice
+        t={t} shopSlug={shopSlug} phone={customer.phone} salonPhone={salon.salonPhone}
+        hasEmail={Boolean(customer.email)} requested={applyEmailDiscount} verifying={discountVerifying}
+        verificationRequired={phoneVerificationRequired} disabled={busy || !shopSlug}
+        onStart={() => { setDiscountVerifying(true); setQuote(null); setNoShowConsent(false); setCardSourceId(null); setCardVerificationToken(null); }}
+        onVerified={(sessionId) => { setDiscountSession({ phone: customer.phone, sessionId }); setApplyEmailDiscount(Boolean(customer.email)); setDiscountVerifying(false); beginNewIntent(); }}
+        onSkip={() => { setApplyEmailDiscount(false); setDiscountVerifying(false); if (phoneVerificationRequired) setVoucherCode(""); beginNewIntent(); }}
+      />
       <label className="flex items-start gap-2 text-sm">
         <input type="checkbox" checked={acceptedTerms} onChange={(event) => setAcceptedTerms(event.target.checked)} />
         <span>{vi ? "Tôi đồng ý với chính sách đặt và huỷ lịch của salon." : "I agree to the salon's booking and cancellation policy."}</span>
@@ -774,6 +896,9 @@ export function BookingSequenceFlow({
             <>
               <ConfirmStepCardCapture
                 ref={cardRef}
+                confirmationKey={noShowConsent && acceptedTerms && currentIntent && !cardRequirementLoading &&
+                  (salon.healthAckRequired !== true || healthAcknowledged)
+                  ? JSON.stringify([currentIntent, quote.pricingFingerprint]) : null}
                 applicationId={cardRequirement.applicationId}
                 locationId={cardRequirement.locationId}
                 environment={cardRequirement.environment}
@@ -812,7 +937,14 @@ export function BookingSequenceFlow({
           </label>
         </div>
       ) : null}
-      {error ? <p role="alert" className="text-sm text-red-500">{error}</p> : null}
+      {error ? <p role="alert" className="text-sm text-red-500">{error === "rate_limited" ? rateLimitMessage : error}</p> : null}
+      {otpRecoveryRequired ? (
+        <p role="alert" data-testid="booking-sequence-otp-recovery" className="text-sm text-[var(--booking-text-muted)]">
+          {vi
+            ? "Phiên xác thực đã hết hiệu lực. Vui lòng xác thực lại ở phía trên, sau đó kiểm tra lại lịch và giá. Thông tin đã nhập vẫn được giữ."
+            : "Your verification is no longer valid. Verify again above, then review the appointment and price. Your details are kept."}
+        </p>
+      ) : null}
       {capacityRescueEligible && currentIntent && stage === "build" ? (
         <CapacityRescueOptIn
           t={t}
@@ -829,11 +961,11 @@ export function BookingSequenceFlow({
         </button>
       ) : null}
       {quote ? (
-        <button type="button" disabled={busy || cardRequirementLoading || !acceptedTerms || (cardRequirement?.required === true && !noShowConsent) || (salon.healthAckRequired === true && !healthAcknowledged)} onClick={() => void createBooking()} className="nq-booking-btn-primary w-full">
+        <button type="button" disabled={busy || discountVerifying || otpRecoveryRequired || cardRequirementLoading || !acceptedTerms || (cardRequirement?.required === true && !noShowConsent) || (salon.healthAckRequired === true && !healthAcknowledged)} onClick={() => void createBooking()} className="nq-booking-btn-primary w-full">
           {busy ? "…" : reconfirmRequired ? (vi ? "Xác nhận giá mới" : "Confirm updated price") : (vi ? "Xác nhận đặt chuỗi" : "Confirm sequence")}
         </button>
       ) : (
-        <button type="button" disabled={busy} onClick={() => void fetchQuote()} className="nq-booking-btn-primary w-full">
+        <button type="button" disabled={busy || discountVerifying || otpRecoveryRequired} onClick={() => void fetchQuote()} className="nq-booking-btn-primary w-full">
           {busy ? "…" : (vi ? "Kiểm tra chuỗi" : "Review sequence")}
         </button>
       )}

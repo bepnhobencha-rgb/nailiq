@@ -25,6 +25,7 @@ import {
   X,
 } from "lucide-react";
 import { Badge } from "@/components/ui/Badge";
+import { LogoutButton } from "@/components/dashboard/LogoutButton";
 import { GlobalLanguageToggle } from "@/components/user/GlobalLanguageToggle";
 import { type ReleaseFeatureMap } from "@/components/layout/DashboardSidebar";
 import { cn } from "@/shared/lib/cn";
@@ -233,14 +234,6 @@ export function MobileBottomNav({
           { key: "settings", label: t.settings, href: `${dashRoot}/settings`, icon: Settings, match: (p) => p.startsWith(`${dashRoot}/settings`) },
         ],
       });
-    } else {
-      groups.push({
-        key: "system",
-        label: L("System", "Hệ thống"),
-        items: [
-          { key: "settings", label: t.settings, href: `${dashRoot}/settings`, icon: Settings, match: (p) => p.startsWith(`${dashRoot}/settings`) },
-        ],
-      });
     }
     return groups;
   }, [L, dashRoot, isOwner, pendingApprovalsCount, queueBadge, queueUrgent, releaseFeatures, t, waitlistCount]);
@@ -325,6 +318,16 @@ export function MobileBottomNav({
                   </ul>
                 </section>
               ))}
+              <section aria-labelledby="mobile-more-account">
+                <h3 id="mobile-more-account" className="mb-1.5 px-1 text-xs font-semibold uppercase tracking-[0.12em] text-nq-muted">
+                  {L("Account", "Tài khoản")}
+                </h3>
+                {/* Account access must not depend on owner-only Settings. Keep
+                    the shared confirmation, pending state and failure feedback. */}
+                <div className="rounded-2xl border border-nq-border/40 bg-nq-bg/45 p-4 [&>button]:min-h-11 [&>button]:w-full">
+                  <LogoutButton language={language} />
+                </div>
+              </section>
               <section aria-labelledby="mobile-more-language">
                 <h3
                   id="mobile-more-language"

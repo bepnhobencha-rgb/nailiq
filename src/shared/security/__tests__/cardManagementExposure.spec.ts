@@ -2,9 +2,11 @@ import fs from "node:fs";
 import path from "node:path";
 import { describe, expect, it } from "vitest";
 
+import { readCardManagementRoute } from "./readCardManagementRoute";
+
 const read = (relative: string) => fs.readFileSync(path.join(process.cwd(), relative), "utf8");
 const configRoute = read("src/app/api/booking/square-noshow-config/route.ts");
-const squareSaveRoute = read("src/app/api/booking/square-save-card/route.ts");
+const squareSaveRoute = readCardManagementRoute("src/app/api/booking/square-save-card/route.ts");
 const stripeSetupRoute = read("src/app/api/booking/stripe-setup-intent/route.ts");
 const flagRoute = read("src/app/api/booking/flag-noshow-card/route.ts");
 const removeRoute = read("src/app/api/booking/remove-card/route.ts");
@@ -21,7 +23,7 @@ const groupSubmit = read("src/shared/booking/submitGroupBooking.ts");
 const groupCreateRoute = read("src/app/api/booking/group-create/route.ts");
 const cardCapabilityMigration = read("supabase/migrations/20260820140000_add_action_scoped_booking_management_capabilities.sql");
 const cardManagement = read("src/shared/booking/bookingCardManagement.ts");
-const cardCapabilityRoute = read("src/app/api/booking/card-capability/route.ts");
+const cardCapabilityRoute = readCardManagementRoute("src/app/api/booking/card-capability/route.ts");
 const bookingCapabilities = read("src/shared/booking/bookingManagementCapabilities.ts");
 const continuationWorker = read("src/shared/booking/reconcileBookingCardContinuations.ts");
 const continuationMigration = read("supabase/migrations/20260827215428_add_booking_card_continuation_ledger.sql");

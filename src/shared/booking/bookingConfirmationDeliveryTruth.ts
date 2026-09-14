@@ -1,6 +1,6 @@
 export type BookingConfirmationDeliveryTruth = {
   sms: "accepted" | "suppressed" | "unverified" | "not_requested";
-  email: "processing" | "not_requested";
+  email: "processing" | "unverified" | "not_requested";
 };
 
 type SmsConfirmationResponse = {

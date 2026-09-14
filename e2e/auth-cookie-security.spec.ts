@@ -78,6 +78,59 @@ for (const role of ["owner", "admin", "senior", "receptionist", "nail_tech"] as 
       await expect.poll(() => new URL(page.url()).pathname).toBe(destination);
       await expect(page.locator("main")).toBeVisible();
       expect((await context.cookies()).some(cookie => cookie.name === "nailiq-demo-slug")).toBe(false);
+
+      // Operational roles must be able to leave a shared tablet without going
+      // through the owner/admin Settings page. Keep the real page guard tested.
+      if (!["owner", "admin"].includes(role)) {
+        await page.goto(`/dashboard/${salon.slug}/settings`);
+        await expect.poll(() => new URL(page.url()).pathname).toBe(`/dashboard/${salon.slug}`);
+        await expect(page.getByTestId("mobile-account-card")).toHaveCount(0);
+        await page.goto(destination);
+      }
+
+      await page.setViewportSize({ width: 1280, height: 900 });
+      const desktopAccount = page.getByTestId("dashboard-account-trigger");
+      await expect(desktopAccount).toBeVisible();
+      await desktopAccount.click();
+      await expect(page.getByTestId("dashboard-account-menu").getByRole("button", { name: "Sign out" })).toBeVisible();
+      await desktopAccount.click();
+
+      for (const width of [381, 820]) {
+        await page.setViewportSize({ width, height: 900 });
+        await expect(desktopAccount).not.toBeVisible();
+        await page.getByTestId("mobile-more-trigger").click();
+        const sheet = page.getByTestId("mobile-more-sheet");
+        await expect(sheet).toBeVisible();
+        const settings = sheet.getByRole("link", { name: "Settings", exact: true });
+        if (["owner", "admin"].includes(role)) await expect(settings).toBeVisible();
+        else await expect(settings).toHaveCount(0);
+        const signOut = sheet.getByRole("button", { name: "Sign out", exact: true });
+        await expect(signOut).toBeVisible();
+        const box = await signOut.boundingBox();
+        expect(box!.width).toBeGreaterThanOrEqual(44);
+        expect(box!.height).toBeGreaterThanOrEqual(44);
+        page.once("dialog", async (dialog) => {
+          expect(dialog.type()).toBe("confirm");
+          await dialog.dismiss();
+        });
+        await signOut.click();
+        await expect(sheet).toBeVisible();
+        await expect(signOut).toBeEnabled();
+        expect(new URL(page.url()).pathname).toBe(destination);
+        await assertSecure(context);
+        if (width === 381) await sheet.getByRole("button", { name: "Close", exact: true }).last().click();
+      }
+
+      page.once("dialog", async (dialog) => {
+        expect(dialog.type()).toBe("confirm");
+        await dialog.accept();
+      });
+      await page.getByTestId("mobile-more-sheet").getByRole("button", { name: "Sign out", exact: true }).click();
+      await expect.poll(() => new URL(page.url()).pathname).toBe("/login");
+      await expect(page.getByTestId("password-signin-submit")).toBeVisible();
+      expect(await sessionCookies(context)).toHaveLength(0);
+      await page.goto(destination);
+      await expect.poll(() => new URL(page.url()).pathname).toBe("/login");
     }, () => cleanupTestSalon(salon.slug), async () => { if (user) await cleanupTestUser(user.userId); });
   });
 }

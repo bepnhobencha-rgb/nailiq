@@ -43,8 +43,10 @@ export type PolicyContext = {
   channel: string;
   hasEmail: boolean;
   hasPhone: boolean;
-  /** Protection already exists on this booking; never ask for it again. */
+  /** Database receipt projection confirms active protection on this booking. */
   hasCardOnFile: boolean;
+  /** Existing unresolved card protection belongs to the recovery flow, not AI. */
+  cardRecoveryRequired: boolean;
   hasActiveDeposit: boolean;
   /** Hours between booking creation and appointment start. */
   leadTimeHours: number;
@@ -97,7 +99,7 @@ export async function gatherPolicyContext(bookingId: string): Promise<PolicyCont
   const db = looseServiceClient();
   const { data } = await db
     .from("bookings")
-    .select("id, salon_id, client_name, client_phone, client_email, service_id, price_cents, start_time_utc, created_at, booking_channel, source, group_id, noshow_card_id, deposit_required, deposit_status")
+    .select("id, salon_id, client_name, client_phone, client_email, service_id, price_cents, start_time_utc, created_at, booking_channel, source, group_id, noshow_card_id, noshow_card_required, card_protection_status, deposit_required, deposit_status")
     .eq("id", bookingId)
     .maybeSingle();
   const b = data as Row | null;
@@ -162,7 +164,15 @@ export async function gatherPolicyContext(bookingId: string): Promise<PolicyCont
     channel: str(b.booking_channel) || str(b.source) || "online",
     hasEmail: str(b.client_email).trim().length > 0,
     hasPhone: phone.length >= 8,
-    hasCardOnFile: str(b.noshow_card_id).trim().length > 0,
+    // This projection is maintained by booking_card_protection_state: `saved`
+    // requires the successful operation receipt, binding and current consent.
+    // A legacy ID or unresolved operation alone is never active protection.
+    hasCardOnFile: b.card_protection_status === "saved",
+    cardRecoveryRequired: b.card_protection_status !== "saved" && (
+      b.card_protection_status !== "not_required" ||
+      b.noshow_card_required === true ||
+      str(b.noshow_card_id).trim().length > 0
+    ),
     hasActiveDeposit:
       ["required", "pending", "held", "paid"].includes(depositStatus) ||
       (b.deposit_required === true && !depositStatus),
@@ -458,6 +468,11 @@ export async function runNoShowPolicyAgent(
     if (!ctx) return null;
     if (!ctx.aiShadowEnabled && !ctx.aiLiveEnabled) return null; // not opted in
 
+    // Preserve an existing requirement and let the durable recovery flow settle
+    // unknown, failed or incomplete saves. Neither AI nor returning-card carry
+    // forward may replace that operation or waive its unresolved requirement.
+    if (ctx.cardRecoveryRequired) return null;
+
     // In live mode, carry forward an already-authorized returning card before
     // asking AI. Shadow stays strictly log-only. The operation is idempotent,
     // never charges, and gives every booking channel the same protection state.
@@ -468,7 +483,10 @@ export async function runNoShowPolicyAgent(
         );
         const carried = await autoAttachReturningCard(bookingId);
         if (carried.attached) {
-          ctx = (await gatherPolicyContext(bookingId)) ?? ctx;
+          const refreshed = await gatherPolicyContext(bookingId);
+          if (!refreshed) return null;
+          ctx = refreshed;
+          if (ctx.cardRecoveryRequired) return null;
         }
       } catch {
         /* best-effort; deterministic fallback below remains authoritative */

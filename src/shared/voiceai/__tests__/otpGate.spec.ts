@@ -8,10 +8,14 @@ const PHONE = "16045551234"; // canonical (E.164 digits, no +)
 
 // Minimal chainable Supabase mock: .from().select().eq().eq().maybeSingle()
 function mockDb(row: Record<string, unknown> | null): SupabaseClient {
+  const stored: Record<string, unknown> | null = row ? { id: "sess-1", salon_id: SALON, ...row } : null;
+  const filters: Array<[string, unknown]> = [];
   const chain = {
     select: () => chain,
-    eq: () => chain,
-    maybeSingle: async () => ({ data: row }),
+    eq: (key: string, value: unknown) => { filters.push([key, value]); return chain; },
+    maybeSingle: async () => ({
+      data: stored && filters.every(([key, value]) => stored[key] === value) ? stored : null,
+    }),
   };
   return { from: () => chain } as unknown as SupabaseClient;
 }
@@ -47,7 +51,7 @@ describe("requirePhoneVerified — adaptive identity gate", () => {
 
   it("allows via a valid OTP session bound to the same phone", async () => {
     const r = await requirePhoneVerified(
-      mockDb({ phone: PHONE, consumed_at: null, expires_at: future() }),
+      mockDb({ phone: PHONE, verified_channel: "sms", consumed_at: null, expires_at: future() }),
       SALON,
       PHONE,
       { otpSessionId: "sess-1" },
@@ -57,7 +61,7 @@ describe("requirePhoneVerified — adaptive identity gate", () => {
 
   it("rejects a session for a DIFFERENT phone (cannot cancel someone else's booking)", async () => {
     const r = await requirePhoneVerified(
-      mockDb({ phone: "16045559999", consumed_at: null, expires_at: future() }),
+      mockDb({ phone: "16045559999", verified_channel: "sms", consumed_at: null, expires_at: future() }),
       SALON,
       PHONE,
       { otpSessionId: "sess-1" },
@@ -67,7 +71,7 @@ describe("requirePhoneVerified — adaptive identity gate", () => {
 
   it("rejects a consumed session", async () => {
     const r = await requirePhoneVerified(
-      mockDb({ phone: PHONE, consumed_at: new Date().toISOString(), expires_at: future() }),
+      mockDb({ phone: PHONE, verified_channel: "sms", consumed_at: new Date().toISOString(), expires_at: future() }),
       SALON,
       PHONE,
       { otpSessionId: "sess-1" },
@@ -77,7 +81,7 @@ describe("requirePhoneVerified — adaptive identity gate", () => {
 
   it("rejects an expired session", async () => {
     const r = await requirePhoneVerified(
-      mockDb({ phone: PHONE, consumed_at: null, expires_at: past() }),
+      mockDb({ phone: PHONE, verified_channel: "sms", consumed_at: null, expires_at: past() }),
       SALON,
       PHONE,
       { otpSessionId: "sess-1" },
@@ -90,5 +94,13 @@ describe("requirePhoneVerified — adaptive identity gate", () => {
       otpSessionId: "does-not-exist",
     });
     expect(r).toMatchObject({ ok: false, error: "otp_required" });
+  });
+
+  it("rejects an otherwise valid SMS session belonging to another salon", async () => {
+    const result = await requirePhoneVerified(
+      mockDb({ salon_id: "other-salon", phone: PHONE, verified_channel: "sms", consumed_at: null, expires_at: future() }),
+      SALON, PHONE, { otpSessionId: "sess-1" },
+    );
+    expect(result).toMatchObject({ ok: false, error: "otp_required" });
   });
 });

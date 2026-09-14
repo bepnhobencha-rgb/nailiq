@@ -132,6 +132,25 @@ async function cleanup(email: string) {
   );
 }
 
+async function expectPrivateSalonSetup(page: Page, slug: string, salonName: string) {
+  await expect(page).toHaveURL(
+    `${localAuthHttpsOrigin}/dashboard/${encodeURIComponent(slug)}/setup`,
+  );
+  // Dashboard navigation retains a hidden main while the setup route streams.
+  // Certify this salon's loaded, private setup rather than the retained shell.
+  const main = page.getByRole("main");
+  const escapedSalonName = salonName.replace(/[.*+?^${}()|[\]\\]/g, "\\$&");
+  await expect(main.getByRole("heading", {
+    level: 1,
+    name: new RegExp(`^(?:Let’s finish|Hãy hoàn tất) ${escapedSalonName}$`),
+  })).toBeVisible();
+  const privateStatus = main.getByTestId("guided-setup-not-live-status");
+  await expect(privateStatus).toBeVisible();
+  await expect(privateStatus).toContainText(
+    /not live yet|chưa Go-Live/i,
+  );
+}
+
 for (const lang of ["en", "vi"] as const) {
   for (const destination of ["/", "/register"] as const) {
     test(`${lang}: login navigates to ${destination} without background signup requests`, async ({ page }) => {
@@ -193,6 +212,7 @@ for (const lang of ["en", "vi"] as const) {
 
   test(`${lang}: a new email signup confirms and creates a private 14-day salon`, async ({
     page,
+    browser,
   }) => {
     const email = `e2e-signup-${randomUUID()}@example.com`;
     const password = `Aa1!${randomBytes(24).toString("base64url")}`;
@@ -341,12 +361,62 @@ for (const lang of ["en", "vi"] as const) {
           name: /start coco setup|bắt đầu coco setup|go to dashboard|vào bảng điều khiển/i,
         })
         .click();
-      await expect(page).toHaveURL(
-        new RegExp(`/dashboard/${registered.salon.slug}(?:[/?#]|$)`),
-      );
-      await expect(page.locator("main")).toBeVisible();
+      await expectPrivateSalonSetup(page, registered.salon.slug, salonName);
       expect(errors).toEqual([]);
       expect(setupHomePrefetches).toEqual([]);
+
+      // A new browser has no signup session. Returning owners must reach the
+      // same workspace without provisioning another salon or restarting trial.
+      const returning = await browser.newContext({
+        ...(test.info().project.name === "mobile" ? devices["iPhone 14"] : {}),
+        ignoreHTTPSErrors: true,
+        locale: "en-US",
+      });
+      await withLocalAuthCleanup(async () => {
+        await returning.addInitScript(
+          (language) => localStorage.setItem("nailiq-user-lang", language),
+          lang,
+        );
+        const login = await returning.newPage();
+        const loginErrors: string[] = [];
+        let loginPhase = "open_login";
+        login.on("pageerror", (error) => loginErrors.push(`${loginPhase}: ${error.message}`));
+        const workerRequests: Array<{ phase: string; event: string; status?: number; cancelled?: boolean }> = [];
+        login.on("response", (response) => {
+          if (new URL(response.url()).pathname === "/nailiq-sw.js") {
+            workerRequests.push({ phase: loginPhase, event: "response", status: response.status() });
+          }
+        });
+        login.on("requestfailed", (request) => {
+          if (new URL(request.url()).pathname === "/nailiq-sw.js") {
+            workerRequests.push({ phase: loginPhase, event: "requestfailed", cancelled: /cancel|abort/i.test(request.failure()?.errorText ?? "") });
+          }
+        });
+        await login.goto(localAuthHttpsOrigin + "/login");
+        await expect(login.getByTestId("password-signin-submit")).toBeEnabled();
+        await login.locator('input[inputmode="email"]').fill(email);
+        await login.locator('input[type="password"]').fill(password);
+        loginPhase = "submit_login";
+        await login.getByTestId("password-signin-submit").click();
+        await expectPrivateSalonSetup(login, registered.salon.slug, salonName);
+        await login.waitForLoadState("networkidle");
+        loginPhase = "reload_dashboard";
+        await login.reload();
+        await expectPrivateSalonSetup(login, registered.salon.slug, salonName);
+        const afterLogin = await getRegisteredSalonForUser(user!.id);
+        expect(afterLogin.salon.id).toBe(registered.salon.id);
+        expect(afterLogin.memberRole).toBe("owner");
+        expect(afterLogin.salon.trial_started_at).toBe(registered.salon.trial_started_at);
+        expect(afterLogin.salon.trial_ends_at).toBe(registered.salon.trial_ends_at);
+        const memberships = await admin.from("salon_members")
+          .select("salon_id", { count: "exact" }).eq("user_id", user!.id);
+        expect(memberships.error).toBeNull();
+        expect(memberships.count).toBe(1);
+        await test.info().attach("returning-owner-worker-diagnostics", {
+          body: JSON.stringify(workerRequests), contentType: "application/json",
+        });
+        expect(loginErrors).toEqual([]);
+      }, () => returning.close());
     }, async () => {
       await test.info().attach("auth-browser-diagnostics", {
         body: JSON.stringify(browserDiagnostics),

@@ -16,6 +16,7 @@ import { looseServiceClient, type Row } from "./looseDb";
 import { parseCardGateRules, cardRequiredFull } from "@/shared/noshow/cardGateRules";
 import { resolvePaymentProvider } from "@/shared/integrations/payments";
 import { createServiceRoleClient } from "@/shared/lib/supabase/serviceRole";
+import { toCanonicalPhone } from "@/shared/lib/toCanonicalPhone";
 import {
   createPaymentLink,
   getOrder,
@@ -293,11 +294,12 @@ export async function reuseNoShowCardForBooking(
   if (isCardCapturePaused()) return { ok: false, reason: "card_capture_paused" };
   if (!consent) return { ok: false, reason: "consent required" };
   if (!otpSessionId) return { ok: false, reason: "otp required" };
+  if (!UUID_RE.test(bookingId) || !UUID_RE.test(otpSessionId)) return { ok: false, reason: "otp invalid" };
 
   const db = looseServiceClient();
   const { data } = await db
     .from("bookings")
-    .select("id, salon_id, client_phone, noshow_card_id, card_protection_status")
+    .select("id, salon_id, client_phone, noshow_card_id, card_protection_status, otp_session_id")
     .eq("id", bookingId)
     .maybeSingle();
   const b = data as Row | null;
@@ -324,23 +326,38 @@ export async function reuseNoShowCardForBooking(
     return { ok: false, reason: "no-show policy not ready" };
   }
 
-  // OTP gate: session must exist, match THIS salon, be unconsumed + unexpired,
-  // and its verified phone must equal the booking's phone.
+  // The atomic create may already have consumed this SMS proof. Reuse may
+  // accept that proof only for its exact booking; it never authorizes another
+  // appointment. Unconsumed proofs still require their original active TTL.
   const sb = createServiceRoleClient();
-  const { data: sessRow } = await sb
+  const { data: sessRow, error: sessionError } = await sb
     .from("phone_otp_sessions" as never)
-    .select("phone, salon_id, expires_at, consumed_at")
+    .select("id, phone, salon_id, verified_at, expires_at, consumed_at, consumed_by_booking_id, verified_channel")
     .eq("id", otpSessionId)
     .maybeSingle();
   const sess = sessRow as
-    | { phone: string; salon_id: string; expires_at: string; consumed_at: string | null }
+    | { id: string; phone: string; salon_id: string; verified_at: string; expires_at: string; consumed_at: string | null; consumed_by_booking_id: string | null; verified_channel?: unknown }
     | null;
-  if (!sess) return { ok: false, reason: "otp invalid" };
+  if (sessionError || !sess || sess.id !== otpSessionId) return { ok: false, reason: "otp invalid" };
+  if (sess.verified_channel !== "sms") return { ok: false, reason: "phone verification required" };
   if (sess.salon_id !== str(b.salon_id)) return { ok: false, reason: "otp salon mismatch" };
-  if (sess.consumed_at) return { ok: false, reason: "otp consumed" };
-  if (Date.parse(sess.expires_at) < Date.now()) return { ok: false, reason: "otp expired" };
-  const sessionPhone = (sess.phone || "").replace(/\D/g, "");
-  const bookingPhone = str(b.client_phone).replace(/\D/g, "");
+  const now = Date.now();
+  const verifiedAt = Date.parse(sess.verified_at);
+  const expiresAt = Date.parse(sess.expires_at);
+  if (!Number.isFinite(verifiedAt) || !Number.isFinite(expiresAt) || verifiedAt > now || verifiedAt >= expiresAt) {
+    return { ok: false, reason: "otp invalid" };
+  }
+  if (sess.consumed_at !== null) {
+    const consumedAt = Date.parse(sess.consumed_at);
+    if (b.otp_session_id !== otpSessionId || sess.consumed_by_booking_id !== bookingId ||
+      !Number.isFinite(consumedAt) || consumedAt < verifiedAt || consumedAt >= expiresAt || consumedAt > now) {
+      return { ok: false, reason: "otp consumed" };
+    }
+  } else if (sess.consumed_by_booking_id != null || expiresAt <= now) {
+    return { ok: false, reason: "otp expired" };
+  }
+  const sessionPhone = toCanonicalPhone(sess.phone || "");
+  const bookingPhone = toCanonicalPhone(str(b.client_phone));
   if (!sessionPhone || sessionPhone !== bookingPhone) {
     return { ok: false, reason: "otp phone mismatch" };
   }
@@ -388,7 +405,7 @@ export async function autoAttachReturningCard(
     const db = looseServiceClient();
     const { data } = await db
       .from("bookings")
-      .select("id, salon_id, price_cents, client_phone, noshow_card_id, card_protection_status, group_id, deposit_required, deposit_status")
+      .select("id, salon_id, price_cents, client_phone, noshow_card_id, card_protection_status, group_id, deposit_required, deposit_status, otp_session_id")
       .eq("id", bookingId)
       .maybeSingle();
     const b = data as Row | null;
@@ -410,6 +427,33 @@ export async function autoAttachReturningCard(
 
     const phone = str(b.client_phone).replace(/\D/g, "");
     if (phone.length < 8) return { attached: false, reason: "no usable phone" };
+
+    // Historical profile contact fields and a booking's declared channel are
+    // not proof that this customer controls the phone. Only a typed SMS proof
+    // atomically consumed by this exact booking can authorize automatic reuse.
+    // Email-only, legacy, OTP-off and staff-attested bookings retain new-card
+    // capture; an owner may separately use an explicitly authorized workflow.
+    const sessionId = str(b.otp_session_id);
+    if (!UUID_RE.test(sessionId)) return { attached: false, reason: "phone ownership proof required" };
+    const { data: sessionRow, error: sessionError } = await db
+      .from("phone_otp_sessions")
+      .select("id, salon_id, phone, verified_channel, verified_at, expires_at, consumed_at, consumed_by_booking_id")
+      .eq("id", sessionId)
+      .eq("salon_id", str(b.salon_id))
+      .maybeSingle();
+    const session = sessionRow as Row | null;
+    const verifiedAt = Date.parse(str(session?.verified_at));
+    const consumedAt = Date.parse(str(session?.consumed_at));
+    const expiresAt = Date.parse(str(session?.expires_at));
+    if (
+      sessionError || !session ||
+      session.id !== sessionId || session.salon_id !== b.salon_id ||
+      session.verified_channel !== "sms" ||
+      str(session.phone).replace(/\D/g, "") !== phone ||
+      session.consumed_by_booking_id !== b.id ||
+      !Number.isFinite(verifiedAt) || !Number.isFinite(consumedAt) || !Number.isFinite(expiresAt) ||
+      consumedAt < verifiedAt || consumedAt >= expiresAt
+    ) return { attached: false, reason: "phone ownership proof required" };
 
     const policy = await loadPolicy(db, str(b.salon_id));
     if (!policy.enabled) return { attached: false, reason: "no-show protection off" };

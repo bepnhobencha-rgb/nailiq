@@ -33,6 +33,7 @@ export const publicBookingQuoteRequestSchema = z
     clientPhone: z.string().regex(/^\d{7,15}$/),
     clientEmail: z.string().email().max(254).nullable().optional().default(null),
     applyEmailDiscount: z.boolean().default(false),
+    otpSessionId: UUID.nullable().optional().default(null),
   })
   .strict()
   .superRefine((value, ctx) => {
@@ -63,6 +64,7 @@ type QuoteFailure = {
   code:
     | "invalid_request"
     | "voucher_invalid"
+    | "phone_verification_required"
     | "quote_unavailable"
     | "pricing_invalid";
 };
@@ -123,6 +125,7 @@ export async function resolvePublicBookingQuote(
       p_apply_email_discount:
         request.applyEmailDiscount && request.clientEmail !== null,
       p_lock_claims: false,
+      p_otp_session_id: request.otpSessionId,
     } as never,
   );
   if (error || data == null) return { ok: false, code: "quote_unavailable" };
@@ -136,7 +139,9 @@ export async function resolvePublicBookingQuote(
     return {
       ok: false,
       code:
-        (raw as { code?: unknown }).code === "voucher_invalid"
+        (raw as { code?: unknown }).code === "phone_verification_required"
+          ? "phone_verification_required"
+          : (raw as { code?: unknown }).code === "voucher_invalid"
           ? "voucher_invalid"
           : "quote_unavailable",
     };

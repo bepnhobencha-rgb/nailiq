@@ -130,19 +130,35 @@ export class StripeProvider implements PaymentProvider {
     return { refundId: r.id, status: r.status ?? "" };
   }
 
-  async removeSavedCard(input: { cardId: string; customerId: string }) {
+  async removeSavedCard(input: Parameters<PaymentProvider["removeSavedCard"]>[0]) {
+    // Outside the provider fallback catch: a denied preparation cannot issue a GET.
+    await input.beforeRemovalDispatch?.({ provider: "stripe" });
+    const isMatchingCard = (value: unknown): value is Stripe.PaymentMethod =>
+      !!value && typeof value === "object" && !Array.isArray(value)
+      && (value as Stripe.PaymentMethod).object === "payment_method"
+      && (value as Stripe.PaymentMethod).type === "card"
+      && (value as Stripe.PaymentMethod).id === input.cardId;
+    const confirmsRemoval = (value: unknown): boolean =>
+      isMatchingCard(value) && value.customer === null;
     // Detach is retried only under the DB-owned operation id. If the first
     // response was lost, retrieve the exact PaymentMethod and accept only the
     // authoritative already-detached state (customer=null).
     try {
       const current = await this.stripe.paymentMethods.retrieve(input.cardId);
-      if (current.customer == null) return { providerReference: current.id };
+      if (!isMatchingCard(current)) throw new Error("stripe_invalid_card_removal_receipt");
+      if (confirmsRemoval(current)) return { providerReference: input.cardId };
+      const boundCustomerId = typeof current.customer === "string"
+        ? current.customer : current.customer?.id;
+      if (!input.customerId || boundCustomerId !== input.customerId) {
+        throw new Error("stripe_card_customer_mismatch");
+      }
       const removed = await this.stripe.paymentMethods.detach(input.cardId);
-      return { providerReference: removed.id };
+      if (!confirmsRemoval(removed)) throw new Error("stripe_invalid_card_removal_receipt");
+      return { providerReference: input.cardId };
     } catch (cause) {
       try {
         const current = await this.stripe.paymentMethods.retrieve(input.cardId);
-        if (current.customer == null) return { providerReference: current.id };
+        if (confirmsRemoval(current)) return { providerReference: input.cardId };
       } catch {
         // The provider state is still ambiguous; do not report success.
       }

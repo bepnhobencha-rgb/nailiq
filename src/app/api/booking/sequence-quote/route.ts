@@ -75,6 +75,8 @@ export async function POST(request: NextRequest) {
         result,
         result.code === "invalid_request"
           ? 400
+          : result.code === "phone_verification_required"
+            ? 403
           : result.code === "quote_unavailable"
             ? 503
             : 409,

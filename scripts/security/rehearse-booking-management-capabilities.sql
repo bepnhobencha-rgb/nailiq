@@ -96,7 +96,7 @@ DECLARE v_confirm uuid; v_reschedule uuid; v_cancel uuid; v_past uuid; v_fee_cap
   v_group uuid; v_result jsonb; v_replay jsonb; v_before bigint; v_after bigint;
   v_member_confirm uuid; v_member_cancel uuid; v_org_confirm uuid;
   v_card_consent jsonb:=jsonb_build_object('policyVersion','nsp_'||repeat('a',64),'scope','booking_member','policyEn','QA consent','policyVi','QA consent','feeCents',0);
-  v_card uuid; v_card_claim jsonb; v_card_save uuid; v_card_setup uuid; v_card_finalize uuid;
+  v_card uuid; v_card_claim jsonb; v_customer_claim jsonb; v_card_save uuid; v_card_setup uuid; v_card_finalize uuid;
   v_card_exchange uuid;
   v_wait_token uuid; v_near_reschedule uuid;
   v_request uuid:='d6000000-0000-4000-8000-000000000080'; v_i integer;
@@ -364,8 +364,25 @@ BEGIN
   END IF;
   PERFORM public.prepare_booking_card_save_dispatch((v_card_claim->>'operation_id')::uuid,
     (v_card_claim->>'attempt_token')::uuid,transaction_timestamp(),v_card_consent);
-  PERFORM public.bind_booking_card_save_dispatch((v_card_claim->>'operation_id')::uuid,
+  v_result:=public.bind_booking_card_save_dispatch((v_card_claim->>'operation_id')::uuid,
     (v_card_claim->>'attempt_token')::uuid,'customer_saved_d600','merchant_qa','sandbox');
+  IF v_result->>'code' IS DISTINCT FROM 'customer_identity_unverified' THEN
+    RAISE EXCEPTION 'square save accepted customer without identity authority';
+  END IF;
+  v_result:=public.bind_booking_card_provider_identity((v_card_claim->>'operation_id')::uuid,
+    (v_card_claim->>'attempt_token')::uuid,'merchant_qa','sandbox');
+  IF v_result->>'ok' IS DISTINCT FROM 'true' THEN RAISE EXCEPTION 'provider identity fixture failed'; END IF;
+  v_customer_claim:=public.claim_square_card_customer((v_card_claim->>'operation_id')::uuid,
+    (v_card_claim->>'attempt_token')::uuid);
+  IF v_customer_claim->>'code' IS DISTINCT FROM 'claimed_v2' THEN RAISE EXCEPTION 'customer identity fixture claim failed'; END IF;
+  -- Synthetic read receipt only; this SQL rehearsal has no provider transport.
+  v_result:=public.complete_square_card_customer((v_card_claim->>'operation_id')::uuid,
+    (v_card_claim->>'attempt_token')::uuid,(v_customer_claim->>'claim_id')::uuid,
+    (v_customer_claim->>'lease_token')::uuid,'found','customer_saved_d600');
+  IF v_result->>'code' IS DISTINCT FROM 'known' THEN RAISE EXCEPTION 'customer identity fixture receipt failed'; END IF;
+  v_result:=public.bind_booking_card_save_dispatch((v_card_claim->>'operation_id')::uuid,
+    (v_card_claim->>'attempt_token')::uuid,'customer_saved_d600','merchant_qa','sandbox');
+  IF v_result->>'ok' IS DISTINCT FROM 'true' THEN RAISE EXCEPTION 'customer identity fixture binding failed'; END IF;
   UPDATE public.booking_card_save_operations SET next_reconcile_at=transaction_timestamp()-interval '1 minute',
     created_at=transaction_timestamp()-interval '10 minutes'
   WHERE id=(v_card_claim->>'operation_id')::uuid;

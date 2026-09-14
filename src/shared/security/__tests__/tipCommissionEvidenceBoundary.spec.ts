@@ -1,3 +1,4 @@
+import { assertReleaseSchemaContract } from "@/shared/security/__tests__/releaseSchemaContract";
 import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
 import { describe, expect, it } from "vitest";
@@ -52,12 +53,6 @@ describe("MQA-0116/MQA-0118 tip and commission evidence boundary", () => {
 
   it("keeps the exact schema/grant tripwire current", () => {
     const parity = read("scripts/check-schema-parity.ts");
-    expect(parity).toContain("tables: 241");
-    expect(parity).toContain("columns: 3734");
-    expect(parity).toContain("policies: 221");
-    expect(parity).toContain("functions: 560");
-    expect(parity).toContain("triggers: 161");
-    expect(parity).toContain("indexes: 992");
-    expect(parity).toContain("service_role: 228");
+    assertReleaseSchemaContract(parity);
   });
 });

@@ -50,6 +50,7 @@ export function BookingFlowConfirmPanel({
   selectedAddonsTotalMin,
   error,
   submitting,
+  materialLocked = false,
   stepDir,
   reducedMotion,
   stepTransition,
@@ -74,6 +75,7 @@ export function BookingFlowConfirmPanel({
   smsConsentRequired = true,
 }: {
   t: BookingMessages;
+  materialLocked?: boolean;
   shopLabel: string;
   shopSlug: string;
   /** When set, a mandatory health-acknowledgment tick is shown and gates confirm. */
@@ -134,7 +136,17 @@ export function BookingFlowConfirmPanel({
   // Option A no-show card gate.
   const cardRequired = cardRequirement?.required === true;
   const hasSavedCard = savedCard?.hasSavedCard === true;
-  const [noShowConsent, setNoShowConsent] = useState(false);
+  const noShowConsentKey = cardRequirement?.required && pricingQuote && !cardRequirementLoading
+    ? JSON.stringify([pricingQuote.pricingFingerprint, clientPhone, cardRequirement.provider,
+        cardRequirement.locationId, cardRequirement.environment, cardRequirement.feeCents])
+    : null;
+  const [cardConsent, setCardConsent] = useState({ key: noShowConsentKey, accepted: false });
+  // Reset within this render so an old consent cannot enable confirmation,
+  // even for one frame while a different price/customer is being resolved.
+  if (cardConsent.key !== noShowConsentKey) {
+    setCardConsent({ key: noShowConsentKey, accepted: false });
+  }
+  const noShowConsent = noShowConsentKey !== null && cardConsent.key === noShowConsentKey && cardConsent.accepted;
   // Mandatory health-acknowledgment (massage/head spa/facial/waxing). Gates confirm.
   const healthAckOn = Boolean(healthAckText);
   const [healthAck, setHealthAck] = useState(false);
@@ -145,6 +157,8 @@ export function BookingFlowConfirmPanel({
   const cardRef = useRef<ConfirmStepCardHandle>(null);
 
   async function handleConfirm() {
+    if (submitting || pricingQuoteLoading || !pricingQuote || pricingQuoteError ||
+      cardRequirementLoading || (cardRequired && !noShowConsent)) return;
     const ack = healthAckOn ? healthAck : undefined;
     if (cardRequired) {
       cardRef.current?.clearError();
@@ -189,7 +203,7 @@ export function BookingFlowConfirmPanel({
   // silent — they can still book at full price.
   const autoVoucherTried = useRef(false);
   useEffect(() => {
-    if (autoVoucherTried.current || appliedVoucher || baseTotalCents <= 0) return;
+    if (materialLocked || autoVoucherTried.current || appliedVoucher || baseTotalCents <= 0) return;
     const code =
       typeof window !== "undefined"
         ? new URLSearchParams(window.location.search).get("code")?.trim().toUpperCase()
@@ -208,7 +222,7 @@ export function BookingFlowConfirmPanel({
     return () => {
       cancelled = true;
     };
-  }, [appliedVoucher, baseTotalCents, onApplyVoucher]);
+  }, [materialLocked, appliedVoucher, baseTotalCents, onApplyVoucher]);
 
   // Display the actual service time only (no inter-service rest buffer). The
   // buffer still drives scheduling via `selectedAddonsTotalMin`/totalMinutes,
@@ -324,7 +338,7 @@ export function BookingFlowConfirmPanel({
         </div>
 
         {/* Voucher code input */}
-        <div className="mt-5 shrink-0">
+        {!materialLocked ? <div className="mt-5 shrink-0">
           {appliedVoucher ? (
             <div className="flex items-center justify-between rounded-xl border border-[var(--salon-primary)]/40 bg-[color-mix(in_srgb,var(--salon-primary)_10%,transparent)] px-4 py-3">
               <p className="text-sm font-medium text-[var(--booking-text)]">
@@ -363,9 +377,9 @@ export function BookingFlowConfirmPanel({
           {voucherError && (
             <p className="mt-1.5 text-xs text-nq-error" role="alert">{voucherError}</p>
           )}
-        </div>
+        </div> : null}
 
-        {upsellCandidates.length > 0 ? (() => {
+        {!materialLocked && upsellCandidates.length > 0 ? (() => {
           const heading = t.upsellHeading.replace(
             "{n}",
             String(upsellGapMinutes),
@@ -467,7 +481,7 @@ export function BookingFlowConfirmPanel({
         </p>
         {pricingQuoteError ? (
           <p className="mt-6 shrink-0 text-sm text-nq-error" role="alert">
-            {t.pricingUnavailable}
+            {pricingQuoteError === "phone_verification_required" ? t.phoneOfferVerificationRequired : t.pricingUnavailable}
           </p>
         ) : null}
         {pricingReconfirmRequired ? (
@@ -535,6 +549,8 @@ export function BookingFlowConfirmPanel({
               <>
                 <ConfirmStepCardCapture
                   ref={cardRef}
+                  confirmationKey={noShowConsent && (!healthAckOn || healthAck) &&
+                    (!smsConsentRequired || smsConsent) ? noShowConsentKey : null}
                   applicationId={cardRequirement.applicationId}
                   locationId={cardRequirement.locationId}
                   environment={cardRequirement.environment}
@@ -561,7 +577,7 @@ export function BookingFlowConfirmPanel({
                 type="checkbox"
                 data-testid="confirm-noshow-consent"
                 checked={noShowConsent}
-                onChange={(e) => setNoShowConsent(e.target.checked)}
+                onChange={(e) => setCardConsent({ key: noShowConsentKey, accepted: e.target.checked })}
                 className="mt-0.5 h-4 w-4 shrink-0 accent-[var(--salon-primary)]"
               />
               <span>
@@ -593,7 +609,7 @@ export function BookingFlowConfirmPanel({
             type="button"
             variant="secondary"
             className="nq-booking-glass h-14 min-h-11 w-full shrink-0 border border-[var(--booking-border)] bg-transparent text-[var(--booking-text-muted)] shadow-none hover:bg-[var(--booking-bg-input)] disabled:cursor-not-allowed disabled:opacity-40 sm:w-auto sm:min-w-[8.5rem]"
-            disabled={submitting}
+            disabled={submitting || materialLocked}
             onClick={onBack}
           >
             {t.back}

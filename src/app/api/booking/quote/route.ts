@@ -123,7 +123,9 @@ export async function POST(request: NextRequest) {
     ? 200
     : result.code === "invalid_request"
       ? 400
-      : result.code === "voucher_invalid"
+      : result.code === "phone_verification_required"
+        ? 403
+        : result.code === "voucher_invalid"
         ? 422
         : 503;
   return NextResponse.json(result, {

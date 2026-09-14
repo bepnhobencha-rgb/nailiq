@@ -1,3 +1,4 @@
+import { assertReleaseSchemaContract } from "@/shared/security/__tests__/releaseSchemaContract";
 import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
 import { describe, expect, it } from "vitest";
@@ -85,14 +86,6 @@ describe("salon organization multi-location boundary", () => {
 
   it("updates the full candidate schema parity tripwire", () => {
     const parity = read("scripts/check-schema-parity.ts");
-    expect(parity).toContain("tables: 241");
-    expect(parity).toContain("columns: 3734");
-    expect(parity).toContain("policies: 221");
-    expect(parity).toContain("functions: 560");
-    expect(parity).toContain("triggers: 161");
-    expect(parity).toContain("indexes: 992");
-    expect(parity).toContain(
-      "const GRANTS = { anon: 56, authenticated: 78, service_role: 228 }",
-    );
+    assertReleaseSchemaContract(parity);
   });
 });

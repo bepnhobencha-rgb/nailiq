@@ -1,3 +1,4 @@
+import { assertReleaseSchemaContract } from "@/shared/security/__tests__/releaseSchemaContract";
 import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
 import { describe, expect, it } from "vitest";
@@ -60,7 +61,7 @@ describe("group wave strategy database boundary", () => {
 
   it("advances the blank-database schema tripwire for the base and view columns", () => {
     expect(parity).toContain("20260830023823 Smart Wave strategy migration");
-    expect(parity).toContain("columns: 3734");
+    assertReleaseSchemaContract(parity);
   });
 
   it("keeps the emergency public-view rollback complete", () => {

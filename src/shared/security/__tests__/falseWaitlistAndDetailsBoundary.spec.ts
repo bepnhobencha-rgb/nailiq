@@ -70,10 +70,10 @@ describe("False Waitlist and private customer detail boundary", () => {
     expect(auditDefinition).not.toContain("client_phone");
     expect(auditDefinition).not.toContain("client_email");
     expect(publicRpcGrantCheck).toContain(
-      "('public.create_public_capacity_rescue_request_v2(uuid,uuid,text,uuid,uuid,date,text,integer,text,text,text,text,jsonb,text)', false, false)",
+      "('public.create_public_capacity_rescue_request_v2(uuid,uuid,text,uuid,uuid,date,text,integer,text,text,text,text,jsonb,text)', false, false, true)",
     );
     expect(publicRpcGrantCheck).toContain(
-      "('public.evaluate_individual_waitlist_capacity(uuid,uuid,uuid,date,text)', false, false)",
+      "('public.evaluate_individual_waitlist_capacity(uuid,uuid,uuid,date,text)', false, false, true)",
     );
   });
 
@@ -110,10 +110,10 @@ describe("False Waitlist and private customer detail boundary", () => {
     expect(migration).not.toContain("pg_catalog.coalesce");
     expect(migration).toContain("NULLIF(pg_catalog.btrim(NEW.source), '')");
     expect(publicRpcGrantCheck).toContain(
-      "('public.create_public_capacity_rescue_request(uuid,uuid,text,uuid,uuid,date,text,integer,text,text,text,text,jsonb)', false, false)",
+      "('public.create_public_capacity_rescue_request(uuid,uuid,text,uuid,uuid,date,text,integer,text,text,text,text,jsonb)', false, false, true)",
     );
     expect(publicRpcGrantCheck).toContain(
-      "('public.create_public_waitlist_entry(uuid,uuid,uuid,date,text,text,text,text,text)', false, false)",
+      "('public.create_public_waitlist_entry(uuid,uuid,uuid,date,text,text,text,text,text)', false, false, true)",
     );
   });
 

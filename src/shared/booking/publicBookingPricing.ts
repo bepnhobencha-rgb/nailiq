@@ -73,6 +73,7 @@ export type PublicBookingQuoteRequest = {
   clientPhone: string;
   clientEmail?: string | null;
   applyEmailDiscount: boolean;
+  otpSessionId?: string | null;
 };
 
 export class PublicBookingQuoteError extends Error {
@@ -91,6 +92,7 @@ export type PublicBookingPricingKeyInput = Pick<
   | "clientPhone"
   | "clientEmail"
   | "applyEmailDiscount"
+  | "otpSessionId"
 > & {
   shopSlug: string;
   staffId: string;
@@ -115,6 +117,7 @@ export function buildPublicBookingPricingQuoteKey(
     combo: input.comboId ?? null,
     voucher: input.voucherCode?.trim().toUpperCase() || null,
     emailDiscount: input.applyEmailDiscount,
+    otpSessionId: input.otpSessionId ?? null,
   });
 }
 

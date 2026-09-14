@@ -12,6 +12,7 @@ import {
 } from "@/shared/booking/groupBookingApiBoundary";
 import { serializeGroupBookingPricingQuote } from "@/shared/booking/groupBookingPricing";
 import { ensureNoShowCardRequirement } from "@/shared/noshow/ensureNoShowCardRequirement";
+import { committedCardRecoveryHref } from "@/shared/booking/committedCardRecovery";
 import { mintBookingManagementCapability } from "@/shared/booking/bookingManagementCapabilities";
 import { saveCardWithManagementCapability } from "@/shared/booking/bookingCardManagement";
 import {
@@ -104,6 +105,8 @@ export async function POST(request: NextRequest) {
           stage: pendingStage,
           reason: pendingReason,
         });
+        pendingStage = "capability";
+        pendingReason = "capability_unavailable";
         const capability = await mintBookingManagementCapability({
           salonId: parsed.data.salonId,
           bookingId: result.bookingIds[0],
@@ -131,8 +134,6 @@ export async function POST(request: NextRequest) {
       // null so the UI never falls back to naked booking-id authorization.
       cardManagementToken = null;
       cardManagementPending = true;
-      pendingStage = "assessment";
-      pendingReason = "assessment_unavailable";
     }
   }
   if (result.ok && !cardManagementPending && cardManagementToken && parsed.data.cardSourceId) {
@@ -176,6 +177,8 @@ export async function POST(request: NextRequest) {
     ? 200
     : result.code === "invalid_request"
       ? 400
+      : result.code === "phone_verification_required"
+        ? 403
       : result.code === "voucher_invalid" || result.code === "pricing_changed"
         ? 409
         : result.code === "idempotency_conflict" ||
@@ -195,6 +198,11 @@ export async function POST(request: NextRequest) {
         // ensureNoShowCardRequirement, so reporting a false create failure here
         // would invite the customer to submit the same party again.
         cardManagementPending,
+        cardManagementRecoveryHref: cardManagementPending && !cardManagementToken
+          ? committedCardRecoveryHref({ salonId: parsed.data.salonId,
+              bookingId: result.bookingIds[0], idempotencyKey: parsed.data.idempotencyKey,
+              pricingFingerprint: result.pricing.pricingFingerprint })
+          : null,
         pricing: serializeGroupBookingPricingQuote(result.pricing),
       }
     : result.code === "pricing_changed" && result.quote

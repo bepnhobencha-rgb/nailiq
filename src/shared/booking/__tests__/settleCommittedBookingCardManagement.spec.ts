@@ -18,6 +18,11 @@ function jsonResponse(body: unknown, status = 200): Response {
 }
 
 describe("committed booking card-only continuation", () => {
+  it("keeps a missing capability unresolved even when no source was held", async () => {
+    await expect(settleCommittedBookingCardManagement(baseInput, vi.fn(async () => jsonResponse({ ok: true, required: true, token: null })))).resolves.toEqual({
+      cardManagementToken: null, cardManagementPending: true,
+    });
+  });
   it("treats card management as not applicable while the V1 gateway is hard off", async () => {
     const fetcher = vi.fn();
 

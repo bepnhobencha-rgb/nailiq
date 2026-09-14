@@ -2,6 +2,8 @@ import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
 import { describe, expect, it } from "vitest";
 
+import { readCardManagementRoute } from "@/shared/security/__tests__/readCardManagementRoute";
+
 import {
   V1_INTEGRATION_SCOPE,
   v1AllowsArchivedBookingRecovery,
@@ -50,10 +52,7 @@ describe("NailIQ V1 integration scope", () => {
       resolve(process.cwd(), "src/shared/noshow/ensureNoShowCardRequirement.ts"),
       "utf8",
     );
-    const cardCapability = readFileSync(
-      resolve(process.cwd(), "src/app/api/booking/card-capability/route.ts"),
-      "utf8",
-    );
+    const cardCapability = readCardManagementRoute("src/app/api/booking/card-capability/route.ts");
     const preBookingRequirement = readFileSync(
       resolve(process.cwd(), "src/shared/noshow/resolveNoShowCardRequirement.ts"),
       "utf8",
@@ -62,14 +61,7 @@ describe("NailIQ V1 integration scope", () => {
       resolve(process.cwd(), "src/components/booking/useBookingFlowState.ts"),
       "utf8",
     );
-    const groupBookingFlow = readFileSync(
-      resolve(process.cwd(), "src/components/booking/BookingGroupFlow.tsx"),
-      "utf8",
-    );
-    const squareCardMutation = readFileSync(
-      resolve(process.cwd(), "src/app/api/booking/square-save-card/route.ts"),
-      "utf8",
-    );
+    const squareCardMutation = readCardManagementRoute("src/app/api/booking/square-save-card/route.ts");
     const stripeCardMutation = readFileSync(
       resolve(process.cwd(), "src/app/api/booking/stripe-setup-intent/route.ts"),
       "utf8",
@@ -93,9 +85,8 @@ describe("NailIQ V1 integration scope", () => {
     expect(individualBookingFlow).toMatch(
       /CUSTOMER_PAYMENT_GATEWAY_ENABLED\s*&&[\s\S]*step\s*===\s*["']confirm["'][\s\S]*resolveNoShowCardRequirement/u,
     );
-    expect(groupBookingFlow).toMatch(
-      /if\s*\(\s*!CUSTOMER_PAYMENT_GATEWAY_ENABLED\s*\|\|\s*step\s*!==\s*5\s*\)[\s\S]*resolveNoShowCardRequirement/u,
-    );
+    // Group confirmation is covered by BookingGroupCardRequirementGate.spec.ts:
+    // execute the component's flag, quote-binding and fresh-consent behavior.
     expect(squareCardMutation).toMatch(
       /v1AllowsNoShowCardOnFile\(\)[\s\S]*phase_2_not_available[\s\S]*consumeBookingManagementRateLimit/u,
     );

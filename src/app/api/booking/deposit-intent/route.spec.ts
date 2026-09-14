@@ -377,7 +377,7 @@ describe("POST /api/booking/deposit-intent Sellable-V1 boundary", () => {
   ] as const)("fails closed when durable meter %i returns %s", async (blockedMeter, mode) => {
     let meter = 0;
     mocks.rpc.mockImplementation(async (name: string) => {
-      if (name === "validate_phone_otp_session") return { data: true, error: null };
+      if (name === "validate_booking_otp_session") return { data: true, error: null };
       if (name === "load_public_deposit_payment_material") return {
         data: {
           success: true,
@@ -409,7 +409,7 @@ describe("POST /api/booking/deposit-intent Sellable-V1 boundary", () => {
         rateArgs.push(args);
         return { data: true, error: null };
       }
-      if (name === "validate_phone_otp_session") return { data: true, error: null };
+      if (name === "validate_booking_otp_session") return { data: true, error: null };
       if (name === "load_public_deposit_payment_material") return {
         data: {
           success: true,
@@ -441,12 +441,26 @@ describe("POST /api/booking/deposit-intent Sellable-V1 boundary", () => {
     expect(String(rateArgs[2]?.p_key)).toMatch(/^public-deposit-intent:salon:[0-9a-f]{64}$/);
     expect(String(rateArgs[4]?.p_key)).toMatch(/^public-deposit-intent:phone:[0-9a-f]{64}$/);
     expect(String(rateArgs[5]?.p_key)).toMatch(/^public-deposit-intent:intent:[0-9a-f]{64}$/);
-    expect(rpcNames.indexOf("validate_phone_otp_session"))
+    expect(rpcNames.indexOf("validate_booking_otp_session"))
       .toBeLessThan(rpcNames.indexOf("load_public_deposit_payment_material"));
     expect(rpcNames.indexOf("load_public_deposit_payment_material"))
       .toBeLessThan(rpcNames.indexOf("claim_public_deposit_payment_operation"));
     expect(mocks.createIntent).not.toHaveBeenCalled();
   });
+
+  it.each(["not-a-uuid", 42, {}, `${OTP_SESSION_ID}extra`])(
+    "rejects malformed optional phone proof before pricing or provider dispatch: %j",
+    async (otpSessionId) => {
+      mocks.rpc.mockResolvedValue({ data: true, error: null });
+      const response = await POST(request(body({ otpSessionId })));
+      expect(response.status).toBe(400);
+      expect(await response.json()).toEqual({ error: "bad_request" });
+      expect(mocks.from).not.toHaveBeenCalled();
+      expect(mocks.rpc.mock.calls.every(([name]) => name === "rate_limit_hit")).toBe(true);
+      expect(mocks.createIntent).not.toHaveBeenCalled();
+      expect(mocks.chargeCardToken).not.toHaveBeenCalled();
+    },
+  );
 
   it.each([
     ["missing", { otpSessionId: undefined }],
@@ -456,7 +470,7 @@ describe("POST /api/booking/deposit-intent Sellable-V1 boundary", () => {
   ] as const)("rejects a %s OTP session before canonical material or provider", async (_case, extra) => {
     mocks.rpc.mockImplementation(async (name: string) => {
       if (name === "rate_limit_hit") return { data: true, error: null };
-      if (name === "validate_phone_otp_session") return { data: false, error: null };
+      if (name === "validate_booking_otp_session") return { data: false, error: null };
       return { data: [{ is_vip: false }], error: null };
     });
 
@@ -466,12 +480,42 @@ describe("POST /api/booking/deposit-intent Sellable-V1 boundary", () => {
     expect(JSON.stringify(await response.json())).not.toMatch(/consumed|expired|cross.?salon|phone_otp_sessions/i);
   });
 
+  it.each(["quote_rejected", "proof_expired_before_claim"])(
+    "returns phone verification required without provider work: %s",
+    async (scenario) => {
+      mocks.from.mockImplementation((table: string) => table === "salons"
+        ? query({ data: { id: SALON_ID, phone_otp_enabled: false } })
+        : query({ data: null }));
+      mocks.rpc.mockImplementation(async (name: string) => {
+        if (name === "rate_limit_hit") return { data: true, error: null };
+        if (name === "load_public_deposit_payment_material" && scenario === "proof_expired_before_claim") {
+          return { data: { success: true, code: "material_loaded", material_fingerprint: "e".repeat(64), material: publicMaterial() }, error: null };
+        }
+        if (["load_public_deposit_payment_material", "claim_public_deposit_payment_operation"].includes(name)) {
+          return { data: { success: false, code: "phone_verification_required" }, error: null };
+        }
+        throw new Error(`forbidden dispatch ${name}`);
+      });
+      const response = await POST(request(body({ applyEmailDiscount: true })));
+      expect(response.status).toBe(403);
+      expect(await response.json()).toEqual({ error: "phone_verification_required" });
+      expect(mocks.rpc).toHaveBeenCalledWith("load_public_deposit_payment_material",
+        expect.objectContaining({ p_otp_session_id: OTP_SESSION_ID }));
+      expect(mocks.rpc).toHaveBeenCalledWith("claim_public_deposit_payment_operation",
+        expect.objectContaining({ p_otp_session_id: OTP_SESSION_ID }));
+      expect(mocks.createIntent).not.toHaveBeenCalled();
+      expect(mocks.retrieveIntent).not.toHaveBeenCalled();
+      expect(mocks.getSquareConfig).not.toHaveBeenCalled();
+      expect(mocks.chargeCardToken).not.toHaveBeenCalled();
+    },
+  );
+
   it("lets an exact unconsumed same-salon OTP session reach canonical material without consuming it", async () => {
     const rpcNames: string[] = [];
     mocks.rpc.mockImplementation(async (name: string) => {
       rpcNames.push(name);
       if (name === "rate_limit_hit") return { data: true, error: null };
-      if (name === "validate_phone_otp_session") return { data: true, error: null };
+      if (name === "validate_booking_otp_session") return { data: true, error: null };
       if (name === "load_public_deposit_payment_material") {
         return { data: { success: false, code: "deposit_not_required" }, error: null };
       }
@@ -484,9 +528,9 @@ describe("POST /api/booking/deposit-intent Sellable-V1 boundary", () => {
     const response = await POST(request());
     expect(response.status).toBe(200);
     expect(await response.json()).toEqual({ required: false });
-    expect(rpcNames).toContain("validate_phone_otp_session");
+    expect(rpcNames).toContain("validate_booking_otp_session");
     expect(rpcNames).toContain("load_public_deposit_payment_material");
-    expect(rpcNames.indexOf("validate_phone_otp_session"))
+    expect(rpcNames.indexOf("validate_booking_otp_session"))
       .toBeLessThan(rpcNames.indexOf("load_public_deposit_payment_material"));
     expect(mocks.createIntent).not.toHaveBeenCalled();
   });
@@ -494,7 +538,7 @@ describe("POST /api/booking/deposit-intent Sellable-V1 boundary", () => {
   it("does not mint or retrieve a pending-customer capability for a rotated payment request", async () => {
     mocks.rpc.mockImplementation(async (name: string) => {
       if (name === "rate_limit_hit") return { data: true, error: null };
-      if (name === "validate_phone_otp_session") return { data: true, error: null };
+      if (name === "validate_booking_otp_session") return { data: true, error: null };
       if (name === "load_public_deposit_payment_material") return {
         data: {
           success: true,
@@ -527,6 +571,84 @@ describe("POST /api/booking/deposit-intent Sellable-V1 boundary", () => {
     expect(JSON.stringify(await response.json())).not.toMatch(/finalizeToken|clientSecret/i);
   });
 
+  it("does not spend a reconciliation lease when expired proof prevents provider work", async () => {
+    mocks.from.mockImplementation((table: string) => table === "salons"
+      ? query({ data: { id: SALON_ID, phone_otp_enabled: false } }) : query({ data: null }));
+    mocks.rpc.mockImplementation(async (name: string) => {
+      if (name === "rate_limit_hit") return { data: true, error: null };
+      if (name === "load_public_deposit_payment_material") return { data: { success: false, code: "phone_verification_required" }, error: null };
+      if (name === "claim_public_deposit_payment_operation") return { data: {
+        success: false, code: "reconciliation_required", status: "unknown", operation_id: OPERATION_ID,
+        material_fingerprint: FP, material: publicMaterial(),
+      }, error: null };
+      throw new Error(`forbidden lease or provider action ${name}`);
+    });
+    const response = await POST(request(body({ applyEmailDiscount: true })));
+    expect(response.status).toBe(503);
+    expect(await response.json()).toEqual({ error: "deposit_pending" });
+    expect(mocks.rpc.mock.calls.map(([name]) => name)).not.toContain("claim_booking_payment_operation_reconciliation");
+    expect(mocks.createIntent).not.toHaveBeenCalled();
+    expect(mocks.retrieveIntent).not.toHaveBeenCalled();
+    expect(mocks.chargeCardToken).not.toHaveBeenCalled();
+  });
+
+  it.each(["stripe", "square"])("does not redispatch a claimed %s attempt after incentive proof failed", async (provider) => {
+    mocks.from.mockImplementation((table: string) => table === "salons"
+      ? query({ data: { id: SALON_ID, phone_otp_enabled: false } }) : query({ data: null }));
+    mocks.rpc.mockImplementation(async (name: string) => {
+      if (name === "rate_limit_hit") return { data: true, error: null };
+      if (name === "load_public_deposit_payment_material") return { data: { success: false, code: "phone_verification_required" }, error: null };
+      if (name === "claim_public_deposit_payment_operation") return { data: {
+        success: true, code: "attempt_replay", status: "sending", operation_id: OPERATION_ID,
+        attempt_token: ATTEMPT_ID, provider_idempotency_key: `nq:${OPERATION_ID}`,
+        lease_expires_at: "2026-08-20T22:00:00.000Z", attempt_count: 1,
+        material_fingerprint: FP, material: provider === "square" ? squareMaterial() : publicMaterial(),
+      }, error: null };
+      throw new Error(`forbidden expired-proof dispatch ${name}`);
+    });
+    const response = await POST(request(body({ applyEmailDiscount: true })));
+    expect(response.status).toBe(503);
+    expect(await response.json()).toEqual({ error: "deposit_pending" });
+    expect(mocks.createIntent).not.toHaveBeenCalled();
+    expect(mocks.retrieveIntent).not.toHaveBeenCalled();
+    expect(mocks.getSquareConfig).not.toHaveBeenCalled();
+    expect(mocks.chargeCardToken).not.toHaveBeenCalled();
+    expect(mocks.rpc.mock.calls.map(([name]) => name)).not.toContain("issue_public_square_deposit_capability");
+  });
+
+  it.each(["requires_action", "succeeded"])("expired incentive proof allows only a read of the existing Stripe intent: %s", async (status) => {
+    mocks.from.mockImplementation((table: string) => table === "salons"
+      ? query({ data: { id: SALON_ID, phone_otp_enabled: false } }) : query({ data: null }));
+    mocks.retrieveIntent.mockResolvedValue({ id: "pi_test_receipt", client_secret: "secret", status });
+    mocks.rpc.mockImplementation(async (name: string) => {
+      if (name === "rate_limit_hit") return { data: true, error: null };
+      if (name === "load_public_deposit_payment_material") return { data: { success: false, code: "phone_verification_required" }, error: null };
+      if (name === "claim_public_deposit_payment_operation") return { data: {
+        success: true, code: "customer_confirmation_pending", status: "pending_customer",
+        operation_id: OPERATION_ID, provider_payment_id: "pi_test_receipt", material_fingerprint: FP, material: publicMaterial(),
+      }, error: null };
+      if (name === "resume_public_deposit_customer_confirmation" && status === "succeeded") return { data: {
+        success: true, code: "provider_reconciliation_claimed", attempt_token: ATTEMPT_ID,
+      }, error: null };
+      if (name === "complete_booking_payment_operation" && status === "succeeded") return { data: {
+        success: true, code: "succeeded_unbound",
+      }, error: null };
+      throw new Error(`forbidden expired-proof action ${name}`);
+    });
+    const response = await POST(request(body({ applyEmailDiscount: true })));
+    if (status === "succeeded") {
+      expect(response.status).toBe(200);
+      expect(await response.json()).toMatchObject({ paymentCompleted: true, operationId: OPERATION_ID });
+    } else {
+      expect(response.status).toBe(403);
+      expect(await response.json()).toEqual({ error: "phone_verification_required" });
+      expect(mocks.rpc.mock.calls.map(([name]) => name)).not.toContain("resume_public_deposit_customer_confirmation");
+    }
+    expect(mocks.retrieveIntent).toHaveBeenCalledTimes(1);
+    expect(mocks.createIntent).not.toHaveBeenCalled();
+    expect(mocks.chargeCardToken).not.toHaveBeenCalled();
+  });
+
   it("accepts a succeeded-unbound Stripe completion after customer confirmation", async () => {
     mocks.retrieveIntent.mockResolvedValue({
       id: "pi_test_receipt",
@@ -535,7 +657,7 @@ describe("POST /api/booking/deposit-intent Sellable-V1 boundary", () => {
     });
     mocks.rpc.mockImplementation(async (name: string) => {
       if (name === "rate_limit_hit") return { data: true, error: null };
-      if (name === "validate_phone_otp_session") return { data: true, error: null };
+      if (name === "validate_booking_otp_session") return { data: true, error: null };
       if (name === "load_public_deposit_payment_material") return {
         data: {
           success: true,
@@ -616,7 +738,7 @@ describe("POST /api/booking/deposit-intent Sellable-V1 boundary", () => {
     let completed = false;
     mocks.rpc.mockImplementation(async (name: string, args: Record<string, unknown>) => {
       if (name === "rate_limit_hit") return { data: true, error: null };
-      if (name === "validate_phone_otp_session") return { data: true, error: null };
+      if (name === "validate_booking_otp_session") return { data: true, error: null };
       if (name === "load_public_deposit_payment_material") return {
         data: {
           success: true,

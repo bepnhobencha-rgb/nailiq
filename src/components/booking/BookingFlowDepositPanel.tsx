@@ -66,6 +66,8 @@ type Props = {
   clientPhone: string;
   clientEmail: string | null;
   otpSessionId: string | null;
+  applyEmailDiscount?: boolean;
+  onPhoneVerificationRequired?: () => void;
   /** Localized copy (falls back to English literals when a key is absent). */
   labels?: {
     title?: string;
@@ -94,6 +96,8 @@ export function BookingFlowDepositPanel({
   clientPhone,
   clientEmail,
   otpSessionId,
+  applyEmailDiscount = false,
+  onPhoneVerificationRequired,
   labels,
   onPaid,
   onSkip,
@@ -114,11 +118,11 @@ export function BookingFlowDepositPanel({
     voucherId: pricingQuote.voucherId,
     clientPhone,
     clientEmail,
-    applyEmailDiscount: clientEmail !== null,
+    applyEmailDiscount,
     bookingRequestId,
     expectedPricingFingerprint: pricingQuote.pricingFingerprint,
     otpSessionId,
-  }), [bookingRequestId, clientEmail, clientPhone, otpSessionId, pricingQuote, salonId]);
+  }), [applyEmailDiscount, bookingRequestId, clientEmail, clientPhone, otpSessionId, pricingQuote, salonId]);
 
   useEffect(() => {
     let cancelled = false;
@@ -151,6 +155,10 @@ export function BookingFlowDepositPanel({
         });
         const data = (await res.json()) as IntentResponse | { error: string };
         if (cancelled) return;
+        if (res.status === 403 && "error" in data && data.error === "phone_verification_required" && onPhoneVerificationRequired) {
+          onPhoneVerificationRequired();
+          return;
+        }
         if (!res.ok || "error" in data) {
           // The server owns the deposit decision. An unavailable boundary or
           // provider can never be reinterpreted by the browser as "no deposit".
@@ -187,6 +195,7 @@ export function BookingFlowDepositPanel({
     clientEmail,
     clientPhone,
     onPaid,
+    onPhoneVerificationRequired,
     onSkip,
     otpSessionId,
     pricingQuote,

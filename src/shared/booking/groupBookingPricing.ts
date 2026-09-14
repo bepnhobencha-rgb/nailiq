@@ -82,6 +82,7 @@ export type GroupBookingPricingRequest = {
   clientPhone?: string;
   clientEmail?: string | null;
   applyEmailDiscount: boolean;
+  otpSessionId?: string | null;
 };
 
 /** PostgreSQL and browsers may serialize the same UTC instant differently
@@ -476,6 +477,7 @@ export function groupBookingPricingIntentKey(input: GroupBookingPricingRequest):
     })),
     voucherCode: input.voucherCode?.trim().toUpperCase() || null,
     applyEmailDiscount: input.applyEmailDiscount,
+    otpSessionId: input.otpSessionId ?? null,
   });
 }
 

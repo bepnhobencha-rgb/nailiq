@@ -1,3 +1,4 @@
+import { assertReleaseSchemaContract } from "@/shared/security/__tests__/releaseSchemaContract";
 import fs from "node:fs";
 import path from "node:path";
 import { describe, expect, it } from "vitest";
@@ -46,7 +47,7 @@ describe("Voice session quota and renewal boundary", () => {
     expect(migration).toMatch(
       /revoke all on function public\.release_voice_session_reservation\(uuid\)[\s\S]*from public, anon, authenticated/i,
     );
-    expect(parity).toContain("functions: 560");
+    assertReleaseSchemaContract(parity);
     expect(parity).toContain('"release_voice_session_reservation"');
   });
 

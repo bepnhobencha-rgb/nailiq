@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { createServiceRoleClient } from "@/shared/lib/supabase/serviceRole";
 import { validateGuestPhone } from "@/shared/booking/validateGuestPhone";
 import { consumePublicRequestRateLimit } from "@/shared/security/publicServerActionRateLimit";
+import { hasActivePhoneOwnershipProof } from "@/shared/booking/otpIdentityAssurance";
 
 // GET /api/customer/profile-verified?otp_session_id=&phone=&salon_id=
 // Validates an active (unconsumed, unexpired) OTP session, then returns the
@@ -56,15 +57,20 @@ export async function GET(req: Request) {
   const now = new Date().toISOString();
   const { data: session } = (await supabase
     .from("phone_otp_sessions" as never)
-    .select("id" as never)
+    .select("id, verified_channel, consumed_at, expires_at" as never)
     .eq("id" as never, otpSessionId)
     .eq("phone" as never, phoneDigits)
     .eq("salon_id" as never, salonId)
     .is("consumed_at" as never, null)
     .gt("expires_at" as never, now)
-    .maybeSingle()) as { data: { id: string } | null };
+    .maybeSingle()) as { data: {
+      id: string;
+      verified_channel?: unknown;
+      consumed_at?: unknown;
+      expires_at?: unknown;
+    } | null };
 
-  if (!session) {
+  if (!hasActivePhoneOwnershipProof(session)) {
     return NextResponse.json({ found: false, error: "invalid_session" }, { status: 401 });
   }
 

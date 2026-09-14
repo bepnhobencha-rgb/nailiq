@@ -1,4 +1,6 @@
 "use client";
+import { useRouter } from "next/navigation";
+import { BookingCreateOutcomeUnknownError, BookingCreateRecoveryUnavailableError } from "@/shared/booking/pendingBookingCreate";
 
 import { useCallback, useEffect, useMemo, useRef, useState } from "react";
 import {
@@ -82,6 +84,7 @@ import {
 import { salonTodayCalendarDate } from "@/shared/booking/salonCalendarDate";
 import {
   acknowledgePublicBookingRequestId,
+  rotatePublicBookingRequestId,
   stablePublicBookingRequestId,
   type PublicBookingRequestMaterial,
 } from "@/shared/booking/publicBookingRequestId";
@@ -226,6 +229,7 @@ export function useBookingFlowState(
   // Phone-first: skip the phone step when the gate already captured it.
   // The phone step still exists in the machine, so "back" from service
   // shows the (pre-filled) phone — no navigation refactor needed.
+  const recoveryRouter = useRouter();
   const [step, setStep] = useState<BookingFlowStep>(
     initialPhone.trim() ? "service" : "phone",
   );
@@ -350,7 +354,14 @@ export function useBookingFlowState(
   const [otpVerifiedPhone, setOtpVerifiedPhone] = useState<string | null>(
     initialOtpSessionId ? (initialPhone || null) : null,
   );
+  const [emailDiscountRequested, setEmailDiscountRequested] = useState(false);
+  const [discountVerifying, setDiscountVerifying] = useState(false);
+  const [discountChoiceMade, setDiscountChoiceMade] = useState(false);
   const [paidDeposit, setPaidDeposit] = useState<PaidPublicDeposit | null>(null);
+  const [depositRefundCompleted, setDepositRefundCompleted] = useState(false);
+  type PaidBookingSnapshot = { material: PublicBookingRequestMaterial; quote: PublicBookingPricingQuote; requestId: string; serviceName: string };
+  const currentQuotedBookingRef = useRef<PaidBookingSnapshot | null>(null);
+  const paidBookingSnapshotRef = useRef<PaidBookingSnapshot | null>(null);
   const [verificationAction, setVerificationAction] = useState<VerificationAction>("none");
   const [verificationLoading, setVerificationLoading] = useState(false);
 
@@ -431,6 +442,7 @@ export function useBookingFlowState(
     price_cents: number;
     pricing: PublicBookingPricingQuote;
     cardManagementToken: string | null;
+    cardManagementRecoveryHref?: string | null;
     cardManagementPending: boolean;
     confirmationDelivery: BookingConfirmationDeliveryTruth;
   } | null>(null);
@@ -1385,6 +1397,7 @@ export function useBookingFlowState(
 
   // Deposit paid on the salon's connected Stripe → carry ids to submit + confirm.
   const goDepositPaid = useCallback((deposit: PaidPublicDeposit) => {
+    paidBookingSnapshotRef.current ??= currentQuotedBookingRef.current;
     setPaidDeposit(deposit);
     setStepDir(1);
     setStep("confirm");
@@ -1422,6 +1435,13 @@ export function useBookingFlowState(
     setClientName("");
     setClientPhone("");
     setClientEmail("");
+    setEmailDiscountRequested(false);
+    setDiscountVerifying(false);
+    setDiscountChoiceMade(false);
+    setPaidDeposit(null);
+    setDepositRefundCompleted(false);
+    paidBookingSnapshotRef.current = null;
+    currentQuotedBookingRef.current = null;
     setClientNotes("");
     setClientWebsite("");
     setSelectedAddonIds([]);
@@ -1498,83 +1518,6 @@ export function useBookingFlowState(
     }
   }, [bookingResult, service, shopLabel]);
 
-  // Resolve the no-show card requirement when the customer reaches confirm —
-  // before any booking exists — so the card form can render in the confirm step.
-  // The key carries every argument the request is made with, so a stale answer
-  // can never be read back under a different service or phone.
-  const cardRequirementPhone = validateGuestPhone(clientPhone.trim());
-  const cardRequirementKey =
-    CUSTOMER_PAYMENT_GATEWAY_ENABLED &&
-    step === "confirm" &&
-    serviceId &&
-    cardRequirementPhone.ok
-      ? JSON.stringify([salon.id, serviceId, cardRequirementPhone.digits])
-      : null;
-  const cardRequirement =
-    cardRequirementKey && fetchedCardRequirement?.key === cardRequirementKey
-      ? fetchedCardRequirement.requirement
-      : null;
-  // True while resolveNoShowCardRequirement is in-flight. Gates the confirm
-  // button so the user can't race past the card check before it resolves.
-  const cardRequirementLoading =
-    cardRequirementKey !== null && fetchedCardRequirement?.key !== cardRequirementKey;
-
-  useEffect(() => {
-    if (!cardRequirementKey || !serviceId || !cardRequirementPhone.ok) return;
-    const requestKey = cardRequirementKey;
-    const clientPhoneDigits = cardRequirementPhone.digits;
-    let alive = true;
-    void resolveNoShowCardRequirement({
-      salonId: salon.id,
-      serviceId,
-      clientPhone: clientPhoneDigits,
-    })
-      .then((r) => {
-        if (alive) setFetchedCardRequirement({ key: requestKey, requirement: r });
-      })
-      .catch(() => {
-        // Treat a failed resolve as "no card required", exactly as before —
-        // and settle the key so the confirm button stops being gated.
-        if (alive) setFetchedCardRequirement({ key: requestKey, requirement: null });
-      });
-    return () => {
-      alive = false;
-    };
-    // cardRequirementKey already encodes salon.id, serviceId and the digits.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [cardRequirementKey]);
-
-  // Đợt 2 — once a card is required AND the phone is OTP-verified, check whether
-  // this returning customer already has a card on file so the confirm step can
-  // offer one-tap reuse. OTP-gated by construction (needs otpSessionId; the
-  // server reads the phone from the session, never the client).
-  const savedCardKey =
-    step === "confirm" && cardRequirement?.required === true && otpSessionId
-      ? JSON.stringify([salon.id, otpSessionId])
-      : null;
-  const savedCard =
-    savedCardKey && fetchedSavedCard?.key === savedCardKey
-      ? fetchedSavedCard.card
-      : null;
-
-  useEffect(() => {
-    if (!savedCardKey || !otpSessionId) return;
-    const requestKey = savedCardKey;
-    let alive = true;
-    void resolveSavedNoShowCard({ salonId: salon.id, otpSessionId })
-      .then((r) => {
-        if (alive) setFetchedSavedCard({ key: requestKey, card: r });
-      })
-      .catch(() => {
-        if (alive) setFetchedSavedCard({ key: requestKey, card: null });
-      });
-    return () => {
-      alive = false;
-    };
-    // savedCardKey already encodes salon.id and otpSessionId.
-    // eslint-disable-next-line react-hooks/exhaustive-deps
-  }, [savedCardKey]);
-
   const buildPricingQuoteRequest = useCallback(
     (voucherCode: string | null): BookingParams | null => {
       if (!serviceId || !timeSlot || !staffId) return null;
@@ -1603,10 +1546,13 @@ export function useBookingFlowState(
             }
           : null,
         voucherCode,
-        emailCaptureDiscount: email.length > 0,
+        emailCaptureDiscount: emailDiscountRequested && email.length > 0,
+        otpSessionId,
       };
     },
     [
+      emailDiscountRequested,
+      otpSessionId,
       clientEmail,
       clientName,
       clientPhone,
@@ -1641,7 +1587,7 @@ export function useBookingFlowState(
 
   const pricingQuoteRequest = buildPricingQuoteRequest(appliedVoucher?.code ?? null);
   const pricingQuoteKey =
-    (step === "confirm" || step === "deposit") && pricingQuoteRequest
+    (step === "confirm" || step === "deposit") && !discountVerifying && pricingQuoteRequest
       ? buildPublicBookingPricingQuoteKey({
           shopSlug: pricingQuoteRequest.shopSlug,
           serviceId: pricingQuoteRequest.serviceId,
@@ -1654,6 +1600,7 @@ export function useBookingFlowState(
           comboId: pricingQuoteRequest.comboOverride?.comboId ?? null,
           voucherCode: pricingQuoteRequest.voucherCode ?? null,
           applyEmailDiscount: pricingQuoteRequest.emailCaptureDiscount === true,
+          otpSessionId,
         })
       : null;
   const fetchedQuote =
@@ -1691,6 +1638,105 @@ export function useBookingFlowState(
       : null;
 
   useEffect(() => {
+    if (!paidDeposit && pricingQuote && resolvedBookingRequest) {
+      currentQuotedBookingRef.current = { material: resolvedBookingRequest.material, quote: pricingQuote,
+        requestId: resolvedBookingRequest.requestId, serviceName: service?.name ?? "" };
+    }
+  }, [paidDeposit, pricingQuote, resolvedBookingRequest, service?.name]);
+
+  // Resolve the no-show card requirement when the customer reaches confirm —
+  // before any booking exists — so the card form can render in the confirm step.
+  // The key carries every argument the request is made with, so a stale answer
+  // can never be read back under a different customer or discounted quote.
+  const cardRequirementPhone = validateGuestPhone(clientPhone.trim());
+  const cardRequirementKey =
+    CUSTOMER_PAYMENT_GATEWAY_ENABLED &&
+    step === "confirm" &&
+    serviceId &&
+    cardRequirementPhone.ok && pricingQuote && pricingQuoteRequest
+      ? JSON.stringify([salon.id, serviceId, cardRequirementPhone.digits, pricingQuoteKey, pricingQuote.pricingFingerprint])
+      : null;
+  const cardRequirement =
+    cardRequirementKey && fetchedCardRequirement?.key === cardRequirementKey
+      ? fetchedCardRequirement.requirement
+      : null;
+  // True while resolveNoShowCardRequirement is in-flight. Gates the confirm
+  // button so the user can't race past the card check before it resolves.
+  const cardRequirementLoading =
+    cardRequirementKey !== null && fetchedCardRequirement?.key !== cardRequirementKey;
+
+  useEffect(() => {
+    if (!cardRequirementKey || !serviceId || !cardRequirementPhone.ok || !pricingQuote || !pricingQuoteRequest) return;
+    const requestKey = cardRequirementKey;
+    const clientPhoneDigits = cardRequirementPhone.digits;
+    let alive = true;
+    void resolveNoShowCardRequirement({
+      salonId: salon.id,
+      serviceId,
+      clientPhone: clientPhoneDigits,
+      individualPricingFingerprint: pricingQuote.pricingFingerprint,
+      individualIntent: {
+        salonId: salon.id,
+        serviceId,
+        resolvedStaffId: pricingQuote.resolvedStaffId,
+        startTimeUtc: pricingQuote.startTimeUtc,
+        endTimeUtc: pricingQuote.endTimeUtc,
+        addonServiceIds: [...(pricingQuoteRequest.addonServiceIds ?? [])],
+        comboId: pricingQuote.comboId,
+        voucherCode: pricingQuoteRequest.voucherCode ?? null,
+        clientPhone: clientPhoneDigits,
+        clientEmail: pricingQuoteRequest.clientEmail?.trim().toLowerCase() || null,
+        applyEmailDiscount: pricingQuoteRequest.emailCaptureDiscount === true,
+        otpSessionId: pricingQuoteRequest.otpSessionId ?? null,
+      },
+    })
+      .then((r) => {
+        if (alive) setFetchedCardRequirement({ key: requestKey, requirement: r });
+      })
+      .catch(() => {
+        // Treat a failed resolve as "no card required", exactly as before —
+        // and settle the key so the confirm button stops being gated.
+        if (alive) setFetchedCardRequirement({ key: requestKey, requirement: null });
+      });
+    return () => {
+      alive = false;
+    };
+    // cardRequirementKey encodes the customer, quote inputs and fingerprint.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [cardRequirementKey]);
+
+  // Đợt 2 — once a card is required AND the phone is OTP-verified, check whether
+  // this returning customer already has a card on file so the confirm step can
+  // offer one-tap reuse. OTP-gated by construction (needs otpSessionId; the
+  // server reads the phone from the session, never the client).
+  const savedCardKey =
+    step === "confirm" && cardRequirement?.required === true && otpSessionId
+      ? JSON.stringify([salon.id, otpSessionId])
+      : null;
+  const savedCard =
+    savedCardKey && fetchedSavedCard?.key === savedCardKey
+      ? fetchedSavedCard.card
+      : null;
+
+  useEffect(() => {
+    if (!savedCardKey || !otpSessionId) return;
+    const requestKey = savedCardKey;
+    let alive = true;
+    void resolveSavedNoShowCard({ salonId: salon.id, otpSessionId })
+      .then((r) => {
+        if (alive) setFetchedSavedCard({ key: requestKey, card: r });
+      })
+      .catch(() => {
+        if (alive) setFetchedSavedCard({ key: requestKey, card: null });
+      });
+    return () => {
+      alive = false;
+    };
+    // savedCardKey already encodes salon.id and otpSessionId.
+    // eslint-disable-next-line react-hooks/exhaustive-deps
+  }, [savedCardKey]);
+
+  useEffect(() => {
     if (!pricingQuoteKey || !pricingQuoteRequest) return;
     const requestKey = pricingQuoteKey;
     const request = pricingQuoteRequest;
@@ -1704,9 +1750,9 @@ export function useBookingFlowState(
           setFetchedPricingQuote({ key: requestKey, quote });
           setPricingReconfirmRequired(false);
         })
-        .catch(() => {
+        .catch((error: unknown) => {
           if (!alive) return;
-          setPricingQuoteError("quote_unavailable");
+          setPricingQuoteError(error instanceof Error && error.message === "phone_verification_required" ? "phone_verification_required" : "quote_unavailable");
         })
         .finally(() => {
           if (alive) setPricingQuoteLoading(false);
@@ -1752,8 +1798,12 @@ export function useBookingFlowState(
   const onConfirm = useCallback(async (
     extra?: { noShowCardSourceId?: string; noShowCardVerificationToken?: string; noShowConsent?: boolean; noShowReuseSavedCard?: boolean; healthAck?: boolean },
   ) => {
+    if (depositRefundCompleted) return;
     if (!serviceId || !timeSlot || !staffId) return;
-    if (!pricingQuote || !resolvedBookingRequest || pricingQuoteLoading) {
+    const paidSnapshot = paidDeposit ? paidBookingSnapshotRef.current : null;
+    const quoteForAttempt = paidDeposit ? paidSnapshot?.quote : pricingQuote;
+    const resolvedForAttempt = paidDeposit ? paidSnapshot : resolvedBookingRequest;
+    if (!quoteForAttempt || !resolvedForAttempt || (!paidDeposit && pricingQuoteLoading)) {
       setPricingQuoteError("quote_unavailable");
       return;
     }
@@ -1802,8 +1852,8 @@ export function useBookingFlowState(
     setSubmitting(true);
     const idempotencyReplay = bookingSubmitAttemptedRef.current;
     bookingSubmitAttemptedRef.current = true;
-    const bookingRequestIdForAttempt = bookingSubmitIdempotencyKeyRef.current;
-    const bookingRequestMaterialForAttempt = resolvedBookingRequest.material;
+    const bookingRequestIdForAttempt = paidSnapshot?.requestId ?? bookingSubmitIdempotencyKeyRef.current;
+    const bookingRequestMaterialForAttempt = resolvedForAttempt.material;
     try {
       const result = await submitPublicBooking({
         shopSlug,
@@ -1823,8 +1873,10 @@ export function useBookingFlowState(
         // server so the bot doesn't learn it was detected.
         clientWebsite,
         voucherCode: appliedVoucher?.code ?? null,
-        expectedPricingQuote: pricingQuote,
-        emailCaptureDiscount: email.length > 0 ? true : undefined,
+        expectedPricingQuote: quoteForAttempt,
+        paidReplayMaterial: paidDeposit ? bookingRequestMaterialForAttempt : undefined,
+        paidReplayServiceName: paidDeposit ? paidSnapshot?.serviceName : undefined,
+        emailCaptureDiscount: emailDiscountRequested && email.length > 0,
         idempotencyKey: bookingRequestIdForAttempt,
         idempotencyReplay,
         referenceImagePath: referenceImagePath ?? undefined,
@@ -1883,12 +1935,21 @@ export function useBookingFlowState(
         price_cents: result.price_cents,
         pricing: result.pricing,
         cardManagementToken: result.cardManagementToken,
+        cardManagementRecoveryHref: result.cardManagementRecoveryHref,
         cardManagementPending: result.cardManagementPending,
         confirmationDelivery: result.confirmationDelivery,
       });
       setStepDir(1);
       setStep("done");
     } catch (err) {
+      if (err instanceof BookingCreateOutcomeUnknownError) {
+        recoveryRouter.replace(err.recoveryHref);
+        return;
+      }
+      if (err instanceof BookingCreateRecoveryUnavailableError) {
+        setError(language === "vi" ? "Chưa thể bắt đầu đặt lịch an toàn. Vui lòng tải lại trang và thử lại." : "We could not safely start your booking. Reload this page and try again.");
+        return;
+      }
       if (err instanceof BookingPricingChangedError) {
         bookingSubmitAttemptedRef.current = false;
         if (pricingQuoteKey) {
@@ -1964,7 +2025,7 @@ export function useBookingFlowState(
         setError(
           err.message === "booking_commit_unknown"
             ? t.submitUnknown
-            : (t.noShowCardError ?? t.submitError),
+            : t.phoneOfferPaymentRecovery,
         );
         setStep("confirm");
       } else if (
@@ -1993,10 +2054,38 @@ export function useBookingFlowState(
         err.message === "monthly_booking_limit_reached"
       ) {
         setError(t.bookingErrors.monthlyLimitReached);
+      } else if (paidDeposit && err instanceof Error && err.message === "deposit_refund_completed") {
+        // Only the server's verified terminal refund receipt releases this lock.
+        // Preserve the draft and quote until the customer explicitly starts again.
+        setPaidDeposit(null);
+        setDepositRefundCompleted(true);
+        setError(null);
+        setStep("confirm");
+      } else if (err instanceof Error && ["deposit_booking_recovery_required", "booking_recovery_required", "deposit_compensation_pending"].includes(err.message)) {
+        // A durable deposit already exists. Preserve its exact receipt, quote,
+        // and replay marker; never turn this into permission to pay again.
+        setError(t.phoneOfferPaymentRecovery);
+        setStep("confirm");
+      } else if (err instanceof Error && err.message === "phone_verification_required") {
+        bookingSubmitAttemptedRef.current = false;
+        setFetchedPricingQuote(null);
+        setResolvedBookingRequest(null);
+        setFetchedSavedCard(null);
+        setPricingQuoteError("phone_verification_required");
+        setPricingReconfirmRequired(true);
+        setStep("confirm");
       } else if (
         err instanceof Error &&
         (err.message === "otp_required" || err.message === "otp_invalid")
       ) {
+        // These preflight rejections prove no create dispatch occurred. A new
+        // proof may make the first paid create attempt; unknown results may not.
+        if (paidDeposit && err.message !== "otp_required") {
+          setError(t.phoneOfferPaymentRecovery);
+          setStep("confirm");
+          return;
+        }
+        bookingSubmitAttemptedRef.current = false;
         // OTP session missing or expired — send user back to OTP step.
         setOtpSessionId(null);
         setOtpVerifiedPhone(null);
@@ -2020,6 +2109,9 @@ export function useBookingFlowState(
       setSubmitting(false);
     }
   }, [
+    depositRefundCompleted,
+    emailDiscountRequested,
+    recoveryRouter,
     clientName,
     clientPhone,
     clientEmail,
@@ -2070,9 +2162,9 @@ export function useBookingFlowState(
     t.bookingErrors.rateLimited,
     t.bookingErrors.monthlyLimitReached,
     t.bookingErrors.otpRequired,
-    t.noShowCardError,
     t.slotTooSoonError,
     t.submitError,
+    t.phoneOfferPaymentRecovery,
     t.submitUnknown,
   ]);
 
@@ -2243,6 +2335,7 @@ export function useBookingFlowState(
     code: string,
     _totalCents: number,
   ): Promise<{ error?: string }> {
+    if (paidDeposit || depositRefundCompleted) return { error: "payment_recovery_required" };
     void _totalCents;
     const normalizedCode = code.trim().toUpperCase();
     const request = buildPricingQuoteRequest(normalizedCode);
@@ -2269,11 +2362,16 @@ export function useBookingFlowState(
         comboId: request.comboOverride?.comboId ?? null,
         voucherCode: normalizedCode,
         applyEmailDiscount: request.emailCaptureDiscount === true,
+        otpSessionId: request.otpSessionId ?? null,
       });
       setFetchedPricingQuote({ key, quote });
       setPricingQuoteError(null);
       return {};
-    } catch {
+    } catch (cause) {
+      if (cause instanceof Error && cause.message === "phone_verification_required") {
+        setPricingQuoteError("phone_verification_required");
+        return { error: "phone_verification_required" };
+      }
       return { error: "generic" };
     } finally {
       setPricingQuoteLoading(false);
@@ -2284,8 +2382,78 @@ export function useBookingFlowState(
     setAppliedVoucher(null);
   }
 
+  const startDiscountVerification = () => {
+    if (paidDeposit || depositRefundCompleted) return;
+    setDiscountVerifying(true);
+    setFetchedPricingQuote(null);
+    setFetchedSavedCard(null);
+  };
+  const finishDiscountVerification = (sessionId: string) => {
+    if (paidDeposit || depositRefundCompleted) return;
+    setDiscountChoiceMade(true);
+    setOtpSessionId(sessionId);
+    setOtpVerifiedPhone(clientPhone);
+    setEmailDiscountRequested(Boolean(clientEmail.trim()));
+    setDiscountVerifying(false);
+    setPricingQuoteError(null);
+    setFetchedPricingQuote(null);
+  };
+  const skipPhoneDiscount = () => {
+    if (paidDeposit || depositRefundCompleted) return;
+    setDiscountChoiceMade(true);
+    setEmailDiscountRequested(false);
+    setDiscountVerifying(false);
+    if (pricingQuoteError === "phone_verification_required") setAppliedVoucher(null);
+    setPricingQuoteError(null);
+    // A rejected voucher was never applied. If skipping leaves the quote key
+    // unchanged, retain that accepted quote: the pricing effect will not rerun.
+    if (emailDiscountRequested || discountVerifying ||
+      (pricingQuoteError === "phone_verification_required" && appliedVoucher !== null)) setFetchedPricingQuote(null);
+  };
+
+  const handleDepositPhoneVerificationRequired = useCallback(() => {
+    setPricingQuoteError("phone_verification_required");
+    setDiscountChoiceMade(false);
+  }, []);
+
+  const startFreshBookingAfterRefund = async () => {
+    if (!depositRefundCompleted || submitting) return;
+    setSubmitting(true);
+    try {
+      const refundedRequest = paidBookingSnapshotRef.current ?? resolvedBookingRequest;
+      if (!refundedRequest) throw new Error("booking_restart_material_missing");
+      const requestId = await rotatePublicBookingRequestId(refundedRequest.material, refundedRequest.requestId);
+      bookingSubmitIdempotencyKeyRef.current = requestId;
+      bookingSubmitAttemptedRef.current = false;
+      setBookingRequestId(requestId);
+      setResolvedBookingRequest(null);
+      setFetchedPricingQuote(null);
+      setFetchedSavedCard(null);
+      setPricingQuoteError(null);
+      setPricingReconfirmRequired(true);
+      setOtpSessionId(null);
+      setOtpVerifiedPhone(null);
+      setEmailDiscountRequested(false);
+      setDiscountVerifying(false);
+      setDiscountChoiceMade(false);
+      setDepositRefundCompleted(false);
+      paidBookingSnapshotRef.current = null;
+      currentQuotedBookingRef.current = null;
+      setError(null);
+      setStep("verify");
+    } catch {
+      setError(t.submitError);
+    } finally {
+      setSubmitting(false);
+    }
+  };
+
   return {
     shopLabel,
+    emailDiscountRequested, discountVerifying, discountChoiceMade, hasPaidDeposit: paidDeposit !== null,
+    handleDepositPhoneVerificationRequired,
+    depositRefundCompleted, startFreshBookingAfterRefund,
+    startDiscountVerification, finishDiscountVerification, skipPhoneDiscount,
     step,
     stepDir,
     serviceId,

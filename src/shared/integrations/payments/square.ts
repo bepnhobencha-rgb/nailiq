@@ -1,3 +1,5 @@
+import { CardDeliveryError } from "./cardDeliveryFailure";
+import { RemovalDeliveryError } from "./removalDeliveryFailure";
 import { assertCardCaptureActive } from "@/shared/booking/cardCapturePause";
 import "server-only";
 import { createHash } from "node:crypto";
@@ -7,6 +9,7 @@ import {
   chargeSavedCard as sqCharge,
   refundPayment as sqRefund,
   disableCard as sqDisableCard,
+  readSquareCardStateById,
   findSquareCustomerByPhone,
   listCards as sqListCards,
 } from "@/shared/integrations/square/client";
@@ -133,9 +136,19 @@ export class SquareProvider implements PaymentProvider {
     return { refundId: r.id, status: r.status };
   }
 
-  async removeSavedCard(input: { cardId: string; customerId: string }) {
-    await sqDisableCard(this.cfg, input.cardId);
-    return { providerReference: input.cardId };
+  async removeSavedCard(input: Parameters<PaymentProvider["removeSavedCard"]>[0]) {
+    await input.beforeRemovalDispatch?.({ provider: "square", merchantId: this.cfg.merchantId,
+      environment: this.cfg.environment });
+    // Prove the exact card/customer/merchant binding before any mutation. The
+    // same resolved config is used for both the read and the disable request.
+    let card: Awaited<ReturnType<typeof readSquareCardStateById>>;
+    try { card = await readSquareCardStateById(this.cfg, input.cardId, input.customerId); }
+    catch (error) {
+      throw new RemovalDeliveryError(error instanceof CardDeliveryError && error.failure.code === "reconciliation_invalid_card"
+        ? "removal_preflight_invalid" : "removal_preflight_failed", error);
+    }
+    if (card.enabled) await sqDisableCard(this.cfg, card.cardId);
+    return { providerReference: card.cardId };
   }
 
   async findSavedCardByPhone(phone: string) {

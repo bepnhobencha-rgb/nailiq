@@ -1,5 +1,5 @@
 /**
- * Does the local database actually look like production?
+ * Does the local database match the checked release contract?
  *
  * `psql -f schema.sql` exiting 0 is not the same as "the schema is there".
  * A baseline can apply cleanly and still be missing half the RLS policies — and
@@ -7,7 +7,7 @@
  * entirely the wrong reason. Tenant-isolation tests would go green against a
  * database that isolates nothing.
  *
- * So: count what landed, compare against production's shape, and name anything
+ * So: count what landed, compare against the checked release shape, and name anything
  * that is short.
  *
  * Reads DB_URL (exported by `supabase status`). Shells out to psql rather than
@@ -204,14 +204,19 @@ import { execFileSync } from "node:child_process";
  * forward-release shape, not a claim that this migration is in Production.
  * The 20260911121118 legacy verification adds one private read-check table,
  * 14 columns, six functions, one immutability trigger and two indexes.
+ * The 20260912025243 through 20260912183353 removal-recovery and retired-
+ * booking-request migrations add five SELECT-only service tables, 53 columns,
+ * four deny policies, twelve functions, one trigger and eighteen indexes.
+ * Verified against an independently rebuilt 508-migration prefix and the
+ * complete 522-migration candidate; no browser grants were added.
  * Refresh these
  * with each schema-changing forward migration — they
  * are a tripwire, not a spec.
  */
-const PRODUCTION = {
+const RELEASE_SHAPE = {
   // +1 PII-free Twilio terminal-receipt inbox.
   // +25 private TurnIQ policy, ledger, replay, group, check-in, offline, and rollout tables.
-  tables: 241,
+  tables: 246,
   // +2 from 20260815190000_add_salon_closure_notice.sql: closure_notice
   // added to both salons (base table) and public_salon_profiles (view) —
   // both count as columns in information_schema.
@@ -275,7 +280,9 @@ const PRODUCTION = {
   // +18 PII-free individual waitlist capacity-decision evidence columns.
   // +54 private bulk-email campaign, recipient-claim, and event columns.
   // +8 controlled canary, bulk-release, pause, and recipient-cohort columns.
-  columns: 3734,
+  // +1 typed booking OTP proof channel (R07; locally rehearsed).
+  // +10 R10 customer authority/lease columns; measured on disposable QA.
+  columns: 3798,
   // The upsell migration replaces two legacy member-write policies with one
   // service-role-only immutable claim policy. The staff-lifecycle hardening
   // removes the browser DELETE policy so hard deletion cannot bypass the
@@ -293,7 +300,7 @@ const PRODUCTION = {
   // +2 restrictive browser-deny policies on TurnIQ rollout state/history.
   // +2 restrictive browser-deny policies on controlled SHADOW activation state.
   // +3 restrictive browser-deny policies on bulk email campaign state.
-  policies: 221,
+  policies: 225,
   /**
    * APP functions only — refreshed after the rehearsed forward migrations.
    *
@@ -353,7 +360,11 @@ const PRODUCTION = {
   // completion, final-material, and signed-receipt functions.
   // +5 controlled canary/pause/resume/release and completion-trigger functions.
   // +1 service-role-only aggregate campaign delivery report function.
-  functions: 560,
+  // +1 booking-only OTP validator, separate from SMS phone authority.
+  // +17 R09 SMS incentive/CRM helpers and replay-only paid-booking recovery.
+  // +3 R10 private phone/terminal-proof and existing-card receipt helpers.
+  // +1 R11 service-only atomic expired-grace pause with audit.
+  functions: 594,
   // +4 pending-receipt correlation triggers across notification/staff INSERT
   // and provider-SID transitions.
   // +1 V1 terminal-booking policy trigger.
@@ -379,7 +390,7 @@ const PRODUCTION = {
   // +1 fail-closed individual waitlist insert trigger.
   // +1 bulk email append-only event trigger.
   // +1 bulk email canary-completion trigger.
-  triggers: 161,
+  triggers: 162,
   // Transition/capability PKs, unique keys and focused due/salon indexes.
   // The refund inbox and customer identity map each add PK, unique, and two
   // focused indexes.
@@ -410,7 +421,8 @@ const PRODUCTION = {
   // +3 PII-free capacity-decision primary and lookup indexes.
   // +14 bulk email primary, unique, claim, delivery, timeline, and FK indexes.
   // +3 controlled dispatch actor and cohort/status indexes.
-  indexes: 992,
+  // +2 R10 active authority/source-claim indexes.
+  indexes: 1012,
 } as const;
 
 /**
@@ -423,7 +435,16 @@ const PRODUCTION = {
  * policies, all the triggers — not a drift of three.
  */
 /** Tables the product cannot function without. Absence here is fatal, not a ratio. */
+const CARD_RECOVERY_SERVICE_READ_TABLES = [
+  "booking_card_removal_delivery_events",
+  "booking_card_removal_dispatch_bindings",
+  "booking_card_removal_recovery_events",
+  "booking_card_removal_recovery_receipts",
+  "retired_booking_create_requests",
+] as const;
+
 const CRITICAL_TABLES = [
+  ...CARD_RECOVERY_SERVICE_READ_TABLES,
   "salons",
   "bookings",
   "staff",
@@ -593,6 +614,20 @@ const NO_SHOW_FEE_SERVICE_ONLY_TABLES = [
 
 /** Booking cannot work without these; a missing RPC fails at runtime, not at apply time. */
 const CRITICAL_FUNCTIONS = [
+  "validate_booking_otp_session",
+  "complete_booking_card_removal_recovery",
+  "complete_owner_booking_card_removal_recovery",
+  "get_booking_card_removal_recovery_context",
+  "get_booking_card_removal_recovery_context_for_actor",
+  "get_owner_booking_card_removal_recovery_context",
+  "guard_retired_booking_create_request",
+  "prepare_booking_card_removal_dispatch",
+  "prepare_owner_booking_card_removal_recovery",
+  "record_booking_card_removal_delivery_failure",
+  "record_booking_card_removal_recovery_outcome",
+  "record_owner_booking_card_removal_recovery_outcome",
+  "resolve_pending_booking_create",
+
   "advance_turniq_offline_state_version",
   "pair_turniq_primary_offline_device_v1",
   "revoke_turniq_primary_offline_device_v1",
@@ -931,6 +966,17 @@ const CRITICAL_FUNCTIONS = [
   "resolve_public_group_sequence_quote",
   "quote_public_group_booking_sequences",
   "normalize_capacity_rescue_waitlist_source",
+  "booking_incentive_phone_ownership",
+  "lock_booking_crm_phones",
+  "attach_desk_booking_client_profiles",
+  "create_group_bookings_for_desk",
+  "claim_party_slot_for_desk",
+  "update_party_booking_contact",
+  "replay_public_booking_with_deposit_payment",
+  "square_card_booking_phone_authorized",
+  "square_card_prior_attempts_terminal",
+  "bind_booking_existing_card_receipt",
+  "pause_tenant_if_payment_grace_expired",
 ] as const;
 
 const dbUrl = process.env.DB_URL;
@@ -960,7 +1006,7 @@ function main() {
       "select count(*) from information_schema.columns where table_schema='public'",
     ),
     policies: num("select count(*) from pg_policies where schemaname='public'"),
-    // App functions only — exclude anything an extension owns (see PRODUCTION).
+    // App functions only — exclude anything an extension owns (see RELEASE_SHAPE).
     functions: num(
       "select count(*) from pg_proc p " +
         "join pg_namespace n on n.oid=p.pronamespace " +
@@ -975,16 +1021,16 @@ function main() {
 
   let failed = false;
 
-  console.log("\n── Schema parity (local vs production) ──\n");
-  console.log("  object      local   prod   ");
-  for (const key of Object.keys(PRODUCTION) as Array<keyof typeof PRODUCTION>) {
+  console.log("\n── Schema parity (local vs release contract) ──\n");
+  console.log("  object      local release   ");
+  for (const key of Object.keys(RELEASE_SHAPE) as Array<keyof typeof RELEASE_SHAPE>) {
     const got = actual[key];
-    const want = PRODUCTION[key];
+    const want = RELEASE_SHAPE[key];
     const ok = got === want;
     if (!ok) failed = true;
     console.log(
       `  ${ok ? "✓" : "✗"} ${key.padEnd(10)} ${String(got).padStart(5)}  ${String(want).padStart(5)}` +
-        (ok ? "" : `   ← short by ${want - got}`),
+        (ok ? "" : `   ← ${got < want ? "short" : "extra"} by ${Math.abs(want - got)}`),
     );
   }
 
@@ -1008,7 +1054,7 @@ function main() {
   // Policies without grants are a locked door in a wall with no doorway: the
   // request never reaches RLS, it dies at "permission denied for table salons".
   // Worse is the other direction — a blanket `GRANT ALL TO anon` would make the
-  // test database MORE permissive than production, and the security specs would
+  // test database MORE permissive than the release contract, and the security specs would
   // pass while a real leak went unnoticed.
   //
   // Public booking views are SECURITY INVOKER. Anon therefore reaches narrow
@@ -1031,7 +1077,7 @@ function main() {
   // each table's browser denial and FORCE RLS below as well as the exact count;
   // public/authenticated reachability must remain unchanged. Bulk email adds
   // three more service-role-only tables.
-  const GRANTS = { anon: 56, authenticated: 78, service_role: 228 } as const;
+  const GRANTS = { anon: 56, authenticated: 78, service_role: 233 } as const;
   for (const [role, want] of Object.entries(GRANTS)) {
     const got = num(
       `select count(distinct table_name) from (
@@ -1051,9 +1097,41 @@ function main() {
           : got === 0
             ? "   ← no grants at all: was the dump taken with --no-privileges?"
             : got > want
-              ? "   ← MORE permissive than production. The security specs would lie."
-              : "   ← fewer than production; requests will die at permission denied"),
+              ? "   ← MORE permissive than the release contract. The security specs would lie."
+              : "   ← fewer than the release contract; requests will die at permission denied"),
     );
+  }
+
+  console.log("\n── Card recovery and retired request SELECT-only boundary ──\n");
+  for (const table of CARD_RECOVERY_SERVICE_READ_TABLES) {
+    const browserReachable = num(
+      `select count(*) from information_schema.role_column_grants
+        where table_schema='public' and table_name='${table}'
+          and grantee in ('PUBLIC', 'anon', 'authenticated')`,
+    ) + num(
+      `select count(*) from information_schema.role_table_grants
+        where table_schema='public' and table_name='${table}'
+          and grantee in ('PUBLIC', 'anon', 'authenticated')`,
+    );
+    const serviceGrants = q(
+      `select coalesce(string_agg(privilege_type,',' order by privilege_type),'')
+         from information_schema.role_table_grants
+        where table_schema='public' and table_name='${table}' and grantee='service_role'`,
+    );
+    const serviceColumnWrites = num(
+      `select count(*) from information_schema.role_column_grants
+        where table_schema='public' and table_name='${table}'
+          and grantee='service_role' and privilege_type <> 'SELECT'`,
+    );
+    const rls = num(
+      `select count(*) from pg_class c join pg_namespace n on n.oid=c.relnamespace
+        where n.nspname='public' and c.relname='${table}' and c.relrowsecurity`,
+    );
+    const ok = browserReachable === 0 && serviceGrants === "SELECT"
+      && serviceColumnWrites === 0 && rls === 1;
+    if (!ok) failed = true;
+    console.log(`  ${ok ? "✓" : "✗"} ${table}` + (ok ? ""
+      : `   ← browser=${browserReachable}, service=${serviceGrants}, column_writes=${serviceColumnWrites}, rls=${rls}`));
   }
 
   console.log("\n── No-show fee and card-delivery service-only boundary ──\n");
@@ -1122,8 +1200,8 @@ function main() {
 
   console.log(
     failed
-      ? "\n✗ The baseline did not reproduce production's schema. Do not trust a green suite on this.\n"
-      : "\n✓ Local schema matches production's shape.\n",
+      ? "\n✗ The database did not reproduce the checked release schema. Do not trust a green suite on this.\n"
+      : "\n✓ Local schema matches the checked release contract.\n",
   );
   process.exit(failed ? 1 : 0);
 }

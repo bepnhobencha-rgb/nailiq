@@ -1,7 +1,8 @@
 import { isCardCapturePaused } from "@/shared/booking/cardCapturePause";
 import "server-only";
 
-import { createHash } from "node:crypto";
+import { createHash, randomUUID } from "node:crypto";
+import { removalFailure, removalFailureRpc, type RemovalFailure } from "@/shared/integrations/payments/removalDeliveryFailure";
 import { cardFailure, safeCardFailure, type CardFailure } from "@/shared/integrations/payments/cardDeliveryFailure";
 import { buildNoShowConsentPolicy } from "@/shared/noshow/noShowConsentPolicy";
 import type { StoredPolicy } from "@/shared/lib/cancellationPolicy";
@@ -9,8 +10,10 @@ import type { StoredPolicy } from "@/shared/lib/cancellationPolicy";
 import { resolvePaymentProvider, type PaymentProvider } from "@/shared/integrations/payments";
 import { getStripeClient } from "@/shared/lib/stripe";
 import { createServiceRoleClient } from "@/shared/lib/supabase/serviceRole";
+import { reconcileBookingCardRemoval } from "@/shared/booking/reconcileBookingCardRemoval";
 
 type CardOperationResult = {
+  failureKind?: "card_rejected";
   ok: boolean;
   code: string;
   idempotent?: boolean;
@@ -70,6 +73,10 @@ function parseResult(value: unknown): CardOperationResult {
   const valueRow = row(value);
   if (!valueRow) return { ok: false, code: "invalid_card_operation_response" };
   const code = safeCode(valueRow.code);
+  const failureKind = valueRow.failure_kind;
+  if (failureKind != null && (failureKind !== "card_rejected" || valueRow.ok !== false || code !== "save_failed")) {
+    return { ok: false, code: "invalid_card_operation_response" };
+  }
   const bookingId = cleanString(valueRow.booking_id) ?? undefined;
   const salonId = cleanString(valueRow.salon_id) ?? undefined;
   const finalizeTokenId = cleanString(valueRow.finalize_token_id) ?? undefined;
@@ -85,6 +92,7 @@ function parseResult(value: unknown): CardOperationResult {
   return {
     ok: valueRow.ok,
     code,
+    ...(failureKind === "card_rejected" ? { failureKind } : {}),
     idempotent: typeof valueRow.idempotent === "boolean" ? valueRow.idempotent : undefined,
     bookingId,
     salonId,
@@ -144,24 +152,50 @@ function parseClaim(value: unknown): ClaimedOperation | CardOperationResult {
   };
 }
 
+async function recordRemovalFailure(operationId: string, attemptToken: string,
+  provider: "square" | "stripe" | null, failure: RemovalFailure): Promise<void> {
+  try {
+    await createServiceRoleClient().rpc("record_booking_card_removal_delivery_failure" as never, {
+      p_operation_id: operationId, p_attempt_token: attemptToken, p_event_id: randomUUID(),
+      ...removalFailureRpc(failure, provider),
+    } as never);
+  } catch { /* Best effort only; do not log raw errors or authorize another dispatch. */ }
+}
+
 async function completeRemoval(input: {
   operationId: string;
   attemptToken: string;
   outcome: "succeeded" | "failed" | "unknown";
   providerReference?: string | null;
   errorCode?: string | null;
+  provider?: "square" | "stripe" | null;
 }): Promise<CardOperationResult> {
-  const { data, error } = await createServiceRoleClient().rpc(
-    "complete_booking_card_management_operation" as never,
-    {
-      p_operation_id: input.operationId,
-      p_attempt_token: input.attemptToken,
-      p_outcome: input.outcome,
-      p_provider_reference: input.providerReference ?? null,
-      p_error_code: input.errorCode ?? null,
-    } as never,
-  );
-  return error ? { ok: false, code: "completion_write_uncertain" } : parseResult(data);
+  try {
+    const { data, error } = await createServiceRoleClient().rpc(
+      "complete_booking_card_management_operation" as never,
+      {
+        p_operation_id: input.operationId,
+        p_attempt_token: input.attemptToken,
+        p_outcome: input.outcome,
+        p_provider_reference: input.providerReference ?? null,
+        p_error_code: input.errorCode ?? null,
+      } as never,
+    );
+    if (!error) {
+      const result = parseResult(data);
+      if (!["removed", "remove_failed", "remove_unknown"].includes(result.code)) {
+        await recordRemovalFailure(input.operationId, input.attemptToken, input.provider ?? null,
+          removalFailure(null, "removal_completion_rejected"));
+      }
+      return result;
+    }
+  } catch {
+    // The transaction may already have committed. Preserve exact-request
+    // replay; never reclassify a lost DB response as a provider failure.
+  }
+  await recordRemovalFailure(input.operationId, input.attemptToken, input.provider ?? null,
+    removalFailure(null, "removal_completion_uncertain"));
+  return { ok: false, code: "completion_write_uncertain" };
 }
 
 export async function removeCardWithManagementCapability(input: {
@@ -183,6 +217,10 @@ export async function removeCardWithManagementCapability(input: {
   );
   if (error) return { ok: false, code: "card_management_unavailable" };
   const claim = row(data);
+  if (claim?.ok === false && claim.code === "remove_unknown") {
+    const recovery = await reconcileBookingCardRemoval(input);
+    return recovery.code === "remove_unknown" ? parseResult(data) : recovery;
+  }
   if (!claim || claim.ok !== true || claim.code !== "claimed") return parseResult(data);
   const operationId = cleanString(claim.operation_id);
   const attemptToken = cleanString(claim.attempt_token);
@@ -201,26 +239,65 @@ export async function removeCardWithManagementCapability(input: {
   try {
     provider = await resolvePaymentProvider(salonId, { strict: true, purpose: "card_on_file" });
   } catch {
+    await recordRemovalFailure(operationId, attemptToken, null, removalFailure(null, "removal_configuration_unavailable"));
     // No provider request occurred. Keep the DB operation recoverable so an
     // exact retry/reconciler can resume after the configuration read recovers.
     return { ok: false, code: "card_management_unavailable" };
   }
   if (!provider) {
-    return completeRemoval({ operationId, attemptToken, outcome: "failed", errorCode: "provider_configuration_invalid" });
+    await recordRemovalFailure(operationId, attemptToken, null, removalFailure(null, "removal_configuration_invalid"));
+    return completeRemoval({ operationId, attemptToken, outcome: "failed", errorCode: "removal_configuration_invalid" });
   }
+  let preparationFailed = false;
+  let preparationAcknowledged = false;
+  let preparationDisposition: "in_flight" | "reconcile" | null = null;
   try {
-    const receipt = await provider.removeSavedCard({ cardId, customerId });
-    if (!cleanString(receipt.providerReference)) {
-      return completeRemoval({ operationId, attemptToken, outcome: "unknown", errorCode: "invalid_provider_receipt" });
+    const receipt = await provider.removeSavedCard({ cardId, customerId, beforeRemovalDispatch: async identity => {
+      try {
+        if (identity.provider !== provider.kind) throw new Error("provider_identity_mismatch");
+        const { data, error } = await createServiceRoleClient().rpc("prepare_booking_card_removal_dispatch" as never, {
+          p_operation_id: operationId, p_attempt_token: attemptToken, p_provider: identity.provider,
+          p_merchant_id: identity.provider === "square" ? identity.merchantId : null,
+          p_environment: identity.provider === "square" ? identity.environment : null,
+        } as never);
+        const prepared = row(data);
+        if (!error && prepared?.ok === false &&
+            (prepared.code === "removal_dispatch_in_progress" || prepared.code === "remove_unknown")) {
+          preparationDisposition = prepared.code === "remove_unknown" ? "reconcile" : "in_flight";
+          throw new Error("removal_dispatch_not_authorized");
+        }
+        if (error || prepared?.ok !== true || prepared.code !== "removal_dispatch_prepared") {
+          throw new Error("removal_dispatch_unavailable");
+        }
+        preparationAcknowledged = true;
+      } catch {
+        preparationFailed = true;
+        throw new Error("removal_dispatch_unavailable");
+      }
+    } });
+    if (!preparationAcknowledged || !cleanString(receipt.providerReference)) {
+      const failure = removalFailure(null, "removal_invalid_provider_receipt");
+      await recordRemovalFailure(operationId, attemptToken, provider.kind, failure);
+      return completeRemoval({ operationId, attemptToken, provider: provider.kind, outcome: "unknown", errorCode: failure.code });
     }
     return completeRemoval({
       operationId,
       attemptToken,
       outcome: "succeeded",
-      providerReference: receipt.providerReference,
+      providerReference: receipt.providerReference, provider: provider.kind,
     });
-  } catch {
-    return completeRemoval({ operationId, attemptToken, outcome: "unknown", errorCode: "provider_exception" });
+  } catch (error) {
+    // A concurrent caller is not a delivery failure. It must not complete or
+    // overwrite the active caller's operation, nor perform a provider mutation.
+    if (preparationDisposition === "in_flight") return { ok: false, code: "in_flight" };
+    if (preparationDisposition === "reconcile") return reconcileBookingCardRemoval(input);
+    // No new provider work occurred. Keep the same sending operation recoverable
+    // after a denied/lost preparation. A committed binding only allows recovery.
+    const failure = preparationFailed ? removalFailure(null, "removal_dispatch_unavailable")
+      : removalFailure(error, "removal_provider_unclassified");
+    await recordRemovalFailure(operationId, attemptToken, provider.kind, failure);
+    if (preparationFailed) return { ok: false, code: "removal_dispatch_unavailable" };
+    return completeRemoval({ operationId, attemptToken, provider: provider.kind, outcome: "unknown", errorCode: failure.code });
   }
 }
 

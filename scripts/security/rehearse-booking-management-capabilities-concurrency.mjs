@@ -9,7 +9,12 @@ if(!["localhost","127.0.0.1","::1","[::1]",""] .includes(host)) throw new Error(
 async function sql(q){const {stdout}=await run(psql,[dbUrl,"-X","-v","ON_ERROR_STOP=1","-Atq","-c",q],{encoding:"utf8",timeout:30000,maxBuffer:4e6});return stdout.trim();}
 function json(s){return JSON.parse(s.split("\n").filter((x)=>x.startsWith("{")).at(-1));}
 const salon="d8000000-0000-4000-8000-000000000001",service="d8000000-0000-4000-8000-000000000002",staff="d8000000-0000-4000-8000-000000000003",booking="d8000000-0000-4000-8000-000000000010",race="d8000000-0000-4000-8000-000000000011",cardBooking="d8000000-0000-4000-8000-000000000012",saveBooking="d8000000-0000-4000-8000-000000000013";
-async function cleanup(){await sql(`delete from public.salons where id='${salon}'; delete from public.service_categories where slug='management-concurrency-qa'`);}
+async function cleanup(){await sql(`begin;
+ update public.booking_card_save_operations set customer_claim_id=null where salon_id='${salon}';
+ delete from public.square_card_customer_claims where salon_id='${salon}';
+ delete from public.salons where id='${salon}';
+ delete from public.service_categories where slug='management-concurrency-qa';
+ commit;`);}
 try{
  await cleanup();
  await sql(`insert into public.service_categories(slug,name_en,name_vi) values('management-concurrency-qa','Management concurrency','Management concurrency');
@@ -68,6 +73,23 @@ try{
  const consent=JSON.stringify({policyVersion:`nsp_${"a".repeat(64)}`,scope:"booking_member",policyEn:"QA policy",policyVi:"QA policy"});
  const prepared=json(await sql(`begin;set local role service_role;select public.prepare_booking_card_save_dispatch('${saveClaimed.operation_id}','${saveClaimed.attempt_token}','${consentAt}'::timestamptz,'${consent}'::jsonb)::text;commit;`));
  assert.equal(prepared.ok,true);
+ const unproven=json(await sql(`begin;set local role service_role;select public.bind_booking_card_save_dispatch('${saveClaimed.operation_id}','${saveClaimed.attempt_token}','customer_saved_concurrency','merchant_qa','sandbox')::text;commit;`));
+ assert.equal(unproven.code,"customer_identity_unverified");
+ const providerBound=json(await sql(`begin;set local role service_role;select public.bind_booking_card_provider_identity('${saveClaimed.operation_id}','${saveClaimed.attempt_token}','merchant_qa','sandbox')::text;commit;`));
+ assert.equal(providerBound.ok,true);
+ const customerClaim=json(await sql(`begin;set local role service_role;select public.claim_square_card_customer('${saveClaimed.operation_id}','${saveClaimed.attempt_token}')::text;commit;`));
+ assert.equal(customerClaim.code,"claimed_v2");
+ // Seed the known-customer precondition for the card-save race. This is fixture
+ // state, not provider proof: customer claim/completion behavior is exercised by
+ // test-square-card-customer-authority.sql and the delivery SQL rehearsal.
+ // Avoid creating immutable delivery events that this local fixture must not erase.
+ assert.equal(await sql(`update public.square_card_customer_claims
+   set status='known',customer_id='customer_saved_concurrency',identity_authorized=true,
+     lease_token=null,lease_expires_at=null,lease_allows_create=false
+   where id='${customerClaim.claim_id}' and salon_id='${salon}'
+     and anchor_operation_id='${saveClaimed.operation_id}' and identity_version=2
+     and authority_kind='booking' and lookup_mode='booking_reference'
+   returning id::text`),customerClaim.claim_id);
  const bound=json(await sql(`begin;set local role service_role;select public.bind_booking_card_save_dispatch('${saveClaimed.operation_id}','${saveClaimed.attempt_token}','customer_saved_concurrency','merchant_qa','sandbox')::text;commit;`));
  assert.equal(bound.ok,true);
  const saveCompletions=(await Promise.all(Array.from({length:10},()=>sql(`begin;set local role service_role;select public.complete_booking_card_save_operation('${saveClaimed.operation_id}','${saveClaimed.attempt_token}','succeeded','card_saved_concurrency','card_saved_concurrency','customer_saved_concurrency','VISA','4242','${consentAt}'::timestamptz,'${consent}'::jsonb,null)::text;commit;`)))).map(json);

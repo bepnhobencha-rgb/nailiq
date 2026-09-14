@@ -54,6 +54,15 @@ function intent() {
 }
 
 describe("parseSequenceBookingIntent", () => {
+  it("carries only a valid optional OTP capability into the quote RPC material", () => {
+    const parsed = parseSequenceBookingIntent({ ...intent(), otpSessionId: ids.staff1 });
+    expect(parsed?.otpSessionId).toBe(ids.staff1);
+    expect(serializeSequenceBookingIntent(parsed!)).toHaveProperty("otp_session_id", ids.staff1);
+    expect(parseSequenceBookingIntent({ ...intent(), otpSessionId: "claimed-sms" })).toBeNull();
+    expect(parseSequenceBookingIntent({ ...intent(), verifiedChannel: "sms" })).toBeNull();
+    expect(serializeSequenceBookingIntent(parseSequenceBookingIntent(intent())!)).not.toHaveProperty("otp_session_id");
+  });
+
   it("accepts and normalizes ordered 1-5 line intent without accepting money", () => {
     const parsed = parseSequenceBookingIntent(intent());
     expect(parsed).not.toBeNull();

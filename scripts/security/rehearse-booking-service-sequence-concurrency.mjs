@@ -432,9 +432,9 @@ try {
   // session row lock serializes both transactions; exactly one booking/profile
   // commits and the loser observes the durable consumed booking binding.
   await sql(`
-    insert into public.phone_otp_sessions(id,salon_id,phone,verified_at,expires_at)
+    insert into public.phone_otp_sessions(id,salon_id,phone,verified_at,expires_at,verified_channel)
     values('${id.otpSession}','${id.salon}','${phones[7]}',clock_timestamp(),
-      clock_timestamp()+interval '15 minutes');
+      clock_timestamp()+interval '15 minutes','sms');
     update public.salons set phone_otp_enabled=true where id='${id.salon}';
   `);
   const otpA = request({
@@ -452,6 +452,16 @@ try {
     lines: [line("18003610-0000-4000-8000-000000000063", 0, id.serviceB, id.staffB)],
   });
   const [otpQuoteA, otpQuoteB] = await Promise.all([quote(otpA), quote(otpB)]);
+  assert.equal(otpQuoteA.code, "quoted");
+  assert.equal(otpQuoteB.code, "quoted");
+  const unprovenRequest = { ...otpA };
+  delete unprovenRequest.otp_session_id;
+  const unproven = lastJson(await sql(createSql(unprovenRequest, otpQuoteA.pricing_fingerprint)));
+  assert.equal(unproven.code, "otp_required");
+  assert.equal(await sql(`select count(*) from public.bookings
+    where salon_id='${id.salon}' and idempotency_key='${otpA.request_id}'`), "0");
+  assert.equal(await sql(`select consumed_at is null and consumed_by_booking_id is null
+    from public.phone_otp_sessions where id='${id.otpSession}'`), "t");
   const otpResults = (
     await Promise.all([
       sql(createSql(otpA, otpQuoteA.pricing_fingerprint)),

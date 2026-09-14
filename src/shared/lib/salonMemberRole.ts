@@ -166,3 +166,9 @@ export function isFrontDeskRole(role: SalonMemberRole): boolean {
     role === "receptionist"
   );
 }
+
+/** Client spend/lifetime value: PERMISSION_MATRIX §3.4. Desk access alone
+ * does not grant financial-profile access. Keep an explicit allowlist. */
+export function canViewClientSpend(role: string | null | undefined): boolean {
+  return role === "owner" || role === "admin" || role === "senior";
+}

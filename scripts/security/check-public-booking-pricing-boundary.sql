@@ -11,6 +11,15 @@ DECLARE
   v_create regprocedure := to_regprocedure(
     'public.create_public_booking(uuid,uuid,uuid,text,text,timestamptz,timestamptz,text,text,uuid[],text,uuid,uuid,uuid,boolean,uuid,text)'
   );
+  v_resolver_authority regprocedure := to_regprocedure(
+    'public.resolve_public_booking_pricing(uuid,uuid,uuid,timestamptz,timestamptz,uuid[],uuid,uuid,text,text,boolean,boolean,uuid)'
+  );
+  v_quote_authority regprocedure := to_regprocedure(
+    'public.quote_public_booking(uuid,uuid,uuid,timestamptz,timestamptz,uuid[],uuid,uuid,text,text,boolean,uuid)'
+  );
+  v_create_authority regprocedure := to_regprocedure(
+    'public.create_public_booking(uuid,uuid,uuid,text,text,timestamptz,timestamptz,text,text,uuid[],text,uuid,uuid,uuid,boolean,uuid,text,uuid)'
+  );
   v_legacy regprocedure := to_regprocedure(
     'public.create_public_booking(uuid,uuid,uuid,text,text,timestamptz,timestamptz,text,integer,text,uuid,integer,text,uuid)'
   );
@@ -27,6 +36,8 @@ DECLARE
   v_public_execute boolean;
 BEGIN
   IF v_resolver IS NULL OR v_quote IS NULL OR v_create IS NULL
+     OR v_resolver_authority IS NULL OR v_quote_authority IS NULL
+     OR v_create_authority IS NULL
      OR v_legacy IS NULL OR v_claim IS NULL OR v_complete IS NULL THEN
     RAISE EXCEPTION 'public booking pricing signature is missing';
   END IF;
@@ -36,7 +47,10 @@ BEGIN
       VALUES
         (v_resolver, false, false, true, 'resolver'),
         (v_quote, false, false, true, 'quote'),
-        (v_create, true, false, true, 'create'),
+        (v_create, true, false, true, 'create compatibility'),
+        (v_resolver_authority, false, false, true, 'resolver SMS authority'),
+        (v_quote_authority, false, false, true, 'quote SMS authority'),
+        (v_create_authority, true, false, true, 'create SMS authority'),
         (v_legacy, true, false, true, 'legacy phase A'),
         (v_claim, false, false, true, 'owner claim'),
         (v_complete, false, false, true, 'owner complete')
@@ -70,7 +84,46 @@ BEGIN
     END IF;
   END LOOP;
 
-  SELECT pg_get_functiondef(v_create::oid) INTO v_def;
+  -- Existing arities remain callable, but cannot manufacture phone authority.
+  -- Compare the complete body so argument reordering and non-NULL proof fail.
+  FOR v_target IN
+    SELECT * FROM (VALUES
+      (v_resolver, 'SELECT public.resolve_public_booking_pricing(p_salon_id,p_service_id,p_staff_id,p_start_time_utc,p_end_time_utc,p_addon_service_ids,p_combo_id,p_voucher_id,p_client_phone,p_client_email,p_apply_email_discount,p_lock_claims,NULL::uuid);'),
+      (v_quote, 'SELECT public.quote_public_booking(p_salon_id,p_service_id,p_staff_id,p_start_time_utc,p_end_time_utc,p_addon_service_ids,p_combo_id,p_voucher_id,p_client_phone,p_client_email,p_apply_email_discount,NULL::uuid);'),
+      (v_create, 'SELECT public.create_public_booking(p_salon_id,p_service_id,p_staff_id,p_client_name,p_client_phone,p_start_time_utc,p_end_time_utc,p_status,p_client_notes,p_addon_service_ids,p_client_email,p_resource_id,p_combo_id,p_voucher_id,p_apply_email_discount,p_idempotency_key,p_expected_pricing_fingerprint,NULL::uuid);')
+    ) expected(fn, body)
+  LOOP
+    IF NOT EXISTS (
+      SELECT 1 FROM pg_proc p JOIN pg_language l ON l.oid = p.prolang
+      WHERE p.oid = v_target.fn::oid AND l.lanname = 'sql'
+        AND lower(regexp_replace(p.prosrc, '\s+', '', 'g')) =
+            lower(regexp_replace(v_target.body, '\s+', '', 'g'))
+    ) THEN
+      RAISE EXCEPTION 'public pricing compatibility wrapper mapping mismatch: %', v_target.fn;
+    END IF;
+  END LOOP;
+
+  SELECT regexp_replace(pg_get_functiondef(v_resolver_authority::oid), '\s+', '', 'g')
+    INTO v_compact_def;
+  IF position('public.booking_incentive_phone_ownership(p_otp_session_id,p_salon_id,p_client_phone,p_lock_claims)' IN v_compact_def) = 0
+     OR position('phone_verification_required' IN v_compact_def) = 0 THEN
+    RAISE EXCEPTION 'public pricing resolver lost explicit SMS authority';
+  END IF;
+  SELECT regexp_replace(pg_get_functiondef(v_quote_authority::oid), '\s+', '', 'g')
+    INTO v_compact_def;
+  IF position('p_client_email,p_apply_email_discount,false,p_otp_session_id' IN v_compact_def) = 0 THEN
+    RAISE EXCEPTION 'public pricing quote lost explicit SMS authority forwarding';
+  END IF;
+
+  SELECT pg_get_functiondef(v_create_authority::oid) INTO v_def;
+  v_compact_def := regexp_replace(v_def, '\s+', '', 'g');
+  IF position('public.booking_incentive_phone_ownership(p_otp_session_id,p_salon_id,p_client_phone,true)' IN v_compact_def) = 0
+     OR position('p_apply_email_discount,true,p_otp_session_id' IN v_compact_def) = 0
+     OR position('phone_verification_required' IN v_compact_def) = 0
+     OR position('consumed_by_booking_id=v_booking_id' IN v_compact_def) = 0
+     OR position('otp.verified_channel=''sms''' IN v_compact_def) = 0 THEN
+    RAISE EXCEPTION 'public pricing create lost explicit SMS authority';
+  END IF;
   IF position('p_status IS DISTINCT FROM ''confirmed''' IN v_def) = 0
      OR position('public.resolve_public_booking_pricing' IN v_def) = 0
      OR position('''pricing_changed''' IN v_def) = 0

@@ -44,15 +44,21 @@ describe("disabled quick-rebook production boundary", () => {
 
     expect(switcher).toContain("/api/customer/profile-verified?otp_session_id=");
     expect(switcher).toContain(
-      "const flowReady = gateReady && (!salon.phoneOtpEnabled || gateOtpDone)",
+      "const flowReady = gateReady && (!salon.phoneOtpEnabled || gateOtpDone || sequenceOtpRecoveryActive)",
     );
+    // Recovery keeps only the same sequence draft mounted; the behavioral
+    // BookingSequenceOtpGate suite also verifies individual mode stays closed.
+    expect(switcher).toContain('const sequenceOtpRecoveryActive = mode === "sequence" &&');
+    expect(switcher).toContain("sequenceOtpRecovery?.salonId === salon.id &&");
+    expect(switcher).toContain("sequenceOtpRecovery.phoneRevision === entryPhoneRevision &&");
+    expect(switcher).toContain("sequenceOtpRecovery.phoneDigits === entryValidation.digits");
     expect(switcher).toContain("initialOtpSessionId: gateOtpSessionId");
     expect(phonePanel).toContain("onRebook(returningCustomer.lastBooking!)");
     expect(flow).toContain("const handleRebook = useCallback(");
     expect(flow).toContain('setStep("time")');
     expect(flow).toContain("submitPublicBooking({");
     expect(flow).toContain("otpSessionId: otpSessionId ?? null");
-    expect(flow).toContain("const bookingRequestIdForAttempt = bookingSubmitIdempotencyKeyRef.current");
+    expect(flow).toContain("const bookingRequestIdForAttempt = paidSnapshot?.requestId ?? bookingSubmitIdempotencyKeyRef.current");
     expect(flow).toContain("idempotencyKey: bookingRequestIdForAttempt");
     expect(flow).not.toContain("/api/quick-rebook");
   });

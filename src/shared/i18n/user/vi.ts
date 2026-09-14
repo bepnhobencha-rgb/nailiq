@@ -2099,6 +2099,10 @@ export const userVi: UserMessages = {
       conflictMessage: "Slot đã có {name} đặt. Chọn giờ khác.",
       not_foundMessage: "Không tìm thấy booking",
       invalid_statusMessage: "Không thể sửa booking này",
+      unauthorizedMessage:
+        "Quyền truy cập hiện tại không cho phép sửa lịch hẹn. Hãy đăng nhập lại hoặc nhờ chủ tiệm kiểm tra quyền của bạn.",
+      saveOutcomeUnknownMessage: "Chưa xác nhận được kết quả lưu. Hãy tải lại để kiểm tra lịch hẹn và quyền truy cập trước khi thử lại.",
+      reloadButton: "Tải lại và kiểm tra lịch",
       serverErrorMessage: "Lỗi server. Thử lại.",
       pastDateMessage: "Không thể dời lịch về quá khứ.",
       outsideHoursMessage:
@@ -2106,7 +2110,8 @@ export const userVi: UserMessages = {
     },
     actionErrorFallback: "Không thực hiện được thao tác. Thử lại.",
     actionErrors: {
-      unauthorized: "Cần đăng nhập.",
+      unauthorized:
+        "Quyền truy cập hiện tại không cho phép thao tác này. Hãy đăng nhập lại hoặc nhờ chủ tiệm kiểm tra quyền của bạn.",
       salon_mismatch: "Tiệm không khớp phiên của bạn.",
       server_error: "Có lỗi. Thử lại sau.",
       invalid_name: "Nhập tên khách.",
@@ -2422,6 +2427,8 @@ export const userVi: UserMessages = {
       sectionTitle: "Gói đăng ký",
       sectionIntro:
         "Chọn gói phù hợp với tiệm. Trong V1, NailIQ hỗ trợ đổi gói thủ công.",
+      manualBillingNotice: "Liên hệ NailIQ để đổi gói hoặc được hỗ trợ về đăng ký của tiệm.",
+      contactSupport: "Liên hệ NailIQ",
       currentBadge: "Đang dùng",
       perMonth: "/ tháng",
       unlimited: "Không giới hạn",
@@ -2640,4 +2647,20 @@ export const userVi: UserMessages = {
     labelEvidenceDue: "Hạn nộp",
     noInfo: "—",
   },
+};
+
+export const ownerRemovalCopyVi: typeof import("./en").ownerRemovalCopyEn = {
+  title: "Yêu cầu gỡ thẻ", intro: "Kiểm tra yêu cầu gỡ trước đó, kể cả khi liên kết của khách đã hết hạn.",
+  empty: "Không có yêu cầu gỡ thẻ chưa giải quyết.", loadError: "Chưa tải được yêu cầu gỡ thẻ.",
+  pending: "Chưa xác nhận thẻ đã gỡ", check: "Kiểm tra kết quả gỡ thẻ", open: "Mở lịch hẹn", last: "Ghi nhận gần nhất: ",
+  success: "Đã xác nhận gỡ thẻ. Lịch hẹn vẫn được giữ.",
+  unresolved: "Chưa xác nhận được thẻ đã gỡ. Vui lòng kiểm tra kết nối và yêu cầu trước đó trước khi xử lý tiếp.",
+  failed: "Chưa kiểm tra được kết quả. Vui lòng thử lại.", more: "Hiển thị tối đa 100 yêu cầu gần nhất.",
+  reviewRequired: "Cần kiểm tra yêu cầu này trước khi có thể đối soát. Không gửi thêm yêu cầu gỡ thẻ.",
+  reasons: { context: "Cần kiểm tra yêu cầu trước đó", authority: "Cần kiểm tra quyền hoặc trạng thái lịch hẹn",
+    configuration: "Chưa kết nối được dịch vụ thẻ", provider_read: "Cần kiểm tra xác nhận từ dịch vụ thẻ",
+    dispatch_preparation: "Chưa chuẩn bị được yêu cầu gỡ thẻ", provider_preflight: "Chưa xác minh được thông tin thẻ",
+    provider_mutation: "Dịch vụ thẻ chưa xác nhận đã gỡ thẻ", receipt_validation: "Chưa xác minh được xác nhận gỡ thẻ",
+    provider_unknown: "Cần kiểm tra yêu cầu gỡ thẻ trước đó",
+    database_completion: "Cần kiểm tra xác nhận gỡ thẻ", unknown: "Đang chờ kết quả gỡ thẻ đã xác minh" },
 };

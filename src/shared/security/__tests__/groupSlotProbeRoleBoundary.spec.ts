@@ -33,7 +33,7 @@ describe("public group-slot probe role boundary", () => {
       /GRANT EXECUTE ON FUNCTION public\.check_group_slots_available\(jsonb\)[\s\S]*TO anon, service_role/i,
     );
     expect(currentProof).toContain(
-      "('public.check_group_slots_available(jsonb)', true, false)",
+      "('public.check_group_slots_available(jsonb)', true, false, true)",
     );
   });
 
