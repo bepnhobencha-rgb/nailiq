@@ -138,6 +138,10 @@ test.describe("Waitlist advance cron", () => {
   test("cron messages the just-promoted D2 customer, not the older in-window D1 one", async ({
     request,
   }) => {
+    test.skip(
+      process.env.DISABLE_OUTBOUND_SMS === "1",
+      "Remote QA deliberately disables outbound SMS; promotion state is covered above.",
+    );
     await runCron(request);
 
     const supabase = createServiceRoleClient();
