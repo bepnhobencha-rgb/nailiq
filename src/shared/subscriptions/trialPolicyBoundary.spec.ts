@@ -29,6 +29,10 @@ describe("versioned trial policy boundaries", () => {
     );
     expect(migration).not.toMatch(/UPDATE\s+public\.salons/i);
     expect(migration).toContain("THEN 'legacy'");
+    expect(migration).toContain(
+      "jsonb_typeof(\n      s.feature_flags->'trial_expiry_policy_version'",
+    );
+    expect(migration).toContain("IS DISTINCT FROM 'number'");
   });
 
   it("blocks new bookings at the database boundary with a typed rejection", () => {

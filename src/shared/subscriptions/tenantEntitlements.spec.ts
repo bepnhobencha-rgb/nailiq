@@ -72,6 +72,15 @@ describe("tenant trial entitlements", () => {
     expect(result.canCreateNewBooking).toBe(true);
   });
 
+  it("does not enroll a tenant from a string-shaped policy marker", () => {
+    const result = resolveTenantEntitlements({
+      ...enrolled,
+      feature_flags: { [TRIAL_EXPIRY_POLICY_FLAG]: "1" },
+    });
+    expect(result.state).toBe("legacy");
+    expect(result.policyEnforced).toBe(false);
+  });
+
   it("keeps archived and locked tenants closed even before enrollment", () => {
     for (const row of [
       { ...enrolled, feature_flags: {}, archived_at: "2026-09-15T00:00:00.000Z" },

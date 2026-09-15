@@ -18,7 +18,10 @@ AS $$
     WHEN s.id IS NULL THEN 'unknown'
     WHEN s.archived_at IS NOT NULL THEN 'archived'
     WHEN s.superadmin_locked_at IS NOT NULL THEN 'locked'
-    WHEN coalesce(s.feature_flags->>'trial_expiry_policy_version', '') <> '1'
+    WHEN pg_catalog.jsonb_typeof(
+      s.feature_flags->'trial_expiry_policy_version'
+    ) IS DISTINCT FROM 'number'
+      OR coalesce(s.feature_flags->>'trial_expiry_policy_version', '') <> '1'
       THEN 'legacy'
     WHEN s.subscription_status = 'active' THEN 'active'
     WHEN s.subscription_status = 'past_due' THEN 'past_due'
