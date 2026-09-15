@@ -13,6 +13,7 @@ const mocks = vi.hoisted(() => ({
   resolveReleaseReviewNotice: vi.fn(),
   requireActiveSuperAdminSession: vi.fn(),
   clearInactiveServerSession: vi.fn(),
+  loginIntro: vi.fn(() => "SUPERADMIN_LOGIN_INTRO"),
 }));
 
 vi.mock("next/navigation", () => ({
@@ -49,6 +50,7 @@ vi.mock("@/components/superadmin/ReleaseReviewNotice", () => ({
 }));
 vi.mock("@/app/superadmin/login/SuperadminLoginForm", () => ({
   SuperadminLoginForm: () => "SUPERADMIN_LOGIN_FORM",
+  SuperadminLoginIntro: mocks.loginIntro,
 }));
 
 import SuperadminShellLayout from "@/app/superadmin/(shell)/layout";
@@ -131,16 +133,22 @@ describe("platform superadmin shell boundary", () => {
     ).resolves.toBeTruthy();
   });
 
-  it("shows a truthful re-authentication notice after session rejection", async () => {
+  it.each([
+    ["reauthentication_required", true],
+    [undefined, false],
+  ] as const)("passes the re-authentication notice flag for %s", async (notice, expected) => {
     mocks.createClient.mockResolvedValue(requestClient(null));
     const page = await SuperadminLoginPage({
       searchParams: Promise.resolve({
-        notice: "reauthentication_required",
+        notice,
       }),
     });
     const html = renderToStaticMarkup(page);
-    expect(html).toContain("Your secure session ended or could not be verified");
-    expect(html).toContain("superadmin-reauthentication-notice");
+    expect(html).toContain("SUPERADMIN_LOGIN_INTRO");
+    expect(mocks.loginIntro).toHaveBeenCalledWith(
+      expect.objectContaining({ reauthenticationRequired: expected }),
+      undefined,
+    );
   });
 });
 

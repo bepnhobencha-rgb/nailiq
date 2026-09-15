@@ -24,6 +24,7 @@ vi.mock("@/shared/auth/requireActivePasswordRecoverySession", () => ({
 }));
 vi.mock("./SalonOwnerResetPasswordForm", () => ({
   SalonOwnerResetPasswordForm: () => null,
+  SalonOwnerResetPasswordHeader: () => null,
 }));
 
 import ResetPasswordPage from "./page";
