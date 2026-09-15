@@ -460,8 +460,10 @@ BEGIN
   END IF;
 
   -- Exact create+bind replay also precedes current salon/pricing lifecycle drift.
-  UPDATE public.salons SET archived_at=now(),stripe_connect_charges_enabled=false WHERE id=v_salon;
+  -- Apply the synthetic catalog drift while the salon is still operational;
+  -- P1-05 deliberately rejects catalog writes after archive.
   UPDATE public.services SET price_cents=8888 WHERE id=v_service;
+  UPDATE public.salons SET archived_at=now(),stripe_connect_charges_enabled=false WHERE id=v_salon;
   v_replay:=public.create_public_booking_with_deposit_payment(
     v_salon,v_service,v_staff,'Paid QA',v_phone,v_start,v_end,'confirmed',NULL,
     ARRAY[]::uuid[],NULL,NULL,NULL,NULL,false,v_intent,v_quote->>'pricing_fingerprint',
