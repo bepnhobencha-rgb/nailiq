@@ -7,7 +7,8 @@
 - Environment: local Next.js against disposable local Supabase with synthetic data.
 - SMS, email, calls, provider notifications and payment charge dispatch: disabled.
 - Square Production, live customers, live bookings and Production writes: none.
-- Publication status: local changes only; no commit, push, PR, Preview, merge or deploy.
+- Publication status: commit `d66043b2`, PR #1409 and Vercel QA Preview;
+  no merge or Production deployment.
 
 ## Existing before this task
 
@@ -92,6 +93,17 @@ payment actions.
 | Next production build | PASS |
 | Playwright HTML report | PASS — four end-state screenshots stored under `playwright-report/` locally |
 
+## QA Preview verification
+
+- Deployment: `dpl_FHUqwpnwGoUX8JTuJBpTTL4MMJXj`
+- URL: `https://nailiq-git-audit-p1-03-ux-20260915-bepnhobencha-2588s-projects.vercel.app`
+- Vercel target/state: Preview / READY.
+- Computer Use loaded the public Hi-Lite Studio booking entry in Vietnamese,
+  confirmed the EN/VI controls changed the rendered copy, and found no browser
+  console errors.
+- No guest data was entered and no booking, notification, provider or payment
+  action was submitted during Preview verification.
+
 The test runner emitted known development-only messages for closed RSC streams,
 unauthenticated server probes and multiple local Supabase browser clients. They
 did not fail a gate, alter the persisted assertions or trigger outbound work.
@@ -109,7 +121,7 @@ did not fail a gate, alter the persisted assertions or trigger outbound work.
 | New user creates appointment in under 60 seconds | NOT PROVEN | Automated runtime is below the ceiling, but it is not a moderated first-time human pilot. |
 | New user creates walk-in in under 30 seconds | NOT PROVEN | Requires a timed pilot with a new receptionist/owner. |
 | Physical iPhone/iPad | NOT PROVEN | Current evidence uses real Chromium/WebKit engines with device profiles, not physical hardware. |
-| Preview verification | NOT RUN | Requires commit/push and a dedicated QA Preview after approval. |
+| Preview verification | QA PASS | Deployment READY; public VI booking entry loaded in Computer Use with no console errors. |
 
 ## Rollback boundary
 
@@ -128,7 +140,7 @@ did not fail a gate, alter the persisted assertions or trigger outbound work.
 
 - Product defect found and fixed locally: **PASS**
 - Local automated P1-03 code/QA acceptance: **PASS**
-- Preview verification: **NOT RUN**
+- Preview verification: **QA PASS**
 - Physical-device and first-time-user timing acceptance: **NOT PROVEN**
 - Production deployment/verification: **NOT RUN**
 - P1-03 final operational closure: **NOT YET COMPLETE**
