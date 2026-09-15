@@ -1179,8 +1179,8 @@ export function useBookingFlowState(
 
   const confirmTimeLabel = useMemo(() => {
     if (!timeSlot) return "";
-    return formatBookingSlotDisplay(selectedDate, timeSlot);
-  }, [selectedDate, timeSlot]);
+    return formatBookingSlotDisplay(selectedDate, timeSlot, language);
+  }, [language, selectedDate, timeSlot]);
 
   /** Advance from phone step to service step. */
   const handleContinueFromPhone = useCallback(() => {

@@ -75,6 +75,20 @@ async function openCreateAppointment(page: Page): Promise<void> {
   await page.getByTestId("mobile-create-appointment").click();
 }
 
+async function closeQueuePanelIfOpen(page: Page): Promise<void> {
+  const panel = page.getByTestId("queue-panel-slideover");
+  // The queue is a today-only surface. Future appointment dates do not mount
+  // it, so absence is already the desired state.
+  if ((await panel.count()) === 0) return;
+  if ((await panel.getAttribute("aria-hidden")) !== "false") return;
+
+  await page
+    .getByTestId("walkin-queue-sidebar")
+    .getByRole("button", { name: /close|đóng/i })
+    .click();
+  await expect(panel).toHaveAttribute("aria-hidden", "true");
+}
+
 test.beforeAll(async ({}, testInfo) => {
   fx = await seedReceptionistCenterFixture(rcSlug(testInfo.project.name));
 });
@@ -89,7 +103,12 @@ test.afterAll(async ({}, testInfo) => {
 
 test("operator completes the five essential Front Desk tasks in one shift", async ({
   page,
-}) => {
+}, testInfo) => {
+  const language = testInfo.project.name.endsWith("-vi") ? "vi" : "en";
+  await page.addInitScript((value: string) => {
+    window.localStorage.setItem("nailiq-user-lang", value);
+  }, language);
+
   const appointmentName = testClientNameMarker();
   const walkinNames = Array.from({ length: 4 }, () => testClientNameMarker());
   const walkinName = walkinNames[0]!;
@@ -199,7 +218,7 @@ test("operator completes the five essential Front Desk tasks in one shift", asyn
   );
   await page
     .getByTestId("desk-booking-form")
-    .getByRole("button", { name: "Close" })
+    .getByRole("button", { name: /close|đóng/i })
     .click();
 
   // 4. Add four walk-ins during the same shift. The fourth moves the cockpit
@@ -226,28 +245,28 @@ test("operator completes the five essential Front Desk tasks in one shift", asyn
     })
     .toEqual({ source: "walkin", status: "waiting" });
 
-  // On mobile the walk-in queue is a full-screen slide-over and intentionally
-  // stays open after adding a guest so the operator can continue intake. Close
-  // it before the journey moves back to the schedule; otherwise a same-day
-  // navigation can keep the overlay mounted and hide the appointment block.
-  if ((page.viewportSize()?.width ?? 1280) < 640) {
-    const queuePanel = page.getByTestId("walkin-queue-sidebar");
-    await queuePanel.getByRole("button", { name: "Close" }).click();
-    // The slide-over stays mounted for a smooth exit transition; its semantic
-    // closed state is `aria-hidden=true` rather than DOM removal.
-    await expect(page.getByTestId("queue-panel-slideover")).toHaveAttribute(
-      "aria-hidden",
-      "true",
-    );
-  }
+  // The walk-in queue intentionally stays open after adding a guest so the
+  // operator can continue intake. Close the panel before the journey moves
+  // back to the schedule; at tablet widths it can otherwise cover the booking
+  // column that the next task needs.
+  await closeQueuePanelIfOpen(page);
 
   // 5. Change appointment status and prove the UI action reached the database.
   const persistedAppointment = await latestBooking(fx.salonId, appointmentName);
   if (!persistedAppointment) throw new Error("Appointment was not persisted");
+  // Leave the already-mounted center route before navigating to the future
+  // appointment date. Otherwise the helper's route wait can resolve against
+  // the old same-path page while WebKit is still aborting an in-flight RSC
+  // refresh, leaving the UI on today even though the new URL requested a date.
+  await page.goto("about:blank");
   await gotoReceptionistCenter(page, fx.slug, {
     dateYmd: bookingYmd,
     expectWalkinQueue: false,
   });
+  await expect(page).toHaveURL(new RegExp(`[?&]date=${bookingYmd}(?:&|$)`));
+  // A fresh page session intentionally auto-opens a non-empty queue. Dismiss
+  // it again so the operator can work with the appointment underneath.
+  await closeQueuePanelIfOpen(page);
   await page
     .getByTestId(`booking-block-${persistedAppointment.id}`)
     .click();
@@ -265,4 +284,9 @@ test("operator completes the five essential Front Desk tasks in one shift", asyn
   // shift into a multi-minute operator task. This is an automated QA timing
   // budget, not a claim about a moderated human usability session.
   expect(Date.now() - journeyStartedAt).toBeLessThan(120_000);
+
+  await testInfo.attach("p1-03-final-state", {
+    body: await page.screenshot({ fullPage: true }),
+    contentType: "image/png",
+  });
 });

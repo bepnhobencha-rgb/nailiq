@@ -1,14 +1,18 @@
-/** Full English guest-facing label for confirm/done (booking route is English-only). */
+/** Guest-facing date/time label for the selected booking-surface language. */
 export function formatBookingSlotDisplay(
   selectedDate: Date,
   timeSlotLabel: string,
+  language: "en" | "vi" = "en",
 ): string {
-  const datePart = selectedDate.toLocaleDateString("en-US", {
-    weekday: "short",
-    month: "short",
-    day: "numeric",
-    year: "numeric",
-  });
+  const datePart = selectedDate.toLocaleDateString(
+    language === "vi" ? "vi-VN" : "en-US",
+    {
+      weekday: "short",
+      month: "short",
+      day: "numeric",
+      year: "numeric",
+    },
+  );
   return `${datePart} · ${timeSlotLabel}`;
 }
 
