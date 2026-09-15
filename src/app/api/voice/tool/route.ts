@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createServiceRoleClient } from "@/shared/lib/supabase/serviceRole";
+import { resolveTenantEntitlements } from "@/shared/subscriptions/tenantEntitlements";
 import { executeVoiceTool, logVoiceToolCall } from "@/shared/voiceai/toolExecutor";
 import { clientIp } from "@/shared/lib/inAppRateLimit";
 import { consumeDurableRateLimitBuckets } from "@/shared/security/publicServerActionRateLimit";
@@ -130,14 +131,17 @@ export async function POST(req: NextRequest) {
     const tGate = Date.now();
     const { data: salonRow } = await supabase
       .from("salons")
-      .select("voice_ai_enabled")
+      .select("voice_ai_enabled, archived_at, superadmin_locked_at, subscription_status, trial_ends_at, feature_flags")
       .eq("slug", salonSlug)
       .maybeSingle();
     gateMs = Date.now() - tGate;
     if (!salonRow) {
       return NextResponse.json({ error: "salon_not_found" }, { status: 404 });
     }
-    if ((salonRow as { voice_ai_enabled?: boolean | null }).voice_ai_enabled !== true) {
+    if (
+      (salonRow as { voice_ai_enabled?: boolean | null }).voice_ai_enabled !== true ||
+      !resolveTenantEntitlements(salonRow).canStartVoiceSession
+    ) {
       return NextResponse.json({ error: "voice_not_enabled" }, { status: 403 });
     }
   }

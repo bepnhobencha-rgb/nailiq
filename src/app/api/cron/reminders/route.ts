@@ -24,6 +24,7 @@ import {
   type ReminderType,
 } from "@/shared/reminders/reminderDeliveryClaims";
 import { customerEmailDeliverySuppressionReason } from "@/shared/notifications/customerEmailDeliverySuppression";
+import { resolveTenantEntitlements } from "@/shared/subscriptions/tenantEntitlements";
 
 /** Vercel Cron calls this route every 15 minutes with the CRON_SECRET header. */
 export const runtime = "nodejs";
@@ -39,6 +40,7 @@ type BookingRow = {
   client_email: string | null;
   client_phone: string;
   start_time_utc: string;
+  created_at: string;
   no_show_risk_score: number | null;
   client_locale: string | null;
   reminder_24h_sent_at: string | null;
@@ -61,6 +63,10 @@ type BookingRow = {
     sms_a2p_registered: boolean | null;
     feature_flags: Record<string, unknown> | null;
     logo_url: string | null;
+    archived_at: string | null;
+    superadmin_locked_at: string | null;
+    subscription_status: string | null;
+    trial_ends_at: string | null;
   } | null;
 };
 
@@ -180,12 +186,12 @@ export async function GET(req: Request) {
   const window3hStart = dueWindows.reminder3h.startUtc;
   const window3hEnd = dueWindows.reminder3h.endUtc;
 
-  const baseSelect = `id, salon_id, client_name, client_email, client_phone, start_time_utc,
+  const baseSelect = `id, salon_id, client_name, client_email, client_phone, start_time_utc, created_at,
     no_show_risk_score, client_locale, status,
     reminder_24h_sent_at, reminder_3h_sent_at,
     group_id, is_group_organizer,
     services!bookings_service_id_fkey(name), staff(name),
-    salons(name, slug, timezone, vertical, reminders_enabled, reminder_24h_enabled, reminder_3h_enabled, sms_reminders_enabled, sms_outbound_enabled, email_outbound_enabled, sms_a2p_registered, feature_flags, logo_url)`;
+    salons(name, slug, timezone, vertical, reminders_enabled, reminder_24h_enabled, reminder_3h_enabled, sms_reminders_enabled, sms_outbound_enabled, email_outbound_enabled, sms_a2p_registered, feature_flags, logo_url, archived_at, superadmin_locked_at, subscription_status, trial_ends_at)`;
 
   // Fetch both email-eligible AND SMS-eligible bookings (no email filter here).
   const { data: need24h, error: err24h } = await supabase
@@ -456,6 +462,13 @@ export async function GET(req: Request) {
   async function processReminder(booking: BookingRow, reminderType: "24h" | "3h") {
     const salon = booking.salons;
     if (!salon?.reminders_enabled) return;
+    const entitlements = resolveTenantEntitlements(salon, now);
+    if (!entitlements.canSendTransactionalReminder) return;
+    if (
+      entitlements.state === "trial_continuity" &&
+      entitlements.trialEndsAt &&
+      Date.parse(booking.created_at) >= Date.parse(entitlements.trialEndsAt)
+    ) return;
     if (reminderType === "24h" && !salon.reminder_24h_enabled) return;
     if (reminderType === "3h"  && !salon.reminder_3h_enabled)  return;
 

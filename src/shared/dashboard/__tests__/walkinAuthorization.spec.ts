@@ -45,6 +45,7 @@ let replay: Record<string, unknown> | null = null;
 let activeAction = "";
 let autoAssign = false;
 let failInsert = false;
+let canCreateNewBooking = true;
 
 const actions = [
   { name: "addWalkinToQueue", run: (target = salonId) => addWalkinToQueue(slug, { ...createInput, salonId: target }) },
@@ -96,12 +97,14 @@ function query(table: string) {
 beforeEach(() => {
   vi.clearAllMocks(); mocks.writes.length = 0; mocks.filters.length = 0;
   role = "nail_tech"; replay = null; activeAction = ""; autoAssign = false; failInsert = false;
+  canCreateNewBooking = true;
   vi.useFakeTimers(); vi.setSystemTime(now);
   vi.stubGlobal("fetch", () => { throw new Error("NETWORK_FORBIDDEN"); });
   vi.spyOn(console, "error").mockImplementation(() => {});
   mocks.context.mockImplementation(async () => ({ role, kind: "member", userId,
     salon: { id: salonId, name: "Synthetic Local Only", slug, timezone: "America/Vancouver", opening_hours: hours,
       booking_closed_dates: [], subscription_plan: "pro", plan_override: null, feature_flags: {} },
+    entitlements: { canCreateNewBooking },
     supabase: { from: mocks.from, rpc: mocks.rpc } }));
   mocks.from.mockImplementation(query);
   mocks.rpc.mockResolvedValue({ data: false, error: null });
@@ -116,6 +119,30 @@ beforeEach(() => {
 afterEach(() => {
   expect(mocks.outbound).not.toHaveBeenCalled();
   vi.unstubAllGlobals(); vi.useRealTimers(); vi.restoreAllMocks();
+});
+
+it("blocks a fresh walk-in when the enrolled trial no longer allows new bookings", async () => {
+  role = "owner";
+  canCreateNewBooking = false;
+  await expect(addWalkinToQueue(slug, createInput)).resolves.toEqual({
+    ok: false,
+    error: "trial_new_booking_paused",
+  });
+  expect(mocks.limit).not.toHaveBeenCalled();
+  expect(mocks.writes).toEqual([]);
+});
+
+it("returns an exact committed replay after trial expiry without another insert", async () => {
+  role = "owner";
+  canCreateNewBooking = false;
+  replay = canonicalReplay();
+  await expect(addWalkinToQueue(slug, createInput)).resolves.toMatchObject({
+    ok: true,
+    bookingId,
+    replayed: true,
+  });
+  expect(mocks.limit).not.toHaveBeenCalled();
+  expect(mocks.writes).toEqual([]);
 });
 
 function expectNoWork() {

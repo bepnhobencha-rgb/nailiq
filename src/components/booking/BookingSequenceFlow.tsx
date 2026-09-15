@@ -570,6 +570,10 @@ export function BookingSequenceFlow({
         setError(vi ? "Giá hoặc lịch đã đổi. Vui lòng xem lại và bấm xác nhận lần nữa." : "Price or timing changed. Review it and confirm again.");
         return;
       }
+      if (result.ok === false && result.code === "trial_new_booking_paused") {
+        setError(t.bookingErrors.trialBookingPaused);
+        return;
+      }
       if (!response.ok && result.ok === false && result.code === "slot_conflict") {
         // A definite rejection permits a new intent; an unknown result must keep recovery authority.
         beginNewIntent();

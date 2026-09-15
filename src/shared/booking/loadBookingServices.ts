@@ -287,6 +287,10 @@ export async function loadBookingServicesForSalonSlug(
   const salonResourcesEnabled =
     (salon as { resources_enabled?: unknown }).resources_enabled === true;
   const now = new Date().toISOString();
+  const bookingEntitlementQuery = client.rpc(
+    "public_salon_accepts_new_bookings" as never,
+    { p_salon_id: salonId } as never,
+  );
 
   // These catalog reads are tenant-scoped and independent once the exact
   // public salon row is known. Starting them together keeps the public SSR
@@ -330,21 +334,24 @@ export async function loadBookingServicesForSalonSlug(
         .order("display_order" as never, { ascending: true })
     : Promise.resolve({ data: [], error: null });
 
-  const firstWave = knownSnapshot
-    ? [
+  const [firstWave, bookingEntitlement] = await Promise.all([
+    knownSnapshot
+      ? Promise.resolve([
         { data: knownSnapshot.services, error: null },
         { data: knownSnapshot.staff, error: null },
         { data: knownSnapshot.promotions, error: null },
         { data: knownSnapshot.combos, error: null },
         { data: knownSnapshot.resources, error: null },
-      ]
-    : await Promise.all([
+      ])
+      : Promise.all([
         servicesQuery,
         staffQuery,
         promotionsQuery,
         combosQuery,
         resourcesQuery,
-      ]);
+      ]),
+    bookingEntitlementQuery,
+  ]);
   const [
     { data: rows, error: servicesErr },
     { data: staffList, error: staffErr },
@@ -357,6 +364,7 @@ export async function loadBookingServicesForSalonSlug(
     console.error("loadBookingServices error:", servicesErr);
   }
   let proofComplete = !servicesErr;
+  if (bookingEntitlement.error) proofComplete = false;
 
   if (staffErr) {
     console.error("loadBookingServices staff error:", staffErr);
@@ -653,8 +661,9 @@ export async function loadBookingServicesForSalonSlug(
           ? { en: en.trim(), vi: vi.trim() }
           : null;
       })(),
-      acceptingBookings: !!(salon as { profile_complete?: unknown })
-        .profile_complete,
+      acceptingBookings:
+        (salon as { profile_complete?: unknown }).profile_complete === true &&
+        bookingEntitlement.data === true,
       /** Only `salon_phone`; do not fall back to `phone` (owner / private). */
       salonPhone: (() => {
         const p = (salon as { salon_phone?: unknown }).salon_phone;

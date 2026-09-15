@@ -1,6 +1,7 @@
 import { describe, expect, it } from "vitest";
 
 import { canRunAutonomousAiForTenant } from "../tenantExecutionBoundary";
+import { TRIAL_EXPIRY_POLICY_FLAG } from "@/shared/subscriptions/tenantEntitlements";
 
 const operational = {
   archived_at: null,
@@ -19,6 +20,20 @@ describe("AI tenant execution boundary", () => {
       ).toBe(true);
     },
   );
+
+  it("stops autonomous work for an enrolled expired trial", () => {
+    expect(
+      canRunAutonomousAiForTenant(
+        {
+          ...operational,
+          subscription_status: "trialing",
+          trial_ends_at: "2026-09-15T00:00:00.000Z",
+          feature_flags: { [TRIAL_EXPIRY_POLICY_FLAG]: 1 },
+        },
+        new Date("2026-09-15T00:00:00.000Z"),
+      ),
+    ).toBe(false);
+  });
 
   it.each([
     {

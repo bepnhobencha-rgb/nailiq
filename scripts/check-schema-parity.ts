@@ -365,7 +365,8 @@ const RELEASE_SHAPE = {
   // +3 R10 private phone/terminal-proof and existing-card receipt helpers.
   // +1 R11 service-only atomic expired-grace pause with audit.
   // +1 P1-01 service-only Waitlist terminal-delivery truth projection.
-  functions: 595,
+  // +5 P1-05 trial entitlement, booking/write, and charge-boundary functions.
+  functions: 600,
   // +4 pending-receipt correlation triggers across notification/staff INSERT
   // and provider-SID transitions.
   // +1 V1 terminal-booking policy trigger.
@@ -391,7 +392,8 @@ const RELEASE_SHAPE = {
   // +1 fail-closed individual waitlist insert trigger.
   // +1 bulk email append-only event trigger.
   // +1 bulk email canary-completion trigger.
-  triggers: 162,
+  // +7 P1-05 booking, operational-write, and new-charge boundary triggers.
+  triggers: 169,
   // Transition/capability PKs, unique keys and focused due/salon indexes.
   // The refund inbox and customer identity map each add PK, unique, and two
   // focused indexes.

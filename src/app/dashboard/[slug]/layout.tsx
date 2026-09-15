@@ -283,12 +283,16 @@ export default async function DashboardSlugLayout({ children, params }: Props) {
   };
   const subscriptionPlan = parseSubscriptionPlan(flagSalon.subscription_plan);
   const daysLeftInTrial = trialDaysRemaining(flagSalon.trial_ends_at);
+  const trialEntitlementState = ctx.entitlements.state;
+  const trialContinuity = trialEntitlementState === "trial_continuity";
+  const trialReadOnly = trialEntitlementState === "trial_read_only";
   const [userLanguage, platformAnnouncements] = await Promise.all([
     resolveUserLanguage(),
     loadDashboardAnnouncements(ctx.role),
   ]);
   const isTrial =
-    flagSalon.subscription_status === "trialing" && daysLeftInTrial != null;
+    flagSalon.subscription_status === "trialing" &&
+    (daysLeftInTrial != null || trialContinuity || trialReadOnly);
 
   // Resolve release-feature visibility server-side so the client sidebar/shell
   // receive plain booleans (never the raw salon row). Now covers EVERY key
@@ -337,14 +341,26 @@ export default async function DashboardSlugLayout({ children, params }: Props) {
           {isTrial ? (
             <div
               className={`mx-4 mt-3 flex items-center justify-between gap-3 rounded-2xl border px-4 py-2.5 text-sm sm:mx-6 sm:mt-4 sm:py-3 ${
-                daysLeftInTrial === 0
+                trialContinuity || trialReadOnly || daysLeftInTrial === 0
                   ? "border-nq-error/40 bg-nq-error/10 text-nq-foreground"
                   : "border-nq-primary/35 bg-nq-primary/10 text-nq-foreground"
               }`}
               role="status"
             >
               <p className="min-w-0 leading-snug">
-                {daysLeftInTrial === 0 ? (
+                {trialReadOnly ? (
+                  userLanguage === "vi" ? (
+                    "Trial đã hết và tài khoản đang ở chế độ chỉ đọc. Dữ liệu vẫn được giữ; liên hệ NailIQ để kích hoạt lại."
+                  ) : (
+                    "Your trial has ended and the account is read-only. Your data is retained; contact NailIQ to reactivate."
+                  )
+                ) : trialContinuity ? (
+                  userLanguage === "vi" ? (
+                    "Trial đã hết. Đặt hẹn mới và tự động hóa đã tạm dừng; bạn vẫn có thể xử lý các lịch hẹn hiện có trong 7 ngày."
+                  ) : (
+                    "Your trial has ended. New bookings and automation are paused; you can still service existing appointments for 7 days."
+                  )
+                ) : daysLeftInTrial === 0 ? (
                   userLanguage === "vi" ? (
                     "Thời gian dùng thử 14 ngày đã kết thúc. Chọn gói để tiếp tục dùng các tính năng trả phí."
                   ) : (

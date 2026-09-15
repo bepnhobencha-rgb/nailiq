@@ -46,7 +46,7 @@ const setupPage = readFileSync(
 describe("Coco Setup activation database boundary", () => {
   it("activates only the new-owner insert and resumes directly in Coco Setup", () => {
     expect(registrationAction).toContain(
-      "feature_flags: withCocoSetupActivation(null)",
+      "feature_flags: withTrialExpiryPolicy(withCocoSetupActivation(null))",
     );
     expect(registrationAction).toContain(
       "Only newly created owner salons enter Coco Setup automatically",

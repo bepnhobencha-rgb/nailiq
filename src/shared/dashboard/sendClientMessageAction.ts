@@ -54,6 +54,9 @@ export async function sendClientMessage(
   if (!isFrontDeskRole(ctx.role)) {
     return { ok: false, error: "forbidden" };
   }
+  if (!ctx.entitlements.canRunMarketing) {
+    return { ok: false, error: "trial_outbound_paused" };
+  }
 
   // ── Validate input ────────────────────────────────────────────────────────
   const phone = (input.phone ?? "").trim();

@@ -116,6 +116,7 @@ export type GroupCreateResult =
         | "idempotency_conflict"
         | "slot_conflict"
         | "monthly_booking_limit_reached"
+        | "trial_new_booking_paused"
         | "create_unavailable"
         | "pricing_invalid";
       quote?: GroupBookingPricingQuote;
@@ -313,6 +314,9 @@ export async function createGroupBookingsAuthoritative(input: unknown): Promise<
       p_otp_session_id: request.otpSessionId ?? null,
     } as never,
   );
+  if (error?.code === "NITRL" || error?.message?.includes("trial_new_booking_paused")) {
+    return { ok: false, code: "trial_new_booking_paused" };
+  }
   if (error || data == null) return { ok: false, code: "create_unavailable" };
   const raw = Array.isArray(data) ? data[0] : data;
   if (!raw || typeof raw !== "object") return { ok: false, code: "create_unavailable" };

@@ -20,9 +20,9 @@ BEGIN
     AND p.prosecdef
     AND has_function_privilege('anon', p.oid, 'EXECUTE');
 
-  IF v_actual_count <> 12 THEN
+  IF v_actual_count <> 13 THEN
     RAISE EXCEPTION
-      'anonymous SECURITY DEFINER allowlist drift: expected 12, found %',
+      'anonymous SECURITY DEFINER allowlist drift: expected 13, found %',
       v_actual_count;
   END IF;
 
@@ -169,6 +169,18 @@ BEGIN
           ARRAY[
             'SELECT s.slug',
             'd.domain = lower(p_host)'
+          ]::text[]
+        ),
+        (
+          'public.public_salon_accepts_new_bookings(uuid)',
+          's',
+          'search_path=""',
+          'RETURNS boolean',
+          ARRAY[
+            's.profile_complete IS TRUE',
+            'public.tenant_trial_entitlement_state',
+            'IN (''legacy'', ''active_trial'', ''active'', ''past_due'')',
+            'WHERE s.id = p_salon_id'
           ]::text[]
         ),
         (
