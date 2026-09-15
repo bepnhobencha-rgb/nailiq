@@ -676,6 +676,10 @@ export async function addWalkinToQueue(
     if (replay) return replay;
   }
 
+  if (!ctx.entitlements.canCreateNewBooking) {
+    return fail("trial_new_booking_paused");
+  }
+
   // Plan-tier cap applies only to a genuinely new booking. Idempotent replays
   // above return the already committed receipt even if the cap was reached
   // between the first response and a retry.
@@ -774,6 +778,14 @@ export async function addWalkinToQueue(
     .maybeSingle();
 
   if (insErr) {
+    if (
+      (insErr as { code?: string }).code === "NITRL" ||
+      (insErr as { message?: string }).message?.includes(
+        "trial_new_booking_paused",
+      )
+    ) {
+      return fail("trial_new_booking_paused");
+    }
     if ((insErr as { code?: string }).code === "23505" && !recovery) {
       // A concurrent retry won the unique (salon_id, idempotency_key)
       // insert. Read its canonical receipt without attempting another insert.
@@ -1884,6 +1896,9 @@ export async function createDeskGroup(
   if (replay.kind === "conflict") {
     return { ok: false, reason: "idempotency_conflict" };
   }
+  if (replay.kind === "none" && !ctx.entitlements.canCreateNewBooking) {
+    return { ok: false, reason: "trial_new_booking_paused" };
+  }
   if (replay.kind === "unavailable") {
     ErrorReporter.captureMessage("desk group creation boundary unavailable", {
       level: "error",
@@ -2046,6 +2061,7 @@ export async function createDeskGroup(
             if (
               created.code === "slot_conflict" ||
               created.code === "monthly_booking_limit_reached" ||
+              created.code === "trial_new_booking_paused" ||
               created.code === "idempotency_conflict" ||
               created.code === "pricing_changed" ||
               created.code === "pricing_invalid"
@@ -3656,6 +3672,10 @@ export async function addDeskAppointment(
     }
   }
 
+  if (!ctx.entitlements.canCreateNewBooking) {
+    return fail("trial_new_booking_paused");
+  }
+
   // Plan-tier booking cap (same gate as walk-ins).
   try {
     const { data: planRow } = await db
@@ -4274,6 +4294,14 @@ export async function addDeskAppointment(
     );
     if (rpcErr) {
       const code = (rpcErr as { code?: string }).code;
+      if (
+        code === "NITRL" ||
+        (rpcErr as { message?: string }).message?.includes(
+          "trial_new_booking_paused",
+        )
+      ) {
+        return fail("trial_new_booking_paused");
+      }
       if (code === "P0002" || code === "23P01") return fail("time_slot_taken");
       console.error("[addDeskAppointment] rpc error", rpcErr);
       return fail("server_error");
@@ -4289,6 +4317,9 @@ export async function addDeskAppointment(
       if (rCode === "slot_conflict") return fail("time_slot_taken");
       if (rCode === "outside_hours") return fail("outside_hours");
       if (rCode === "pricing_changed") return fail("pricing_changed");
+      if (rCode === "trial_new_booking_paused") {
+        return fail("trial_new_booking_paused");
+      }
       if (rCode === "idempotency_mismatch") return fail("idempotency_conflict");
       return fail("server_error");
     }

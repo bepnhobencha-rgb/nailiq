@@ -899,7 +899,7 @@ async function executePublicBooking(
       binding: { kind: "individual", salonId: String(salon.id), idempotencyKey: createIdempotencyKey, pricingFingerprint: expectedQuote.pricingFingerprint },
       invoke: signal => supabase.rpc("create_public_booking", createRpcArgs).abortSignal(signal),
       classify: value => {
-        if (value.error) return ["23505", "23P01", "PGRST202"].includes(value.error.code) ? "rejected" : "unknown";
+        if (value.error) return ["23505", "23P01", "PGRST202", "NITRL"].includes(value.error.code) ? "rejected" : "unknown";
         const raw = Array.isArray(value.data) ? value.data[0] : value.data;
         if (!raw || typeof raw !== "object") return "unknown";
         if (raw.success === false && DEFINITE_CREATE_REJECTIONS.has(raw.code)) return "rejected";
@@ -1036,6 +1036,12 @@ async function executePublicBooking(
 
   if (!bookingId || !authoritativePricing) {
     if (rpcErr) {
+      if (
+        rpcErr.code === "NITRL" ||
+        rpcErr.message?.includes("trial_new_booking_paused")
+      ) {
+        throw new Error("trial_new_booking_paused");
+      }
       if (rpcErr.code === "23505") throw new BookingConflictError();
       if (rpcErr.code === "23P01") throw new BookingConflictError(); // overlap / exclusion
       if (rpcErr.message?.includes("invalid_addon_service")) {

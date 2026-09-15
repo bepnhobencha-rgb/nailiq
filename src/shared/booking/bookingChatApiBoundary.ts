@@ -154,7 +154,7 @@ export async function loadAuthorizedBookingChatContext(
     const { data: rawSalon, error: salonError } = await admin
       .from("salons" as never)
       .select(
-        "id, name, description, address, timezone, salon_phone, opening_hours, vertical, profile_complete, feature_flags, archived_at, superadmin_locked_at, subscription_status" as never,
+        "id, name, description, address, timezone, salon_phone, opening_hours, vertical, profile_complete, feature_flags, archived_at, superadmin_locked_at, subscription_status, trial_ends_at" as never,
       )
       .eq("id" as never, salonId)
       .limit(1)
@@ -176,6 +176,7 @@ export async function loadAuthorizedBookingChatContext(
       archived_at?: unknown;
       superadmin_locked_at?: unknown;
       subscription_status?: unknown;
+      trial_ends_at?: unknown;
     };
     if (
       salon.profile_complete !== true ||
@@ -194,6 +195,11 @@ export async function loadAuthorizedBookingChatContext(
           typeof salon.subscription_status === "string"
             ? salon.subscription_status
             : undefined,
+        trial_ends_at:
+          typeof salon.trial_ends_at === "string" || salon.trial_ends_at === null
+            ? salon.trial_ends_at
+            : undefined,
+        feature_flags: salon.feature_flags,
       })
     ) {
       return { ok: false, code: "disabled" };

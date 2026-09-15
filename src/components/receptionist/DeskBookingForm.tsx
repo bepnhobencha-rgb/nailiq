@@ -217,6 +217,8 @@ const COPY = {
       no_resource_available: "No bed or room is available at this time — try a different slot.",
       outside_hours: "That time is outside the salon's hours.",
       booking_limit_reached: "You've hit your plan's booking limit.",
+      trial_new_booking_paused:
+        "The trial has ended. New appointments are paused; existing appointments remain available.",
       unauthorized: "You don't have permission to create bookings.",
       after_hours_not_allowed: "Only an Owner or Admin can approve after-hours.",
       specific_staff_required: "Choose the staff member who agreed to stay.",
@@ -322,6 +324,8 @@ const COPY = {
       no_resource_available: "Không còn giường trống giờ này — thử giờ khác.",
       outside_hours: "Giờ này nằm ngoài giờ làm của tiệm.",
       booking_limit_reached: "Đã đạt giới hạn lịch của gói hiện tại.",
+      trial_new_booking_paused:
+        "Trial đã hết. Tạo lịch mới đang tạm dừng; các lịch hiện có vẫn được giữ.",
       unauthorized: "Bạn không có quyền tạo lịch.",
       after_hours_not_allowed: "Chỉ Owner hoặc Admin được duyệt lịch ngoài giờ.",
       specific_staff_required: "Chọn đúng thợ đã đồng ý ở lại.",

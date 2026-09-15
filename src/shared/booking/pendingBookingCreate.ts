@@ -62,5 +62,5 @@ export async function dispatchPendingBookingCreate<T>(args: {
 /** These responses prove a rejection before commit. Ambiguous conflicts are intentionally excluded. */
 export const DEFINITE_CREATE_REJECTIONS = new Set([
   "invalid_request", "forbidden", "rate_limited", "otp_required", "invalid_otp_session", "otp_session_used", "otp_not_required", "phone_verification_required",
-  "health_ack_required", "payment_not_supported", "pricing_changed", "slot_conflict", "monthly_booking_limit_reached",
+  "health_ack_required", "payment_not_supported", "pricing_changed", "slot_conflict", "monthly_booking_limit_reached", "trial_new_booking_paused",
 ]);

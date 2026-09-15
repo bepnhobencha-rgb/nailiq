@@ -24,7 +24,7 @@ export type GroupCreateDispatchResult =
   | { status: 'response'; response: Response; body: Record<string, unknown> }
   | { status: 'unknown'; recoveryHref: string }
   | { status: 'storage_unavailable' };
-const DEFINITE_REJECTIONS = new Set(['invalid_request','forbidden','rate_limited','otp_required','otp_invalid','pricing_changed','slot_conflict','voucher_invalid','monthly_booking_limit_reached']);
+const DEFINITE_REJECTIONS = new Set(['invalid_request','forbidden','rate_limited','otp_required','otp_invalid','pricing_changed','slot_conflict','voucher_invalid','monthly_booking_limit_reached','trial_new_booking_paused']);
 export async function dispatchGroupCreate(
   binding: PendingGroupCreate, body: unknown, storage: Storage, fetcher: typeof fetch = fetch,
 ): Promise<GroupCreateDispatchResult> {

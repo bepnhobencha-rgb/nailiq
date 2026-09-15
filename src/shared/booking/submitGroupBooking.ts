@@ -181,6 +181,7 @@ export type GroupBookingResult =
         | "pricing_invalid"
         | "idempotency_conflict"
         | "salon_paused"
+        | "trial_new_booking_paused"
         | "salon_not_found"
         // Organizer phone not OTP-verified (salon has phone_otp_enabled).
         | "otp_required"
@@ -302,6 +303,7 @@ export type TrustedGroupBookingExecution =
             code:
               | "slot_conflict"
               | "monthly_booking_limit_reached"
+              | "trial_new_booking_paused"
               | "idempotency_conflict"
               | "pricing_changed"
               | "create_unavailable"
@@ -1049,6 +1051,12 @@ async function executeGroupBooking(
           conflictKind: "external",
         };
       }
+      if (
+        rpcErr.code === "NITRL" ||
+        rpcErr.message?.includes("trial_new_booking_paused")
+      ) {
+        return fail("trial_new_booking_paused");
+      }
       if (rpcErr.code === "23505") return fail("duplicate_submission");
       return fail("server_error");
     }
@@ -1101,6 +1109,9 @@ async function executeGroupBooking(
       }
       if (deskResult.code === "monthly_booking_limit_reached") {
         return fail("monthly_booking_limit_reached");
+      }
+      if (deskResult.code === "trial_new_booking_paused") {
+        return fail("trial_new_booking_paused");
       }
       if (deskResult.code === "idempotency_conflict") {
         return fail("idempotency_conflict");
@@ -1171,6 +1182,9 @@ async function executeGroupBooking(
       }
       if (code === "monthly_booking_limit_reached") {
         return fail("monthly_booking_limit_reached");
+      }
+      if (code === "trial_new_booking_paused") {
+        return fail("trial_new_booking_paused");
       }
       if (code === "otp_required") return fail("otp_required");
       if (code === "phone_verification_required") return fail("phone_verification_required");

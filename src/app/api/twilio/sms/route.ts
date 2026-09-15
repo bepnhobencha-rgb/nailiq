@@ -20,6 +20,7 @@ import { NextRequest, NextResponse } from "next/server";
 import { createTextBackgroundAnthropicClient } from "@/shared/ai/anthropicProviderPolicy";
 import { trackAnthropicMessage } from "@/shared/ai/usageLedger";
 import { createServiceRoleClient } from "@/shared/lib/supabase/serviceRole";
+import { resolveTenantEntitlements } from "@/shared/subscriptions/tenantEntitlements";
 import { getTwilioAuthToken, validateTwilioSignature, twilioRequestBaseUrl } from "@/shared/lib/twilioSignature";
 import { loadSalonContext } from "@/shared/voiceai/loadSalonContext";
 import { buildSystemPrompt } from "@/shared/voiceai/buildSystemPrompt";
@@ -116,11 +117,17 @@ export async function POST(req: NextRequest) {
   // across web/phone/SMS for pilot). Also read the reply language.
   const { data: salonRow } = await supabase
     .from("salons")
-    .select("id, voice_ai_enabled, default_language")
+    .select("id, voice_ai_enabled, default_language, archived_at, superadmin_locked_at, subscription_status, trial_ends_at, feature_flags")
     .eq("slug", slug)
     .maybeSingle();
-  const salon = salonRow as { id?: string; voice_ai_enabled?: boolean | null; default_language?: string | null } | null;
-  if (!salon?.id || salon.voice_ai_enabled !== true) return emptyTwiml();
+  const salon = salonRow as ({ id?: string; voice_ai_enabled?: boolean | null; default_language?: string | null } & Record<string, unknown>) | null;
+  if (
+    !salon?.id ||
+    salon.voice_ai_enabled !== true ||
+    !resolveTenantEntitlements(
+      salon as Parameters<typeof resolveTenantEntitlements>[0],
+    ).canRunAutonomousAi
+  ) return emptyTwiml();
 
   const lang: "en" | "vi" = salon.default_language === "vi" ? "vi" : "en";
 

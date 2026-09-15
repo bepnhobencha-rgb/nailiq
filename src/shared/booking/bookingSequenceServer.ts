@@ -112,6 +112,7 @@ export type BookingSequenceCreateResult =
         | "booking_state_changed"
         | "slot_conflict"
         | "monthly_booking_limit_reached"
+        | "trial_new_booking_paused"
         | "replay_not_found"
         | "create_unavailable";
       quote?: BookingSequenceQuote;
@@ -539,6 +540,9 @@ async function runPublicBookingSequenceCreateRpc(
         },
       } as never,
     );
+    if (error?.code === "NITRL" || error?.message?.includes("trial_new_booking_paused")) {
+      return { ok: false, code: "trial_new_booking_paused" };
+    }
     if (error || data == null) return { ok: false, code: "create_unavailable" };
     const row = record(data);
     if (!row) return { ok: false, code: "create_unavailable" };
@@ -561,6 +565,7 @@ async function runPublicBookingSequenceCreateRpc(
         row.code === "booking_state_changed" ||
         row.code === "slot_conflict" ||
         row.code === "monthly_booking_limit_reached"
+        || row.code === "trial_new_booking_paused"
       ) {
         return { ok: false, code: row.code };
       }

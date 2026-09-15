@@ -193,6 +193,8 @@ export const bookingVi: BookingMessages = {
     serviceRequired: "Vui lòng chọn dịch vụ để tiếp tục.",
     monthlyLimitReached:
       "Tiệm đã đạt giới hạn đặt lịch online tháng này. Vui lòng gọi điện thoại để đặt.",
+    trialBookingPaused:
+      "Đặt lịch online đang tạm dừng. Vui lòng liên hệ tiệm nếu cần hỗ trợ lịch hẹn hiện có.",
     otpRequired: "Cần xác thực số điện thoại. Vui lòng xác minh số của bạn.",
     otpInvalidCode: "Mã không đúng. Vui lòng thử lại.",
     otpExpired: "Mã đã hết hạn hoặc quá nhiều lần thử. Gửi mã mới.",

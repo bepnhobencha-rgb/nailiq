@@ -33,7 +33,7 @@ export async function GET(req: Request): Promise<Response> {
   const { data: salons, error } = await supabase
     .from("salons")
     .select(
-      "id, slug, feature_flags, archived_at, superadmin_locked_at, subscription_status",
+      "id, slug, feature_flags, archived_at, superadmin_locked_at, subscription_status, trial_ends_at",
     );
 
   if (error) {
@@ -44,7 +44,9 @@ export async function GET(req: Request): Promise<Response> {
     );
   }
 
-  const eligibleSalons = (salons ?? []).filter(canRunAutonomousAiForTenant);
+  const eligibleSalons = (salons ?? []).filter((salon) =>
+    canRunAutonomousAiForTenant(salon),
+  );
 
   if (!eligibleSalons.length) {
     return NextResponse.json({ ok: true, salons: 0 });

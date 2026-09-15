@@ -211,6 +211,8 @@ export const bookingEn = {
     serviceRequired: "Please select a service to continue.",
     monthlyLimitReached:
       "This salon has reached its monthly online booking limit. Please call the salon to book.",
+    trialBookingPaused:
+      "Online booking is temporarily paused. Please contact the salon for help with an existing appointment.",
     otpRequired: "Phone verification required. Please verify your number.",
     otpInvalidCode: "Incorrect code. Please try again.",
     otpExpired: "Code expired or too many attempts. Send a new code.",

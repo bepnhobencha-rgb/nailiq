@@ -183,7 +183,8 @@ export async function POST(request: NextRequest) {
         ? 409
         : result.code === "idempotency_conflict" ||
             result.code === "slot_conflict" ||
-            result.code === "monthly_booking_limit_reached"
+            result.code === "monthly_booking_limit_reached" ||
+            result.code === "trial_new_booking_paused"
           ? 409
           : 503;
   const bodyResult = result.ok
