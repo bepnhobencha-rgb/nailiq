@@ -1401,7 +1401,7 @@ export function WalkinAddForm({
               setWalkinSource((e.target.value || "") as QueueSource | "")
             }
             className={cn(
-              "min-h-11 w-full rounded-lg border border-nq-muted/35 bg-nq-bg px-2 text-base text-nq-foreground focus:outline-none focus:ring-2 focus:ring-nq-primary/35",
+              "h-11 min-h-11 w-full rounded-lg border border-nq-muted/35 bg-nq-bg px-2 text-base text-nq-foreground focus:outline-none focus:ring-2 focus:ring-nq-primary/35",
               formLocked && "opacity-60",
             )}
           >
@@ -1432,7 +1432,7 @@ export function WalkinAddForm({
             }
             onKeyDown={onPriorityKeyDown}
             className={cn(
-              "min-h-11 w-full rounded-lg border border-nq-muted/35 bg-nq-bg px-2 text-base text-nq-foreground focus:outline-none focus:ring-2 focus:ring-nq-primary/35",
+              "h-11 min-h-11 w-full rounded-lg border border-nq-muted/35 bg-nq-bg px-2 text-base text-nq-foreground focus:outline-none focus:ring-2 focus:ring-nq-primary/35",
               formLocked && "opacity-60",
             )}
           >
