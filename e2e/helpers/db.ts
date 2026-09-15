@@ -252,6 +252,27 @@ export async function cleanupTestSalon(
 }
 
 /**
+ * Fresh local Supabase resets do not run a seed file, while
+ * `services.category` defaults to the FK-protected global `other` category.
+ * Keep this bootstrap in one place so every fixture behaves like hosted QA.
+ */
+export async function ensureDefaultServiceCategory(): Promise<void> {
+  const { error } = await supabase.from("service_categories").upsert(
+    {
+      slug: "other",
+      name_en: "Other",
+      name_vi: "Khác",
+      sort_order: 999,
+    },
+    { onConflict: "slug", ignoreDuplicates: true },
+  );
+
+  if (error) {
+    throw new Error(`default service category: ${error.message}`);
+  }
+}
+
+/**
  * Remove a guest's `client_profiles` row by phone.
  *
  * `client_profiles` has NO `salon_id` (it's a cross-salon guest record keyed on
@@ -321,20 +342,7 @@ export async function seedTestSalon(opts?: {
   // protected by the canonical service_categories FK. Production already has
   // this global catalog; E2E must bootstrap the same inert default explicitly
   // before inserting a salon service.
-  const { error: categoryError } = await supabase
-    .from("service_categories")
-    .upsert(
-      {
-        slug: "other",
-        name_en: "Other",
-        name_vi: "Khác",
-        sort_order: 999,
-      },
-      { onConflict: "slug", ignoreDuplicates: true },
-    );
-  if (categoryError) {
-    throw new Error(`seedTestSalon category: ${categoryError.message}`);
-  }
+  await ensureDefaultServiceCategory();
 
   const { data: salon, error: salonErr } = await supabase
     .from("salons")

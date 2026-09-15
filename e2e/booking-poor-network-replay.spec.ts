@@ -5,6 +5,7 @@ import { createClient } from "@supabase/supabase-js";
 
 import { navigateToConfirmStep } from "./helpers/bookingFlow";
 import {
+  acceptSmsConsentIfPresented,
   cleanupClientProfile,
   cleanupTestSalon,
   seedTestSalon,
@@ -47,7 +48,7 @@ test.describe("MQA-0209 — customer booking under poor internet", () => {
     await cleanupClientProfile(GUEST_PHONE);
   });
 
-  test("a lost committed response replays the same request and creates exactly one booking", async ({ page }, testInfo) => {
+  test("a lost committed response is recovered read-only and creates exactly one booking", async ({ page }, testInfo) => {
     test.skip(
       testInfo.project.name !== "mobile",
       "The poor-network customer journey is measured in the iPhone WebKit profile",
@@ -84,17 +85,20 @@ test.describe("MQA-0209 — customer booking under poor internet", () => {
       name: GUEST_NAME,
       phone: GUEST_PHONE,
     });
-    await page.getByTestId("sms-consent").check();
+    await acceptSmsConsentIfPresented(page);
     const confirm = page.getByTestId("confirm-booking-btn");
     await expect(confirm).toBeEnabled();
 
     const firstStartedAt = performance.now();
     await confirm.click();
+    await expect(page).toHaveURL(/\/booking\/recover-booking#booking=/, {
+      timeout: 20_000,
+    });
     await expect(
-      page.getByRole("alert").filter({
-        hasText: "NailIQ won't create a duplicate",
+      page.getByRole("heading", {
+        name: /Check submitted booking|Kiểm tra lịch đã gửi/i,
       }),
-    ).toBeVisible({ timeout: 20_000 });
+    ).toBeVisible();
     const unknownOutcomeMs = Math.round(performance.now() - firstStartedAt);
 
     const { data: salon, error: salonError } = await db
@@ -112,11 +116,26 @@ test.describe("MQA-0209 — customer booking under poor internet", () => {
     expect(committedRows).toHaveLength(1);
     expect(committedRows?.[0]?.status).toBe("confirmed");
 
-    const replayStartedAt = performance.now();
-    await expect(confirm).toBeEnabled();
-    await confirm.click();
-    await expect(page.getByTestId("booking-success")).toBeVisible({ timeout: 20_000 });
-    const replayRecoveryMs = Math.round(performance.now() - replayStartedAt);
+    const recoveryStartedAt = performance.now();
+    await page
+      .getByRole("button", {
+        name: /Check submitted booking|Kiểm tra lịch đã gửi/i,
+      })
+      .click();
+    await expect(page).toHaveURL(/\/booking\/recover-card#recover=/, {
+      timeout: 20_000,
+    });
+    await page
+      .getByRole("button", {
+        name: /Check appointment|Kiểm tra lịch hẹn/i,
+      })
+      .click();
+    await expect(
+      page.getByRole("heading", {
+        name: /Appointment reserved|Lịch hẹn đã được giữ/i,
+      }),
+    ).toBeVisible({ timeout: 20_000 });
+    const recoveryMs = Math.round(performance.now() - recoveryStartedAt);
 
     const { data: finalRows, error: finalError } = await db
       .from("bookings")
@@ -126,10 +145,9 @@ test.describe("MQA-0209 — customer booking under poor internet", () => {
     expect(finalError).toBeNull();
     expect(finalRows).toHaveLength(1);
     expect(finalRows?.[0]?.id).toBe(committedRows?.[0]?.id);
-    expect(createAttempts).toBe(2);
-    expect(requestIds).toHaveLength(2);
+    expect(createAttempts).toBe(1);
+    expect(requestIds).toHaveLength(1);
     expect(requestIds[0]).toMatch(/^[0-9a-f-]{36}$/i);
-    expect(requestIds[1]).toBe(requestIds[0]);
     expect(finalRows?.[0]?.idempotency_key).toBe(requestIds[0]);
 
     const result = {
@@ -137,9 +155,10 @@ test.describe("MQA-0209 — customer booking under poor internet", () => {
       transportModel: "first create response held for 13 seconds after database commit",
       productUnknownBoundaryMs: 12_000,
       unknownOutcomeVisibleMs: unknownOutcomeMs,
-      replayRecoveryMs,
+      recoveryModel: "read-only receipt recovery; no second create mutation",
+      recoveryMs,
       createAttempts,
-      stableRequestId: requestIds[0] === requestIds[1],
+      stableRequestId: finalRows?.[0]?.idempotency_key === requestIds[0],
       committedRowsBeforeReplay: committedRows?.length ?? 0,
       rowsAfterReplay: finalRows?.length ?? 0,
       duplicateRows: Math.max(0, (finalRows?.length ?? 0) - 1),

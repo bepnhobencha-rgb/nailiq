@@ -77,7 +77,7 @@ test.describe("Go-live readiness", () => {
     await page.goto(`/dashboard/${SLUG}/settings`);
 
     const readinessLink = page.getByRole("link", {
-      name: "Kiểm tra sẵn sàng go-live",
+      name: /Kiểm tra sẵn sàng go-live|Go-live readiness/i,
     });
     await expect(readinessLink).toBeVisible();
     await readinessLink.click();
@@ -101,7 +101,9 @@ test.describe("Go-live readiness", () => {
     await expect(
       page.getByTestId("readiness-check-human-approval"),
     ).toContainText(/Cần xác nhận|Review/i);
-    await expect(page.getByText("Chưa sẵn sàng go-live")).toBeVisible();
+    await expect(
+      page.getByText(/Chưa sẵn sàng go-live|Not ready for go-live/i),
+    ).toBeVisible();
   });
 
   test("real owner records prerequisites and final approval as immutable audit events", async ({
@@ -152,6 +154,30 @@ test.describe("Go-live readiness", () => {
     await expect(page.getByTestId("go-live-readiness-summary")).not.toContainText(
       /Đã được phê duyệt go-live|Approved for go-live/i,
     );
+
+    // A configuration change invalidates every human attestation bound to the
+    // old technical snapshot. Reconfirm the prerequisites before the final
+    // Owner approval; the UI intentionally keeps that button disabled until
+    // these current-snapshot records exist.
+    const reconfirmations = [
+      ["hours_confirmed", "Owner reconfirmed hours after the service price change."],
+      [
+        "otp_policy_confirmed",
+        "Owner reconfirmed OTP and consent policy after the service price change.",
+      ],
+      [
+        "live_rehearsal_completed",
+        "Owner repeated the booking rehearsal after the service price change.",
+      ],
+    ] as const;
+    for (const [key, note] of reconfirmations) {
+      await page.getByTestId(`go-live-note-${key}`).fill(note);
+      await page.getByTestId(`go-live-submit-${key}`).click();
+      await expect(page.getByTestId(`go-live-attestation-${key}`)).toContainText(
+        /Đang hiệu lực|Active/i,
+      );
+    }
+
     await page
       .getByTestId("go-live-note-owner_approved")
       .fill("Owner reviewed the changed service price and approved again.");
@@ -161,9 +187,13 @@ test.describe("Go-live readiness", () => {
     );
 
     const history = await getGoLiveAttestationHistory(readySalonId);
-    expect(history).toHaveLength(5);
+    expect(history).toHaveLength(8);
     expect(history.map((event) => event.check_key)).toEqual(
-      [...steps.map(([key]) => key), "owner_approved"],
+      [
+        ...steps.map(([key]) => key),
+        ...reconfirmations.map(([key]) => key),
+        "owner_approved",
+      ],
     );
     expect(
       history.every(
@@ -201,7 +231,7 @@ test.describe("Go-live readiness", () => {
     ).toHaveCount(0);
 
     const history = await getGoLiveAttestationHistory(readySalonId);
-    expect(history).toHaveLength(5);
+    expect(history).toHaveLength(8);
     expect(history.every((event) => event.actor_role === "owner")).toBe(true);
   });
 
@@ -218,6 +248,6 @@ test.describe("Go-live readiness", () => {
     expect(directAttempt.rejected).toBe(true);
 
     const history = await getGoLiveAttestationHistory(readySalonId);
-    expect(history).toHaveLength(5);
+    expect(history).toHaveLength(8);
   });
 });

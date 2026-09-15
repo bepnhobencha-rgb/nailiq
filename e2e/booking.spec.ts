@@ -31,7 +31,12 @@ test.describe("Booking Flow", () => {
   test("Complete booking end-to-end", async ({ page }) => {
     await withBookingSubmissionDiagnostics(page, test.info(), async () => {
       await gotoBookingServiceStep(page, testSlug);
-      await page.locator('[data-testid="service-tile-select"]').first().click();
+      const configuredService = page
+        .locator('[data-testid="service-tile-select"]')
+        .first();
+      await expect(configuredService).toContainText("Gel Manicure");
+      await expect(configuredService).toContainText(/(?:CA)?\$45(?:\.00)?/);
+      await configuredService.click();
       await page.getByRole("button", { name: "Continue" }).first().click();
 
       await page

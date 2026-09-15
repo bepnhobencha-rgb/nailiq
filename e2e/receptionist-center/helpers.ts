@@ -200,28 +200,15 @@ async function fetchServicePrice(
 /** Full salon + catalog + baseline desk bookings (non-marker names). */
 export async function seedReceptionistCenterFixture(slugOverride?: string): Promise<ReceptionistCenterFixture> {
   const slug = slugOverride ?? RECEPTIONIST_E2E_SLUG;
-  const { cleanupTestSalon } = await import("../helpers/db");
+  const { cleanupTestSalon, ensureDefaultServiceCategory } = await import(
+    "../helpers/db"
+  );
   await cleanupTestSalon(slug);
 
   // Fresh local resets do not run a seed file, but services.category defaults
   // to the canonical global `other` slug and is FK-protected. Mirror the
   // generic E2E salon helper by bootstrapping that inert catalog row.
-  const { error: categoryError } = await supabaseAdmin
-    .from("service_categories")
-    .upsert(
-      {
-        slug: "other",
-        name_en: "Other",
-        name_vi: "Khác",
-        sort_order: 999,
-      },
-      { onConflict: "slug", ignoreDuplicates: true },
-    );
-  if (categoryError) {
-    throw new Error(
-      `seedReceptionistCenterFixture category: ${categoryError.message}`,
-    );
-  }
+  await ensureDefaultServiceCategory();
 
   const ymdUtc = utcDayBoundsYmd();
   const { timezone: tz, utcOffsetHours } = receptionistE2eTimezone();
