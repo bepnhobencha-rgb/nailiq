@@ -122,6 +122,18 @@ BEGIN
     pg_catalog.statement_timestamp()
   );
 
+  -- A salon DELETE removes the parent before PostgreSQL runs cascades on its
+  -- operational children. In that narrow case the resolver correctly returns
+  -- unknown, but the child DELETE must be allowed to finish the parent
+  -- deletion. Inserts/updates and deletes for an existing tenant still pass
+  -- through the entitlement checks below.
+  IF TG_OP = 'DELETE'
+     AND NOT EXISTS (
+       SELECT 1 FROM public.salons AS s WHERE s.id = v_salon_id
+     ) THEN
+    RETURN OLD;
+  END IF;
+
   IF TG_TABLE_NAME = 'bookings' THEN
     IF v_state = 'trial_read_only' THEN
       RAISE EXCEPTION USING

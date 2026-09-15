@@ -53,6 +53,14 @@ describe("versioned trial policy boundaries", () => {
     expect(migration).toContain("OLD.created_at >= v_trial_ends_at");
   });
 
+  it("allows child cascades only after the salon parent is already gone", () => {
+    expect(migration).toContain("IF TG_OP = 'DELETE'");
+    expect(migration).toContain(
+      "NOT EXISTS (\n       SELECT 1 FROM public.salons AS s WHERE s.id = v_salon_id",
+    );
+    expect(migration).toContain("RETURN OLD;");
+  });
+
   it("blocks new charge claims but leaves refund operation kinds outside the block", () => {
     expect(migration).toContain(
       "'deposit_charge', 'noshow_charge', 'late_cancel_charge'",

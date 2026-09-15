@@ -81,7 +81,7 @@ keeping data visible.
 
 ### Unit and contract tests
 
-- Full suite: **836 files passed, 6 skipped; 6,332 tests passed, 65 skipped;
+- Full suite: **837 files passed, 6 skipped; 6,335 tests passed, 65 skipped;
   0 failed**.
 - Final focused regression set after the last race/error mapping change:
   **194 passed, 0 failed**.
@@ -108,6 +108,10 @@ keeping data visible.
   after registering the new boolean-only capability RPC. Its grants are
   restricted to `anon` and `service_role`; `authenticated` has no execute
   grant.
+- The public-booking idempotency/race rehearsal passed after correcting the
+  operational trigger's parent-delete cascade handling. Child writes remain
+  gated while the salon exists; only child deletes caused by an already
+  deleted salon parent can finish the cascade.
 
 ### Disposable hosted Supabase QA
 
@@ -124,6 +128,7 @@ keeping data visible.
   numeric JSON value `1` enrolls the tenant. The string `"1"` does not.
 - Public RPC grants: `anon = true`, `authenticated = false`,
   `service_role = true`.
+- Final hosted-QA readback confirmed the parent-delete cascade guard is present.
 
 ### Browser acceptance
 
