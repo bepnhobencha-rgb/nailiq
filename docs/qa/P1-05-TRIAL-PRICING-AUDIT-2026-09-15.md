@@ -127,8 +127,9 @@ keeping data visible.
 
 ### Browser acceptance
 
-- Exact candidate Preview for commit `eba60ab4`:
-  `https://nailiq-sdk-save-qa-20260912-9x2fhcgsx.vercel.app` (Ready).
+- Exact implementation/security candidate Preview for commit `73195125`:
+  `https://nailiq-sdk-save-qa-20260912-adeeak32m.vercel.app` (Ready,
+  deployment `dpl_FvwWEwwEJ7EQ9vFAdjfhcSEyHJgt`).
 - Desktop public active-trial booking loaded the salon and phone step.
 - Desktop public continuity booking showed the Vietnamese booking-paused
   state. This check exposed unreadable light-theme text; the component was
@@ -151,7 +152,7 @@ keeping data visible.
 - `npm run typecheck` after the build: **PASS**.
 - `npm ci`: 452 packages audited, **0 vulnerabilities**.
 - Vercel Preview build and its sequential typecheck: **PASS** for the exact
-  `eba60ab4` candidate.
+  `73195125` implementation/security candidate.
 
 The first build attempt failed because this isolated worktree's `node_modules`
 was a symlink outside the Turbopack filesystem root. Replacing it with a local
@@ -175,8 +176,8 @@ Rollback is additive and bounded:
 
 ## Remaining release gates
 
-- PR #1411 contains the candidate; final security allowlist update is pending
-  commit/push at the time of this audit edit.
+- PR #1411 contains the candidate; the final security allowlist update is
+  committed and pushed as `73195125`.
 - CI must be green on the final head SHA. The prior run correctly rejected the
   new anonymous `SECURITY DEFINER` function until it was registered in the
   reviewed allowlist.
