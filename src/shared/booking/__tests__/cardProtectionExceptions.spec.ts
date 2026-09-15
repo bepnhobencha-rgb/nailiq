@@ -14,7 +14,11 @@ function query(table:string) {
   const entry={table,filters:[] as [string,unknown][],columns:""};queries.push(entry);
   const chain={
     select:(value:string)=>{entry.columns=value;return chain;},eq:(column:string,value:unknown)=>{entry.filters.push([column,value]);return chain;},
-    is:()=>chain,neq:()=>chain,in:()=>chain,order:()=>chain,limit:()=>chain,gt:()=>chain,or:()=>chain,
+    is:(column:string,value:unknown)=>{entry.filters.push([column,value]);return chain;},
+    neq:(column:string,value:unknown)=>{entry.filters.push([column,value]);return chain;},
+    in:(column:string,value:unknown)=>{entry.filters.push([column,value]);return chain;},
+    order:()=>chain,limit:()=>chain,
+    gt:(column:string,value:unknown)=>{entry.filters.push([column,value]);return chain;},or:()=>chain,
     maybeSingle:async()=>({data:result[table]??null,error:null}),
     then:(resolve:(value:unknown)=>unknown)=>Promise.resolve({data:result[table]??[],error:null}).then(resolve),
   };return chain;
@@ -41,6 +45,9 @@ describe("Card protection exception access and minimal disclosure",()=>{
     expect(JSON.stringify(loaded)).not.toMatch(/Synthetic Private Customer|client_phone|client_email|source_token|access_token|provider_material/);
     expect(queries.every(q=>q.filters.some(([c,v])=>c==="salon_id"&&v===salon))).toBe(true);
     expect(queries.every(q=>!q.columns.includes("provider_material")&&!q.columns.includes("token"))).toBe(true);
+    const bookingQuery=queries.find(q=>q.table==="bookings")!;
+    expect(bookingQuery.filters).toContainEqual(["status",["pending","confirmed"]]);
+    expect(bookingQuery.filters.some(([column,value])=>column==="start_time_utc"&&typeof value==="string"&&!Number.isNaN(Date.parse(value)))).toBe(true);
   });
   it("reuses a valid secure link on an owner action replay instead of revoking it",async()=>{
     const token="55630000-0000-4000-8000-000000000020";

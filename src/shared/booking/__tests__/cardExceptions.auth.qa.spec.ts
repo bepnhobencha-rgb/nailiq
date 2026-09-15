@@ -30,7 +30,7 @@ const qa = "https://osdqutwunokiielbairj.supabase.co";
 const evidence = process.env.NAILIQ_QA_ARTIFACT_DIR ?? "";
 const roles = ["owner", "admin", "senior", "receptionist", "nail_tech", "outsider"] as const;
 type Role = typeof roles[number];
-type Fixture = { id: string; slug: string; bookingId: string; raceBookingId: string };
+type Fixture = { id: string; slug: string; bookingId: string; raceBookingId: string; pastBookingId: string };
 type Actor = { id: string; role: Role; email: string; password: string; client?: SupabaseClient; jar?: Map<string,string> };
 const fixtures: Fixture[] = [], actors: Actor[] = [];
 let db: SupabaseClient;
@@ -41,6 +41,9 @@ function note(value: Record<string, unknown>) {
 }
 function ok(error: { code?: string } | null) {
   if (error) throw new Error(`qa_database_error:${error.code ?? "unknown"}`);
+}
+function bookingIds(f: Fixture) {
+  return [f.bookingId, f.raceBookingId, f.pastBookingId];
 }
 async function use(role: Role) {
   const actor = actors.find(a => a.role === role)!;
@@ -74,7 +77,8 @@ describe.skipIf(!enabled)("Card exceptions with real QA Auth and canonical serve
     });
     db = createSupabaseClient(qa, process.env.SUPABASE_SERVICE_ROLE_KEY!, { auth: { persistSession:false,autoRefreshToken:false } });
     for (const label of ["A", "B"]) {
-      const f = { id:randomUUID(), slug:`e2e-b01-exception-${label.toLowerCase()}-${randomUUID()}`, bookingId:randomUUID(), raceBookingId:randomUUID() };
+      const f = { id:randomUUID(), slug:`e2e-b01-exception-${label.toLowerCase()}-${randomUUID()}`,
+        bookingId:randomUUID(), raceBookingId:randomUUID(), pastBookingId:randomUUID() };
       fixtures.push(f); note({ event:"fixture_planned", ...f });
       ok((await db.from("salons").insert({ id:f.id,slug:f.slug,name:`E2E Exceptions ${label}`,phone:"12505550195",timezone:"America/Vancouver",
         tax_lines:[],profile_complete:true,booking_verification_mode:"never",phone_otp_enabled:false,sms_outbound_enabled:false,email_outbound_enabled:false,
@@ -90,6 +94,11 @@ describe.skipIf(!enabled)("Card exceptions with real QA Auth and canonical serve
           status:"confirmed",source:"appointment",price_cents:5000,noshow_card_required:true,noshow_fee_cents:1000,
           start_time_utc:new Date(start).toISOString(),end_time_utc:new Date(start+1800000).toISOString()})).error);
       }
+      const pastStart=Date.now()-14*86400000;
+      ok((await db.from("bookings").insert({id:f.pastBookingId,salon_id:f.id,service_id:serviceId,staff_id:staffId,
+        client_name:`Synthetic ${label} Past`,client_phone:"12505550195",client_email:`synthetic-${randomUUID()}@example.com`,
+        status:"completed",source:"appointment",price_cents:5000,noshow_card_required:true,noshow_fee_cents:1000,
+        start_time_utc:new Date(pastStart).toISOString(),end_time_utc:new Date(pastStart+1800000).toISOString()})).error);
     }
     for (const role of roles) {
       const email=`qa-b01-${randomUUID()}@example.com`, password=`${randomUUID()}Aa1!`;
@@ -122,7 +131,7 @@ describe.skipIf(!enabled)("Card exceptions with real QA Auth and canonical serve
       try {
         const caps=await db.from("booking_management_capabilities").select("id,created_at").eq("salon_id",f.id);ok(caps.error);
         for(const cap of caps.data??[]) ok((await db.from("booking_management_capabilities").update({expires_at:new Date(Math.max(Date.parse(cap.created_at)+1,Date.now()-1000)).toISOString()}).eq("id",cap.id).eq("salon_id",f.id)).error);
-        ok((await db.from("bookings").update({deleted_at:new Date().toISOString()}).eq("salon_id",f.id).in("id",[f.bookingId,f.raceBookingId])).error);
+        ok((await db.from("bookings").update({deleted_at:new Date().toISOString()}).eq("salon_id",f.id).in("id",bookingIds(f))).error);
         ok((await db.from("salons").update({archived_at:new Date().toISOString(),profile_complete:false}).eq("id",f.id).eq("slug",f.slug)).error);
       } catch { failures.push(`fixture:${f.id}`); }
     }
@@ -139,6 +148,7 @@ describe.skipIf(!enabled)("Card exceptions with real QA Auth and canonical serve
       expect(r.ok).toBe(true);expect(r.items).toHaveLength(2);
       expect(r.items.every(x=>x.clientLabel==="S. A."&&x.status==="awaiting_card"&&!x.canReconcile)).toBe(true);
       expect(r.items.map(x=>x.bookingId).sort()).toEqual([fixtures[0].bookingId,fixtures[0].raceBookingId].sort());
+      expect(r.items.some(x=>x.bookingId===fixtures[0].pastBookingId)).toBe(false);
       expect(JSON.stringify(r)).not.toMatch(/Private|@example|1250555|noshow_card_id|noshow_customer_id|source_token|access_token/);
     } else {
       expect(r).toEqual({ok:false,items:[]});

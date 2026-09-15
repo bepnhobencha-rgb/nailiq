@@ -16,9 +16,11 @@ export async function loadCardProtectionExceptions(slug: string): Promise<{ ok: 
   const ctx = await getDashboardWriteClient(slug);
   if (!ctx || !isOwnerOrAdmin(ctx.role)) return { ok: false, items: [] };
   const db = createServiceRoleClient();
+  const now = new Date().toISOString();
   const { data, error } = await db.from("bookings" as never)
     .select("id,client_name,start_time_utc,card_protection_status,card_protection_reviewed_at,noshow_card_id,services!bookings_service_id_fkey(name)")
-    .eq("salon_id", ctx.salon.id).is("deleted_at", null).neq("status", "cancelled")
+    .eq("salon_id", ctx.salon.id).is("deleted_at", null)
+    .in("status", ["pending", "confirmed"]).gt("start_time_utc", now)
     .in("card_protection_status", ["awaiting_card", "saving", "reconciliation_pending", "retry_required", "manual_review"])
     .order("start_time_utc", { ascending: false }).limit(101);
   if (error || !data) return { ok: false, items: [] };
