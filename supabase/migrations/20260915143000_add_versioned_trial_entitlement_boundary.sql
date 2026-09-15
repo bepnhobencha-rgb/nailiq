@@ -64,7 +64,7 @@ $$;
 REVOKE ALL ON FUNCTION public.public_salon_accepts_new_bookings(uuid)
   FROM PUBLIC, anon, authenticated;
 GRANT EXECUTE ON FUNCTION public.public_salon_accepts_new_bookings(uuid)
-  TO anon, authenticated, service_role;
+  TO anon, service_role;
 
 CREATE OR REPLACE FUNCTION public.enforce_trial_new_booking_boundary()
 RETURNS trigger

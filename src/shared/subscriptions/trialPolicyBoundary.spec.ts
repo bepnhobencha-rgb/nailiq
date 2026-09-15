@@ -70,5 +70,11 @@ describe("versioned trial policy boundaries", () => {
     expect(migration).toMatch(
       /REVOKE ALL ON FUNCTION public\.tenant_trial_entitlement_state[\s\S]*?FROM PUBLIC, anon, authenticated/i,
     );
+    expect(migration).toMatch(
+      /GRANT EXECUTE ON FUNCTION public\.public_salon_accepts_new_bookings\(uuid\)[\s\S]*?TO anon, service_role/i,
+    );
+    expect(migration).not.toMatch(
+      /GRANT EXECUTE ON FUNCTION public\.public_salon_accepts_new_bookings\(uuid\)[\s\S]{0,80}?authenticated/i,
+    );
   });
 });

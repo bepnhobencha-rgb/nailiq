@@ -10,7 +10,8 @@ Branch: `audit/p1-05-trial-pricing-20260915`
 
 ## Result
 
-**LOCAL IMPLEMENTATION PASS. QA PREVIEW AND PRODUCTION ARE NOT YET VERIFIED.**
+**LOCAL, HOSTED QA AND PUBLIC PREVIEW PASS. PR CI IS PENDING; PRODUCTION IS
+UNCHANGED AND NOT VERIFIED.**
 
 The approved V1 policy is now implemented locally: a 14-day trial, a seven-day
 continuity window for appointments created before expiry, then read-only core
@@ -18,8 +19,8 @@ operations. Core is $39 CAD/month, Studio is $99 CAD/month, V1 activation is
 manual, and trial expiry never deletes salon data.
 
 No Production data, live-salon configuration, provider, payment, email, SMS or
-call was changed. Nothing in this worktree has been committed, pushed, merged
-or deployed.
+call was changed. The candidate is isolated in PR #1411; it has not been
+merged or deployed to Production.
 
 ## Existing before this task
 
@@ -103,6 +104,45 @@ keeping data visible.
   boolean capability RPC = **true**; `service_role` internal RPC = **true**.
 - Database lint: no new error; repository migration history still reports its
   pre-existing warning set.
+- The final intentional anonymous `SECURITY DEFINER` allowlist check passed
+  after registering the new boolean-only capability RPC. Its grants are
+  restricted to `anon` and `service_role`; `authenticated` has no execute
+  grant.
+
+### Disposable hosted Supabase QA
+
+- Explicit project ref: `osdqutwunokiielbairj` (QA disposable). Provider
+  notifications, SMS, email, calls and payment charge dispatch remained off.
+- Migration `20260915143000_add_versioned_trial_entitlement_boundary.sql`:
+  applied successfully; five functions and seven enforcement triggers were
+  present.
+- Synthetic state matrix: active fixture resolved to `active_trial` and
+  accepted bookings; expired-by-one-day fixture resolved to
+  `trial_continuity` and rejected new bookings; expired-by-eight-days fixture
+  resolved to `trial_read_only` and rejected new bookings.
+- Marker validation is strict and aligned across TypeScript and SQL: only the
+  numeric JSON value `1` enrolls the tenant. The string `"1"` does not.
+- Public RPC grants: `anon = true`, `authenticated = false`,
+  `service_role = true`.
+
+### Browser acceptance
+
+- Exact candidate Preview for commit `eba60ab4`:
+  `https://nailiq-sdk-save-qa-20260912-9x2fhcgsx.vercel.app` (Ready).
+- Desktop public active-trial booking loaded the salon and phone step.
+- Desktop public continuity booking showed the Vietnamese booking-paused
+  state. This check exposed unreadable light-theme text; the component was
+  corrected to use booking theme tokens and regression-covered.
+- Desktop authenticated dashboard against the hosted QA database showed the
+  correct Vietnamese continuity and read-only banners.
+- Mobile Chromium at 390 x 844 passed active public booking, paused public
+  booking, read-only dashboard and continuity dashboard, with no horizontal
+  overflow.
+- The hosted Preview login form could not complete because the QA Vercel
+  project does not configure the `auth-attempt` rate-limit ID. The security
+  gate was not weakened. Authenticated dashboard rendering was therefore
+  verified with the local application connected to the disposable hosted QA
+  database, not through Preview authentication.
 
 ### Build gates
 
@@ -110,6 +150,8 @@ keeping data visible.
 - `npm run build`: **PASS** with Next.js 16.3.4 production build.
 - `npm run typecheck` after the build: **PASS**.
 - `npm ci`: 452 packages audited, **0 vulnerabilities**.
+- Vercel Preview build and its sequential typecheck: **PASS** for the exact
+  `eba60ab4` candidate.
 
 The first build attempt failed because this isolated worktree's `node_modules`
 was a symlink outside the Turbopack filesystem root. Replacing it with a local
@@ -133,10 +175,14 @@ Rollback is additive and bounded:
 
 ## Remaining release gates
 
-- Commit/push and PR review: not done.
-- CI: not run on this candidate.
-- Disposable hosted QA migration: not applied.
-- Vercel Preview desktop/mobile browser acceptance: not run.
+- PR #1411 contains the candidate; final security allowlist update is pending
+  commit/push at the time of this audit edit.
+- CI must be green on the final head SHA. The prior run correctly rejected the
+  new anonymous `SECURITY DEFINER` function until it was registered in the
+  reviewed allowlist.
+- Preview authentication remains environment-blocked by the missing QA
+  rate-limit binding; public Preview and authenticated local-app/hosted-QA
+  evidence are recorded separately.
 - Production deploy and both-live-salon verification: not done.
 
 ## Classification
@@ -145,8 +191,12 @@ Rollback is additive and bounded:
 - Implemented locally: **PASS**.
 - Local disposable database: **PASS**.
 - Full unit/lint/build/typecheck: **PASS**.
-- Hosted QA tested: **NOT YET**.
-- Preview verified: **NOT YET**.
+- Hosted QA tested: **PASS**.
+- Public Preview verified: **PASS**.
+- Authenticated dashboard with hosted QA data: **PASS via local app**.
+- Authenticated dashboard through Preview login: **NOT PROVEN — QA
+  rate-limit configuration blocks sign-in**.
 - Deployed: **NO**.
 - Production verified: **NO**.
-- P1-05 release-ready now: **FAIL until PR CI and hosted Preview acceptance pass**.
+- P1-05 release-ready now: **FAIL until final PR CI passes and the Preview-auth
+  infrastructure limitation is accepted or repaired**.
