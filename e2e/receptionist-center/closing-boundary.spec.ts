@@ -3,6 +3,7 @@ import { expect, test } from "@playwright/test";
 import {
   cleanupTestSalon,
   cleanupTestUser,
+  ensureDefaultServiceCategory,
   seedTestUser,
 } from "../helpers/db";
 import { waitForReceptionistHydration } from "../helpers/receptionistHydration";
@@ -31,6 +32,7 @@ type Fixture = {
 
 async function seedFixture(slug: string): Promise<Fixture> {
   await cleanupTestSalon(slug);
+  await ensureDefaultServiceCategory();
   const tomorrow = new Date();
   tomorrow.setUTCDate(tomorrow.getUTCDate() + 1);
   const dateYmd = tomorrow.toISOString().slice(0, 10);
