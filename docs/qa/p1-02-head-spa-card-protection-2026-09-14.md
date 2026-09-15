@@ -68,6 +68,12 @@ boundaries are unchanged.
 | Minimal disclosure on Preview | PASS — masked customer labels rendered; synthetic full names, phone and email were absent |
 | Owner actions on Preview | PASS — two Open booking, two secure-retry and two Mark reviewed controls rendered; one retry capability and one reviewed state persisted |
 | Preview auth rate limit | PASS — the shared QA auth bucket returned HTTP 429 after its configured threshold; QA-only hashed auth buckets were reset once to complete this controlled test |
+| Current-HEAD Square Sandbox backend | PASS — 8/8 executed scenarios on `522069fd`; the ninth recovery-only test was intentionally skipped in the normal run |
+| Current-HEAD provider delivery truth | PASS — real Sandbox success, decline, before-dispatch timeout, response loss, DB loss before/after completion, a 12-request idempotency race and customer-authority isolation all passed |
+| Real-browser synthetic Head Spa recovery | PASS — Chrome loaded the secure retry link, saved a Square Sandbox Visa, displayed `Card protection active`, and preserved that state after reload |
+| Browser-to-database receipt | PASS — the synthetic booking remained `confirmed`, protection became `saved`, card/customer binding, brand/last4, consent timestamp and policy hash were present, and its single operation was durably `succeeded` |
+| Browser provider-mutation boundary | PASS — one search, one customer create and one card create; zero charge/read-reconciliation calls and no duplicate provider mutation |
+| Browser sensitive-log scan | PASS — no configured provider secret, authorization header, source token, PAN, full email or phone pattern was found in the application log |
 
 The first build attempt failed before compilation because Turbopack rejects a
 `node_modules` symlink outside the worktree root. Installing the lockfile dependencies
@@ -82,6 +88,16 @@ toolbar CSP warnings and cancelled speculative requests were observed; neither p
 the application panel or its server actions from completing. Cleanup then confirmed zero
 active memberships, live bookings and active capabilities for the synthetic fixture.
 
+The current-HEAD provider run used a newly migrated disposable Supabase stack, synthetic
+customer data, Square Sandbox and a restrictive outbound boundary. NailIQ SMS, email and
+call delivery remained disabled, and no payment charge endpoint was allowed. The backend
+suite ended with ten confirmed and protected synthetic bookings, ten succeeded operations,
+three closed failed historical attempts, and no `sending` or `unknown` operation. The
+browser run added one separate synthetic Head Spa booking and performed exactly one
+customer/card creation pair. This proves the recovery mechanism on the current PR code;
+it does not prove that the nine existing Production exceptions have been contacted or
+recovered.
+
 ## Remaining operational acceptance
 
 1. Review PR #1408 before any merge or Production release.
@@ -89,8 +105,9 @@ active memberships, live bookings and active capabilities for the synthetic fixt
    expiring retry links only for the intended customers.
 3. The one Head Spa `manual_review` appointment must collect fresh policy consent and use
    read-only Square verification of the existing card before any new tokenization.
-4. Run one authorized Head Spa recovery journey through the real browser/provider and
-   confirm durable consent, customer binding, card receipt and reload state. Do not charge.
+4. Obtain explicit Production authorization before generating or delivering retry links
+   for the nine existing live-salon exceptions. The equivalent synthetic Head Spa journey
+   has passed in real Chrome and Square Sandbox; no live customer was changed or contacted.
 
 ## Verdict
 
@@ -99,5 +116,7 @@ active memberships, live bookings and active capabilities for the synthetic fixt
 - QA Auth, tenant, race and cleanup: **PASS**
 - QA Preview build/API/public UI smoke: **PASS**
 - Authenticated Owner exception-list and action verification on Preview: **PASS**
-- Head Spa provider recovery journey: **NOT RUN**
-- P1-02 overall: **NOT YET COMPLETE**
+- Synthetic Head Spa provider recovery journey on current HEAD: **PASS**
+- Existing live Head Spa/Studio exception recovery: **NOT RUN — requires Production authorization**
+- P1-02 code and QA acceptance: **PASS**
+- P1-02 operational Production completion: **NOT YET COMPLETE**
