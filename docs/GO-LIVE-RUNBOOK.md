@@ -1,56 +1,153 @@
-# NailIQ — Go-Live Runbook
+# NailIQ — Go-Live and Incident Runbook
 
-_Last updated: 2026-06-15. Consolidates the pre-launch security + verification pass._
+_Last updated: 2026-09-16. Owner: NailIQ release operator._
 
-## 1. Status at a glance
+This runbook is the production boundary for NailIQ. A green pull request proves
+the candidate in CI; it does not prove that Production has the required schema
+or that either live salon is healthy.
 
-| Area | State |
-|---|---|
-| `tsc` / `next build` | ✅ Clean (47/47 pages) |
-| Smoke test (dashboard + public booking, prod) | ✅ 0 console errors |
-| Square/Stripe money path | ✅ Audited clean + hardened |
-| Customer-PII leaks | ✅ Sealed + verified |
-| Account-takeover surface | ✅ Audited, no critical bug; hardened |
+## 1. Release controls
 
-## 2. Must-do BEFORE opening to more salons (config — non-breaking)
+- Git deployments from `main` are disabled in `vercel.json`. Merging code must
+  not deploy Production automatically.
+- Production database migration, application deployment/promotion and rollback
+  are separate actions. Record the operator, UTC time, candidate SHA and result
+  for each action.
+- Use an isolated clean worktree at the exact candidate SHA.
+- Do not use Production for fixture creation or destructive testing. Rehearse
+  migrations, rollback, restore, offboarding and provider behavior on a
+  disposable Supabase project with synthetic data first.
+- Do not enable outbound notifications or payment dispatch for a rehearsal.
 
-These are dashboard toggles the code can't flip; each is non-breaking (affects only new passwords / new logins).
+## 2. Required release order
 
-- [ ] **Supabase Auth → enable "Leaked password protection" (HIBP).** Blocks users from setting breached passwords. (Authentication → Policies/Passwords.)
-- [ ] **Confirm "Confirm email" is ON** (Authentication → Providers → Email). The membership-claim RPC now enforces a confirmed-email guard in-DB regardless, but keep this on.
-- [ ] **Vercel Firewall → create rate-limit rule `card-save`** (~5 req / 60s, key = IP). The app already enforces a DB-backed limiter (6/min) on the card-save routes; this is the second (edge) layer. Requires Pro (✅ on Pro).
-- [ ] **Verify env on Vercel _production_:** `NAILIQ_TEST_BYPASS_SLUG_PIN` and `DEMO_OTP`/`NEXT_PUBLIC_DEMO_OTP` are NOT set (they enable the demo-cookie bypass). `ANTHROPIC_API_KEY`, `STRIPE_*`, `SUPABASE_SERVICE_ROLE_KEY` ARE set.
+Stop on the first failed or ambiguous step. Do not continue to make the release
+look green.
 
-## 3. Recommended soon (not blocking)
+### RELEASE-1 — Freeze and identify
 
-- [ ] **MFA (TOTP) for superadmin** — the one remaining account-takeover hardening that needs code (enroll + verify UI + login gate). Build as a focused task.
-- [ ] **Third-party pentest / bug bounty** before scaling to many paying tenants — the internal audits (opus) are thorough but don't replace external testing.
-- [ ] **Stripe Connect routing for no-show charges** (LOW) — currently the Stripe no-show charge would hit the platform account; gate the Stripe no-show provider behind a connected-account check before enabling it for any salon (none use it today; Hi-Lite uses Square).
-- [ ] **Lint sweep** — ~58 pre-existing `no-explicit-any` style errors in `src/` (don't block the build). Clean incrementally when touching each file; there's a WIP stash for this.
+1. Record the candidate branch and full SHA.
+2. Record the current Production SHA from `https://www.nailiq.ca/api/version`.
+3. Confirm the worktree is clean and the candidate checks are green.
+4. List every migration added since the current Production SHA and identify its
+   application compatibility boundary.
+5. Confirm a rollback candidate and the schema compatibility of that rollback.
 
-## 4. What was hardened this pass (for the record)
+### RELEASE-2 — Apply schema first
 
-Security fixes — all applied to prod + verified (anon blocked, app paths intact):
+1. Compare local and linked migration ledgers read-only.
+2. Apply only the reviewed pending migration set to Production after explicit
+   action-time approval.
+3. Record the exact migration versions and command outcome. Never mark a
+   migration applied unless its schema and behavior are already present.
 
-- **CRITICAL** `search_salon_clients` anon EXECUTE → revoked (was a live full-PII dump). (#488)
-- **HIGH** `get_booking_client_snapshot` → salon-scoped overload, legacy dropped. (#488/#490)
-- **HIGH** `salon_resources` open anon read → dropped. (#488)
-- **HIGH** `claim_salon_memberships_by_email` → in-DB confirmed-email guard. (#502)
-- **HIGH** password min 6 → 8 (both reset actions). (#502)
-- **MED** `client_profiles` public write policies → dropped. (#488)
-- **MED** card-save routes → WAF + DB rate-limit (2 layers); deposit amount assertion. (#494/#498)
-- **MED** `staff` writes → gated to owner/admin (was any-role). (#504)
-- **MED** `party_link_change_requests` → locked to service-role (was open anon). (#504)
+### RELEASE-3 — Verify schema and behavior
 
-Money path verified safe: server-side amounts, secrets service-role-only, role-gated charges, signed idempotent Stripe webhooks, PCI-tokenized (no raw card data server-side).
+Before deploying application code:
 
-## 5. Monitoring after go-live
+1. Re-read the migration ledger.
+2. Run the migration-specific read-only schema/RPC/ACL probes.
+3. Confirm tenant isolation and any fail-closed capability expected by the new
+   application.
+4. Run Supabase security advisors and classify new findings.
 
-- **Self-hosted error monitor** (already live): captures → AI triage (Haiku cron) → AI-draft fix PRs on `ai-fix/*` (never auto-merged). Watch the dashboard for spikes after launch.
-- **NailIQ Error Monitor**: surface tag `surface=dashboard|booking|custom-domain|superadmin`.
-- **Supabase advisors**: re-run `get_advisors(security)` after any new migration — the anon-grant-on-new-RPC trap recurs (it bit us twice). Code-review every new `SECURITY DEFINER` migration for the `REVOKE ... FROM anon` tail.
+If any required RPC, table, trigger, grant or constraint is absent, stop. Do not
+deploy the application.
 
-## 6. Rollback
+### RELEASE-4 — Deploy the application
 
-- Vercel keeps `isRollbackCandidate` production deploys — promote a previous one from the dashboard if a deploy regresses.
-- DB migrations this pass are additive/restrictive (REVOKE/DROP POLICY/guards). To roll back a specific one, re-grant / re-create the dropped policy — but prefer fixing forward (the dropped grants were attack surface, not app dependencies).
+Deploy or promote the exact reviewed SHA manually. Record the deployment ID,
+URL, start/ready timestamps and previous rollback candidate. Do not deploy from
+a dirty checkout or a different SHA.
+
+### RELEASE-5 — Run read-only canaries
+
+1. Verify `/api/version`, `/api/health` and `/api/ready` report one matching SHA
+   and healthy/ready status.
+2. Open both live public salon pages in a real browser in English and Vietnamese.
+3. Confirm the booking form renders and browser console has no error.
+4. Review Production runtime logs for new HTTP 5xx or schema errors.
+5. Confirm the independent Production monitor is green.
+
+No customer data, provider mutation, charge, SMS, email or call is allowed in
+these canaries. A booking submission needs a separately approved production
+test plan.
+
+## 3. Rollback
+
+### ROLLBACK-A — Application regression
+
+Use only when the previous application is compatible with the current schema.
+
+1. Stop further promotion and record the incident start time.
+2. Promote the recorded previous READY deployment.
+3. Re-run the version/health/readiness probes and both-salon browser canary.
+4. Keep additive schema in place unless a reviewed database rollback is needed.
+
+### ROLLBACK-B — Schema or compatibility regression
+
+Do not blindly promote old code across an incompatible schema.
+
+1. Disable the affected entry point or use the documented feature kill switch.
+2. Select the migration-specific rollback or a tested forward fix.
+3. Rehearse that exact action on disposable QA before Production.
+4. Apply it only with action-time approval, then verify schema, ACL, tenant
+   isolation and the application canary again.
+
+For data-loss or corruption recovery, restore a logical backup only into a new
+isolated database first. Compare schema, data and application-contract
+fingerprints before any cutover decision. The repository rehearsal is
+`scripts/security/rehearse-postgres-backup-restore.mjs`; it refuses non-loopback
+targets and requires `NAILIQ_DISPOSABLE_DB=1`.
+
+## 4. Incident handling and support
+
+1. **Detect:** capture UTC time, surface, route, deployment SHA and correlation
+   identity. Redact secrets and customer/card data.
+2. **Contain:** pause only the unsafe entry point; do not weaken auth, RLS,
+   idempotency or provider-safety gates.
+3. **Assign:** one incident owner records decisions and evidence. The GitHub
+   Production Monitoring workflow opens or updates one incident issue for a
+   failed version/liveness/readiness probe.
+4. **Diagnose:** separate verified facts, hypotheses and unavailable evidence.
+5. **Recover:** use the matching rollback branch above or a verified forward
+   fix.
+6. **Close:** confirm recovery with the same probes that detected the incident,
+   add recovery evidence and close the incident. Record follow-up prevention.
+
+The monitoring drill may be run manually with `simulate_failure=true`. It must
+open/update the incident for the configured repository recipient and a later
+healthy run must comment and close it. The drill never submits a booking or
+contacts a salon/customer.
+
+## 5. Staff offboarding
+
+- Owner/admin previews affected future assignments before completing the action.
+- Completion uses the atomic offboarding RPC; do not directly update/delete a
+  staff row.
+- Verify reassignment/cancellation receipts, membership/session revocation,
+  tenant isolation and durable notification records.
+- No provider delivery is required for the rehearsal. The disposable SQL and
+  concurrency/rollback checks live under
+  `scripts/security/rehearse-staff-offboarding-durable*`.
+
+## 6. Routine production checks
+
+- Keep Supabase leaked-password protection and email confirmation enabled.
+- Verify Production never contains demo/test bypass environment variables.
+- Review every new `SECURITY DEFINER` function and its explicit role grants.
+- Run Supabase security advisors after migrations.
+- Keep card-save edge and durable database rate limits enabled.
+- Review runtime errors and cron operating-state freshness after each release.
+
+## 7. 2026-09-16 release-order incident
+
+PR #1411 added an application dependency on migration
+`20260915143000_add_versioned_trial_entitlement_boundary.sql`. Vercel deployed
+the merged `main` SHA before the migration was applied, so both live salon pages
+failed closed and displayed booking paused. The exact migration was then applied
+and recorded, and read-only database/browser canaries recovered both salons.
+
+Root cause: the repository documented migration-first ordering but allowed
+automatic Production deployment from `main`. Prevention: `main` Git deployment
+is disabled and CI locks that setting plus this runbook sequence.
