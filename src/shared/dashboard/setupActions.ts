@@ -59,6 +59,8 @@ import {
 } from "@/shared/voiceai/config";
 import { isReleaseFeatureVisible } from "@/shared/features/platformFeatureFlags";
 import { parseServicePrepMinutes } from "@/shared/booking/bookingSequence";
+import { loadTenantEntitlements } from "@/shared/subscriptions/loadTenantEntitlements";
+import type { TenantEntitlements } from "@/shared/subscriptions/tenantEntitlements";
 import { loadPublicBookingSequenceReadiness } from "@/shared/booking/bookingSequenceReadiness";
 import {
   normalizeServiceResourceRequirement,
@@ -1618,6 +1620,7 @@ export async function getDashboardWriteClient(slug: string): Promise<
        */
       userId: string | null;
       supabase: GenericSupabase;
+      entitlements: TenantEntitlements;
     }
 > {
   const r = await resolveSalonForDashboard(slug);
@@ -1627,12 +1630,14 @@ export async function getDashboardWriteClient(slug: string): Promise<
   if (demoGate) return null;
 
   const supabase = await writableSupabase(slug, r.kind);
+  const entitlements = await loadTenantEntitlements(r.salon.id);
   return {
     salon: r.salon,
     kind: r.kind,
     role: r.role,
     userId: r.viewerUserId,
     supabase,
+    entitlements,
   };
 }
 

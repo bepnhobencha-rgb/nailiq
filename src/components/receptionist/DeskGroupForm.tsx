@@ -175,6 +175,8 @@ const COPY = {
       staff_not_found: "A staff member is no longer available.",
       past_date: "Can't book a date in the past.",
       monthly_booking_limit_reached: "You've hit your plan's booking limit.",
+      trial_new_booking_paused:
+        "The trial has ended. New appointments are paused; existing appointments remain available.",
       duplicate_submission: "This group was already created.",
       unauthorized: "You don't have permission to create bookings.",
       after_hours_not_allowed:
@@ -269,6 +271,8 @@ const COPY = {
       staff_not_found: "Một thợ không còn khả dụng.",
       past_date: "Không thể đặt vào ngày đã qua.",
       monthly_booking_limit_reached: "Đã đạt giới hạn lịch của gói hiện tại.",
+      trial_new_booking_paused:
+        "Trial đã hết. Tạo lịch mới đang tạm dừng; các lịch hiện có vẫn được giữ.",
       duplicate_submission: "Nhóm này đã được tạo.",
       unauthorized: "Bạn không có quyền tạo lịch.",
       after_hours_not_allowed: "Chỉ Owner hoặc Admin được duyệt ngoài giờ.",

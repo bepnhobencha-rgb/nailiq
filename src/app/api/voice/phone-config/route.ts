@@ -13,6 +13,7 @@
  */
 import { NextRequest, NextResponse } from "next/server";
 import { createServiceRoleClient } from "@/shared/lib/supabase/serviceRole";
+import { resolveTenantEntitlements } from "@/shared/subscriptions/tenantEntitlements";
 import { loadSalonContext } from "@/shared/voiceai/loadSalonContext";
 import {
   buildPhoneGreeting,
@@ -62,11 +63,14 @@ export async function POST(req: NextRequest) {
   const supabase = createServiceRoleClient();
   const { data: salonRow } = await supabase
     .from("salons")
-    .select("id, voice_ai_enabled, voice_ai_default_language, voice_ai_allowed_languages")
+    .select("id, voice_ai_enabled, voice_ai_default_language, voice_ai_allowed_languages, archived_at, superadmin_locked_at, subscription_status, trial_ends_at, feature_flags")
     .eq("slug", slug)
     .maybeSingle();
   if (!salonRow) return NextResponse.json({ error: "salon_not_found" }, { status: 404 });
-  if ((salonRow as { voice_ai_enabled?: boolean | null }).voice_ai_enabled !== true) {
+  if (
+    (salonRow as { voice_ai_enabled?: boolean | null }).voice_ai_enabled !== true ||
+    !resolveTenantEntitlements(salonRow).canStartVoiceSession
+  ) {
     return NextResponse.json({ error: "voice_not_enabled" }, { status: 403 });
   }
 

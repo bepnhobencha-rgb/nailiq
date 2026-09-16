@@ -1602,6 +1602,10 @@ export function BookingGroupFlow({
         setErrorMessage(t.bookingErrors.monthlyLimitReached);
         return;
       }
+      if (res.reason === "trial_new_booking_paused") {
+        setErrorMessage(t.bookingErrors.trialBookingPaused);
+        return;
+      }
       // P1 #20 — granular validation reasons. Each carries a 1-indexed
       // `memberNumber` so the copy can pinpoint the problem instead
       // of showing the generic "couldn't book the group" fallback.

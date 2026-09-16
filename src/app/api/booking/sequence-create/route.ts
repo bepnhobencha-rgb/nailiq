@@ -281,6 +281,7 @@ function sequenceCreateFailure(
         result.code === "booking_state_changed" ||
         result.code === "slot_conflict" ||
         result.code === "monthly_booking_limit_reached"
+        || result.code === "trial_new_booking_paused"
       ? 409
       : 503;
   return json(result, status);

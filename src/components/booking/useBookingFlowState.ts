@@ -2054,6 +2054,11 @@ export function useBookingFlowState(
         err.message === "monthly_booking_limit_reached"
       ) {
         setError(t.bookingErrors.monthlyLimitReached);
+      } else if (
+        err instanceof Error &&
+        err.message === "trial_new_booking_paused"
+      ) {
+        setError(t.bookingErrors.trialBookingPaused);
       } else if (paidDeposit && err instanceof Error && err.message === "deposit_refund_completed") {
         // Only the server's verified terminal refund receipt releases this lock.
         // Preserve the draft and quote until the customer explicitly starts again.
@@ -2161,6 +2166,7 @@ export function useBookingFlowState(
     t.bookingErrors.slotJustTaken,
     t.bookingErrors.rateLimited,
     t.bookingErrors.monthlyLimitReached,
+    t.bookingErrors.trialBookingPaused,
     t.bookingErrors.otpRequired,
     t.slotTooSoonError,
     t.submitError,

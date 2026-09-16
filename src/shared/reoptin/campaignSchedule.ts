@@ -1,6 +1,8 @@
 import "server-only";
 import { createServiceRoleClient } from "@/shared/lib/supabase/serviceRole";
 import { runReoptinBatch } from "@/shared/reoptin/reoptinCampaign";
+import { loadTenantEntitlements } from "@/shared/subscriptions/loadTenantEntitlements";
+import { resolveTenantEntitlements } from "@/shared/subscriptions/tenantEntitlements";
 
 /**
  * Scheduled campaign sends. An owner queues a campaign for a salon-local time;
@@ -28,6 +30,10 @@ export async function scheduleCampaign(opts: {
 }): Promise<{ ok: true; id: string } | { ok: false; error: string }> {
   if (new Date(opts.scheduledAtIso).getTime() <= Date.now()) {
     return { ok: false, error: "past" };
+  }
+  const entitlements = await loadTenantEntitlements(opts.salonId);
+  if (!entitlements.canRunMarketing) {
+    return { ok: false, error: "trial_marketing_paused" };
   }
   const db = createServiceRoleClient();
   const { data, error } = await db
@@ -111,13 +117,24 @@ export async function runDueCampaigns(): Promise<{ claimed: number; sent: number
 
     const { data: salon } = await db
       .from("salons" as never)
-      .select("slug")
+      .select("slug, archived_at, superadmin_locked_at, subscription_status, trial_ends_at, feature_flags")
       .eq("id" as never, row.salon_id)
       .maybeSingle();
     if (!salon) {
       await db
         .from("campaign_schedules" as never)
         .update({ status: "failed", last_summary: { error: "salon_not_found" } } as never)
+        .eq("id" as never, row.id);
+      continue;
+    }
+    if (!resolveTenantEntitlements(salon).canRunMarketing) {
+      await db
+        .from("campaign_schedules" as never)
+        .update({
+          status: "failed",
+          last_summary: { error: "trial_marketing_paused" },
+          processed_at: new Date().toISOString(),
+        } as never)
         .eq("id" as never, row.id);
       continue;
     }

@@ -1,5 +1,6 @@
 import { NextRequest, NextResponse } from "next/server";
 import { createServiceRoleClient } from "@/shared/lib/supabase/serviceRole";
+import { resolveTenantEntitlements } from "@/shared/subscriptions/tenantEntitlements";
 import { loadSalonContext } from "@/shared/voiceai/loadSalonContext";
 import { buildSystemPrompt } from "@/shared/voiceai/buildSystemPrompt";
 import { REALTIME_TOOLS } from "@/shared/voiceai/realtimeTools";
@@ -58,14 +59,17 @@ export async function POST(req: NextRequest) {
   const supabase = createServiceRoleClient();
   const { data: salon } = await supabase
     .from("salons")
-    .select("id, voice_ai_enabled")
+    .select("id, voice_ai_enabled, archived_at, superadmin_locked_at, subscription_status, trial_ends_at, feature_flags")
     .eq("slug", salonSlug)
     .single();
 
   if (!salon) return NextResponse.json({ error: "salon_not_found" }, { status: 404 });
 
   // Gate: voice must be enabled for this salon
-  if (!(salon as { voice_ai_enabled?: boolean | null }).voice_ai_enabled) {
+  if (
+    !(salon as { voice_ai_enabled?: boolean | null }).voice_ai_enabled ||
+    !resolveTenantEntitlements(salon).canStartVoiceSession
+  ) {
     return NextResponse.json({ error: "voice_not_enabled" }, { status: 403 });
   }
 

@@ -25,6 +25,7 @@ import {
 } from "@/shared/register/phone";
 import { pickAvailableSalonSlug } from "@/shared/register/salonSlugPicker";
 import { withCocoSetupActivation } from "@/shared/dashboard/cocoSetupActivation";
+import { withTrialExpiryPolicy } from "@/shared/subscriptions/tenantEntitlements";
 
 export type CompleteSalonRegistrationResult =
   | { ok: true; slug: string; slugAdjusted: boolean }
@@ -594,7 +595,7 @@ export async function completeSalonRegistration(
       trial_ends_at: trial.trialEndsAt,
       // Only newly created owner salons enter Coco Setup automatically.
       // Existing salons and both Hi-Lite production tenants remain unchanged.
-      feature_flags: withCocoSetupActivation(null),
+      feature_flags: withTrialExpiryPolicy(withCocoSetupActivation(null)),
     } as never)
     .select("id, slug")
     .single();

@@ -9,10 +9,10 @@ export function SalonBookingPaused({
 }) {
   return (
     <div className="mx-auto flex min-h-dvh max-w-lg flex-col justify-center px-4 py-16 pb-safe">
-      <h1 className="text-2xl font-semibold tracking-tight text-nq-foreground">
+      <h1 className="text-2xl font-semibold tracking-tight text-[var(--booking-text)]">
         {t.salonNotLiveHeading}
       </h1>
-      <p className="mt-3 text-base leading-relaxed text-nq-muted">
+      <p className="mt-3 text-base leading-relaxed text-[var(--booking-text-muted)]">
         {t.salonNotLiveBody.replace("{shop}", shopLabel)}
       </p>
     </div>

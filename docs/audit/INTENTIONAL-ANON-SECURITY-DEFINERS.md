@@ -1,11 +1,11 @@
 # Intentional anonymous `SECURITY DEFINER` boundaries
 
-Updated for the local 2026-09-13 phone incentive and CRM authority candidate. Executable proof must
+Updated for the 2026-09-15 trial-capability candidate. Executable proof must
 run against the candidate database before this becomes release evidence; this
-document does not claim the migration is deployed.
+document does not claim a Production deployment.
 
-The release contract contains twelve anonymous-executable `SECURITY DEFINER`
-signatures (ten function names; `create_public_booking` has legacy/priced/SMS-aware rollout
+The release contract contains thirteen anonymous-executable `SECURITY DEFINER`
+signatures (eleven function names; `create_public_booking` has legacy/priced/SMS-aware rollout
 overloads). They are not unreviewed exceptions: they are
 the complete allowlist of public booking RPCs that must cross RLS without
 granting anonymous users direct access to customer, booking, OTP, or salon
@@ -32,6 +32,7 @@ Every entry is required to satisfy the executable proof in
 | `public_booking_capacity_for_range` | Resource-aware public scheduling needs staff and physical-resource conflicts but must not read booking, segment, or customer records. | Returns only staff/resource IDs and occupied start/end timestamps for the requested salon and range; terminal states are excluded. |
 | `public_booking_occupancy_for_range` | Public scheduling needs occupied intervals but must not read booking/customer records. | Returns only staff ID and start/end timestamps. |
 | `public_resolve_domain` | Middleware maps a hostname to a slug; invoker mode would fail because anonymous direct `salons` reads are revoked. | Returns one slug for an exact normalized host. |
+| `public_salon_accepts_new_bookings` | Public booking must fail closed when an enrolled tenant's trial no longer permits new appointments, while direct anonymous salon reads stay revoked. | Boolean only; combines profile readiness with the server-owned entitlement state and exposes no trial date, billing state, or tenant metadata. |
 | `validate_booking_otp_session` | New-booking flows must validate a contact-verification capability without exposing OTP rows or claiming ownership of existing phone-linked data. | Boolean only; exact session/salon/phone, unexpired and unconsumed, with `sms`, `email`, `staff_attested`, or `demo` assurance. `legacy_unverified` is rejected. Does not authorize profile, saved-card, history, or existing-booking access. |
 | `validate_phone_otp_session` | Existing phone-linked customer data and actions require proof of phone ownership without exposing OTP rows. | Boolean only; exact session/salon/phone, unexpired and unconsumed, with `sms` assurance only. Email, staff attestation, demo, and legacy sessions cannot pass this gate. |
 
@@ -50,7 +51,8 @@ required for all three `create_public_booking` overloads (pricing migration
 `finalize_public_booking_profile`, and the three-argument snapshot.
 `add_booking_addons` requires `public, pg_catalog`; the group slot probe,
 occupancy projection, and domain resolver require `public`. No wildcard path
-or unnamed empty-path exception is accepted.
+or unnamed empty-path exception is accepted. The boolean trial-capability RPC
+also uses an empty path and schema-qualifies its dependencies.
 
 `insert_group_bookings(jsonb)` is deliberately absent. Public Group/Party
 traffic now crosses the metered application boundary and the service-only

@@ -29,6 +29,7 @@ export type SendSaveCardLinkResult =
         | "forbidden"
         | "invalid_booking"
         | "no_phone"
+        | "trial_outbound_paused"
         | "protection_disabled"
         | "server_error";
     }
@@ -41,6 +42,9 @@ export async function sendSaveCardLink(
   const ctx = await getDashboardWriteClient(slug);
   if (!ctx) return { ok: false, error: "unauthorized" };
   if (!isFrontDeskRole(ctx.role)) return { ok: false, error: "forbidden" };
+  if (!ctx.entitlements.canRunMarketing) {
+    return { ok: false, error: "trial_outbound_paused" };
+  }
 
   const bookingId = String(input.bookingId ?? "").trim();
   if (!bookingId) return { ok: false, error: "invalid_booking" };

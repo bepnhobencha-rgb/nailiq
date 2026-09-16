@@ -24,13 +24,14 @@ const intentionalDefiners = [
   "public_booking_capacity_for_range",
   "public_booking_occupancy_for_range",
   "public_resolve_domain",
+  "public_salon_accepts_new_bookings",
   "validate_booking_otp_session",
   "validate_phone_otp_session",
 ] as const;
 
 describe("intentional anonymous SECURITY DEFINER boundary", () => {
   it("keeps the candidate allowlist exact and documented", () => {
-    expect(proof).toContain("IF v_actual_count <> 12");
+    expect(proof).toContain("IF v_actual_count <> 13");
 
     for (const functionName of intentionalDefiners) {
       expect(proof).toContain(`public.${functionName}`);
@@ -114,6 +115,7 @@ describe("intentional anonymous SECURITY DEFINER boundary", () => {
       ["public.public_booking_capacity_for_range(uuid,timestamp with time zone,timestamp with time zone)", 'search_path=""'],
       ["public.public_booking_occupancy_for_range(uuid,timestamp with time zone,timestamp with time zone)", "search_path=public"],
       ["public.public_resolve_domain(text)", "search_path=public"],
+      ["public.public_salon_accepts_new_bookings(uuid)", 'search_path=""'],
       ["public.validate_booking_otp_session(uuid,uuid,text)", 'search_path=""'],
       ["public.validate_phone_otp_session(uuid,uuid,text)", 'search_path=""'],
     ]);

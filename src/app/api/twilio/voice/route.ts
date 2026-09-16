@@ -19,6 +19,7 @@
  */
 import { NextRequest, NextResponse } from "next/server";
 import { createServiceRoleClient } from "@/shared/lib/supabase/serviceRole";
+import { resolveTenantEntitlements } from "@/shared/subscriptions/tenantEntitlements";
 import { getTwilioAuthToken, validateTwilioSignature, twilioRequestBaseUrl } from "@/shared/lib/twilioSignature";
 
 export const runtime = "nodejs";
@@ -82,10 +83,14 @@ async function handleVoice(req: NextRequest, sigParams: Record<string, string>) 
 
   const { data: salonRow } = await supabase
     .from("salons")
-    .select("voice_ai_enabled, voice_ai_sessions_this_month, voice_ai_sessions_limit")
+    .select("voice_ai_enabled, voice_ai_sessions_this_month, voice_ai_sessions_limit, archived_at, superadmin_locked_at, subscription_status, trial_ends_at, feature_flags")
     .eq("slug", slug)
     .maybeSingle();
-  if (!salonRow || (salonRow as { voice_ai_enabled?: boolean | null }).voice_ai_enabled !== true) {
+  if (
+    !salonRow ||
+    (salonRow as { voice_ai_enabled?: boolean | null }).voice_ai_enabled !== true ||
+    !resolveTenantEntitlements(salonRow).canStartVoiceSession
+  ) {
     return twimlResponse(sayUnavailable);
   }
   const quota = salonRow as {

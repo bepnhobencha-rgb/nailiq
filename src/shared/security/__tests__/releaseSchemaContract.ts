@@ -11,13 +11,14 @@ import { expect } from "vitest";
 // R11 combines current Production: +8 columns, +6 functions, +1 trigger,
 // +3 indexes; plus +1 service-only expired-grace pause function.
 // P1-01 adds one service-only Waitlist terminal-delivery truth projection.
+// P1-05 adds five trial-entitlement functions and seven enforcement triggers.
 // This is the local release contract, not a claim about Production's schema.
 const EXPECTED_RELEASE_SHAPE = {
   tables: 246,
   columns: 3798,
   policies: 225,
-  functions: 595,
-  triggers: 162,
+  functions: 600,
+  triggers: 169,
   indexes: 1012,
 };
 const EXPECTED_GRANTS = { anon: 56, authenticated: 78, service_role: 233 };

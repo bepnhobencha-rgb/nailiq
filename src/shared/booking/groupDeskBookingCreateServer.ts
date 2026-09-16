@@ -44,6 +44,9 @@ export async function createDeskGroupBookingsAuthoritative(
       p_actor_user_id: actorUserId,
     } as never,
   );
+  if (error?.code === "NITRL" || error?.message?.includes("trial_new_booking_paused")) {
+    return { ok: false, code: "trial_new_booking_paused" };
+  }
   if (error || !data || typeof data !== "object") return { ok: false, code: "create_unavailable" };
   const raw = Array.isArray(data) ? data[0] : data;
   if (!raw || typeof raw !== "object") return { ok: false, code: "create_unavailable" };
@@ -54,7 +57,8 @@ export async function createDeskGroupBookingsAuthoritative(
       return quote ? { ok: false, code: "pricing_changed", quote } : { ok: false, code: "pricing_invalid" };
     }
     if (result.code === "slot_conflict" || result.code === "idempotency_conflict" ||
-      result.code === "monthly_booking_limit_reached") return { ok: false, code: result.code };
+      result.code === "monthly_booking_limit_reached" ||
+      result.code === "trial_new_booking_paused") return { ok: false, code: result.code };
     return { ok: false, code: "create_unavailable" };
   }
   const pricing = parseGroupBookingPricingQuote(result, { voucherCode: null });
