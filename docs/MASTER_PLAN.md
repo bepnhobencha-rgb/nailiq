@@ -3,6 +3,11 @@
 Ngày bắt đầu: 21/07/2026
 Mục tiêu: Có khách hàng trả tiền đầu tiên với một sản phẩm đơn giản, ổn định và dễ sử dụng.
 
+Theo dõi nghiệm thu: [Bảng Masterplan hiện hành](qa/MASTERPLAN_ACCEPTANCE_CURRENT.md)
+(cập nhật 20/09/2026). Các execution notes có ngày ở dưới là lịch sử;
+đối chiếu bảng nghiệm thu trước khi coi một việc là chưa triển khai hoặc đã đạt.
+Liên kết này không thay đổi các điều kiện hoàn thành và chính sách của Masterplan.
+
 ## Nguyên tắc điều hành
 
 1. Không thêm tính năng mới nếu chưa giúp khách đăng ký, vận hành salon hoặc trả tiền.

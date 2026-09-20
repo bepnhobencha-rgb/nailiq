@@ -124,6 +124,16 @@ PostgreSQL 17.6 server. It was rerun with the installed PostgreSQL 17 client.
 
 ## Current verdict
 
+Update 2026-09-20: the original publication status below is historical. The
+candidate was committed/pushed as `9fe579aecb878391061a082bf6ab8223f3045415`
+and is now PR #1413, OPEN, Ready for review and MERGEABLE. Executed CI checks
+are SUCCESS; skipped checks are not acceptance evidence. Production still
+serves base `ff607477...`, verified with matching version/health/readiness
+probes at 2026-09-20T18:04:12.186Z. The three focused release/offboarding suites
+were rerun: 20/20 passed. The deployment gate is therefore not deployed yet.
+See [current Masterplan acceptance](MASTERPLAN_ACCEPTANCE_CURRENT.md) for the
+consolidated acceptance queue and remaining operational gates.
+
 **PASS LOCAL / PASS QA.** The incident is recovered; prevention, restore and
 offboarding are PASS LOCAL, and the hosted synthetic alert lifecycle is PASS QA.
 The local prevention change remains uncommitted/unpublished: Preview verified
