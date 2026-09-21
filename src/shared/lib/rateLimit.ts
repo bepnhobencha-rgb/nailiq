@@ -27,23 +27,11 @@ export const RATE_LIMIT_IDS = {
   bookingPageLoad: "booking-page-load",
   /** POST to /register or /login (auth attempts — future server actions) */
   authAttempt: "auth-attempt",
-  /** Future: magic-link / OAuth init endpoints if they get a server wrapper */
-  magicLinkSend: "magic-link-send",
   /** POST from /contact form (public marketing inquiry). Create the
    *  matching rule in Vercel WAF with a low ceiling — e.g. 5 submissions
    *  per IP per hour — since this is unauthenticated and prone to spam.
    *  Fail-open until the rule exists. */
   contactSubmit: "contact-submit",
-  /** GET /api/customer/[phone] — returning-customer lookup. Public + unauth,
-   *  so it's a PII-enumeration target. Pair with a Vercel WAF rule at a low
-   *  ceiling (e.g. 20/min per IP) — legit booking only calls it a few times. */
-  customerLookup: "customer-lookup",
-  /** POST /api/booking/{square-save-card,stripe-setup-intent} — anon card-on-file
-   *  endpoints. No charge happens, but they hit the payment provider, so an
-   *  attacker with a booking id could card-test against them. Pair with a Vercel
-   *  WAF rule keyed by IP+bookingId at a low ceiling (e.g. 5/min) — a real
-   *  customer saves a card once. */
-  cardSave: "card-save",
 } as const;
 
 export type RateLimitId = (typeof RATE_LIMIT_IDS)[keyof typeof RATE_LIMIT_IDS];
@@ -114,10 +102,4 @@ export async function checkAuthRateLimit(
   request: NextRequest | Request,
 ): Promise<boolean> {
   return isRateLimited(RATE_LIMIT_IDS.authAttempt, { request });
-}
-
-export async function checkMagicLinkRateLimit(
-  request: NextRequest | Request,
-): Promise<boolean> {
-  return isRateLimited(RATE_LIMIT_IDS.magicLinkSend, { request });
 }

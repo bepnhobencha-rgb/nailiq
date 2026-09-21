@@ -10,6 +10,7 @@ DECLARE
   v_oid oid;
   v_definition text;
   v_public_execute boolean;
+  v_public_schema_usage boolean;
   v_actual_count integer;
 BEGIN
   SELECT count(*)
@@ -22,7 +23,7 @@ BEGIN
 
   IF v_actual_count <> 13 THEN
     RAISE EXCEPTION
-      'anonymous SECURITY DEFINER allowlist drift: expected 13, found %',
+      'public anonymous SECURITY DEFINER allowlist drift: expected 13, found %',
       v_actual_count;
   END IF;
 
@@ -268,6 +269,87 @@ BEGIN
         v_target.signature;
     END IF;
   END LOOP;
+
+  -- This catalog helper is executable only by the stateless anonymous booking
+  -- client and service role. It lives in a non-exposed schema and is reached
+  -- through the public SECURITY INVOKER snapshot. Unlike the mutation/identity
+  -- RPCs above, it returns only four non-sensitive resource catalog fields.
+  v_oid := to_regprocedure(
+    'private.public_booking_resources_for_salon(uuid)'
+  )::oid;
+  IF v_oid IS NULL THEN
+    RAISE EXCEPTION
+      'private resource catalog definer is missing: private.public_booking_resources_for_salon(uuid)';
+  END IF;
+  SELECT pg_get_functiondef(v_oid) INTO v_definition;
+  SELECT EXISTS (
+    SELECT 1
+    FROM aclexplode(
+      COALESCE(
+        (SELECT proacl FROM pg_proc WHERE oid = v_oid),
+        acldefault('f', (SELECT proowner FROM pg_proc WHERE oid = v_oid))
+      )
+    )
+    WHERE grantee = 0
+      AND privilege_type = 'EXECUTE'
+  ) INTO v_public_execute;
+
+  IF NOT (SELECT prosecdef FROM pg_proc WHERE oid = v_oid)
+     OR (SELECT provolatile FROM pg_proc WHERE oid = v_oid) <> 's'::"char"
+     OR (SELECT pg_get_userbyid(proowner) FROM pg_proc WHERE oid = v_oid)
+          <> 'postgres'
+     OR NOT EXISTS (
+       SELECT 1
+       FROM unnest((SELECT proconfig FROM pg_proc WHERE oid = v_oid)) setting
+       WHERE setting = 'search_path=""'
+     )
+     OR v_public_execute
+     OR NOT has_function_privilege('anon', v_oid, 'EXECUTE')
+     OR has_function_privilege('authenticated', v_oid, 'EXECUTE')
+     OR NOT has_function_privilege('service_role', v_oid, 'EXECUTE') THEN
+    RAISE EXCEPTION
+      'security or role boundary mismatch on private.public_booking_resources_for_salon(uuid)';
+  END IF;
+
+  IF position('returns table(id uuid, name text, kind text, display_order integer)'
+      IN regexp_replace(lower(v_definition), '\s+', ' ', 'g')) = 0
+     OR EXISTS (
+       SELECT 1
+       FROM unnest(ARRAY[
+         'r.salon_id = p_salon_id',
+         'r.status = ''active''',
+         'r.deleted_at IS NULL',
+         's.archived_at IS NULL',
+         's.profile_complete IS TRUE',
+         's.resources_enabled IS TRUE'
+       ]::text[]) fragment
+       WHERE position(regexp_replace(lower(fragment), '\s+', '', 'g')
+         IN regexp_replace(lower(v_definition), '\s+', '', 'g')) = 0
+     )
+     OR position('square_team_member_id' IN lower(v_definition)) > 0
+     OR position('same_guest_parallel_capacity' IN lower(v_definition)) > 0
+     OR position('adjacency_group' IN lower(v_definition)) > 0 THEN
+    RAISE EXCEPTION
+      'private resource catalog contract drift on private.public_booking_resources_for_salon(uuid)';
+  END IF;
+
+  SELECT EXISTS (
+    SELECT 1
+    FROM pg_namespace n
+    CROSS JOIN LATERAL aclexplode(
+      COALESCE(n.nspacl, acldefault('n', n.nspowner))
+    ) acl
+    WHERE n.nspname = 'private'
+      AND acl.grantee = 0
+      AND acl.privilege_type = 'USAGE'
+  ) INTO v_public_schema_usage;
+
+  IF v_public_schema_usage
+     OR NOT has_schema_privilege('anon', 'private', 'USAGE')
+     OR has_schema_privilege('authenticated', 'private', 'USAGE')
+     OR NOT has_schema_privilege('service_role', 'private', 'USAGE') THEN
+    RAISE EXCEPTION 'private resource helper schema ACL drift';
+  END IF;
 
   -- Direct anonymous access remains closed where the RPC exists specifically
   -- to publish a sanitized projection or controlled write.

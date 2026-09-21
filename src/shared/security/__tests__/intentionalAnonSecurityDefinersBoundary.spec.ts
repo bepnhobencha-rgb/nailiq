@@ -21,6 +21,7 @@ const intentionalDefiners = [
   "create_public_booking",
   "finalize_public_booking_profile",
   "get_booking_client_snapshot",
+  "public_booking_resources_for_salon",
   "public_booking_capacity_for_range",
   "public_booking_occupancy_for_range",
   "public_resolve_domain",
@@ -34,8 +35,16 @@ describe("intentional anonymous SECURITY DEFINER boundary", () => {
     expect(proof).toContain("IF v_actual_count <> 13");
 
     for (const functionName of intentionalDefiners) {
-      expect(proof).toContain(`public.${functionName}`);
-      expect(rationale).toContain(`\`${functionName}\``);
+      expect(proof).toContain(
+        functionName === "public_booking_resources_for_salon"
+          ? `private.${functionName}`
+          : `public.${functionName}`,
+      );
+      expect(rationale).toContain(
+        functionName === "public_booking_resources_for_salon"
+          ? `\`private.${functionName}\``
+          : `\`${functionName}\``,
+      );
     }
 
     expect(capacityAcl).toContain("FROM PUBLIC, authenticated");
@@ -128,6 +137,19 @@ describe("intentional anonymous SECURITY DEFINER boundary", () => {
     );
     expect(proof).toContain(
       "NOT has_function_privilege('service_role', v_oid, 'EXECUTE')",
+    );
+    expect(proof).toContain(
+      "private.public_booking_resources_for_salon(uuid)",
+    );
+    expect(proof).toContain(
+      "has_function_privilege('authenticated', v_oid, 'EXECUTE')\n     OR NOT has_function_privilege('service_role', v_oid, 'EXECUTE')",
+    );
+    expect(proof).toContain(
+      "acl.privilege_type = 'USAGE'",
+    );
+    expect(proof).toContain("acl.grantee = 0");
+    expect(proof).toContain(
+      "has_schema_privilege('authenticated', 'private', 'USAGE')",
     );
   });
 
