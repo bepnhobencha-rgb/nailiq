@@ -1,6 +1,6 @@
 # NailIQ — Bảng nghiệm thu Masterplan
 
-Cập nhật: 20/09/2026. Đây là bảng theo dõi nghiệm thu hiện hành; không thay đổi
+Cập nhật: 21/09/2026. Đây là bảng theo dõi nghiệm thu hiện hành; không thay đổi
 phạm vi, chính sách hay điều kiện đạt trong `docs/MASTER_PLAN.md`.
 
 **Kết luận: chưa đủ bằng chứng nghiệm thu toàn bộ Masterplan.** Không quy đổi
@@ -9,18 +9,30 @@ nghĩa đã xác nhận có lỗi.
 
 ## 1. Mốc và cách đọc
 
-- `origin/main`: `ff607477d47dbed15602ed7dcf9caeac087b87e9`, đã fetch ngày 20/09.
-- Production kiểm tra trực tiếp lúc `2026-09-20T18:04:12.186Z`: cùng SHA trên;
-  `/api/version`, `/api/health`, `/api/ready` đều PASS ngay lần đầu.
+- `origin/main`: `ae406a2419f924a6c0a1b209a61f018a1af6a04a`, đã fetch ngày 21/09.
+- PR #1413 đã merge lúc `2026-09-21T15:00:00Z`. Production được deploy thủ
+  công từ clean detached worktree đúng merge SHA trên; deployment
+  `dpl_H7Tg9nPPvo6deeGDfQ7Xa5jcEM6n` ở trạng thái READY và được alias tới
+  `www.nailiq.ca`.
+- Kiểm tra trực tiếp sau deploy: `/api/health` trả `ok`; `/api/ready` trả
+  `ready`, `database_schema=ok`, `cron_authorization=ok`; hai trang
+  `/hilite-anaheim` và `/hilite-studio` đều HTTP 200. `/api/version` trả
+  deployment ID của manual deploy, không trả Git SHA; liên kết SHA → deployment
+  dựa trên clean worktree dùng để chạy lệnh deploy và cần được giữ trong hồ sơ
+  phát hành.
 - Health/readiness chỉ chứng minh các kiểm tra được endpoint thực hiện; không
   chứng minh mọi migration/ACL, mọi salon hay mọi hành trình khách hàng đều đúng.
-- Ứng viên phát hành P1-06: `9fe579aecb878391061a082bf6ab8223f3045415`,
-  [PR #1413](https://github.com/bepnhobencha-rgb/nailiq/pull/1413), OPEN,
-  Ready for review, MERGEABLE. Các check đã chạy SUCCESS; hai check SKIPPED
-  không được tính PASS. Đây là kết quả CI ngày 16/09 được đọc lại ngày 20/09.
-- Lần này chạy lại ba suite release/offboarding: **20/20 PASS**.
-- Chưa chạy lại UI, full unit, build, database rehearsal hoặc provider trong
-  đợt này. Các bằng chứng đó bên dưới là kết quả lịch sử được ghi rõ nguồn.
+- P1-06: [PR #1413](https://github.com/bepnhobencha-rgb/nailiq/pull/1413) đã
+  MERGED và triển khai Production thủ công. Ứng viên cuối trước merge là
+  `92783d03948d9569f1140791c37529b19acd8dd9`; merge SHA là
+  `ae406a2419f924a6c0a1b209a61f018a1af6a04a`.
+- Ba suite release/offboarding chạy local: **20/20 PASS**. CI cuối trên ứng viên
+  đã PASS build/typecheck, security, smoke, visual, i18n, Vercel Preview và toàn
+  bộ E2E bắt buộc, gồm Receptionist Center desktop/mobile, non-RC, recovery thật
+  và tenant-role/session revocation. Các job `MQA-0148 source` và `AI Triage`
+  SKIPPED theo workflow, không được tính là PASS.
+- Không chạy provider hoặc gửi thông báo trong rollout này. Không có migration
+  thuộc PR #1413.
 - Bảng 30 tiêu chí V1 ngày 11/09 là nguồn ID/điều kiện. Các nhãn “chưa merge”
   trong báo cáo lịch sử được đối chiếu lại bằng Git/GitHub; không sửa lại lịch sử.
 - `PASS QA`: đạt phạm vi QA đã nêu. `DEPLOYED`: code đã nằm trong SHA Live.
@@ -34,7 +46,7 @@ nghĩa đã xác nhận có lỗi.
 | 1. Môi trường và đăng ký | Có môi trường QA, Auth recovery và trial; code hiện tại đã deploy | Email/Google → salon trắng → 14 ngày → đúng Dashboard trên điện thoại với chứng cứ đầy đủ; Google QA còn deferred trong hồ sơ R11 |
 | 2. Tiếp tân | Năm việc cốt lõi đã có QA desktop/WebKit; sửa UX nằm trong PR #1409 đã merge | Người mới tạo hẹn dưới 60 giây và walk-in dưới 30 giây; xác nhận chế độ thường/cao điểm với người dùng |
 | 3. Admin iPhone | QA profile iPhone SE/Pro Max/iPad có bằng chứng | Dùng một tay trên iPhone vật lý và hoàn tất năm việc Admin |
-| 4. Ổn định | Các sửa P0/P1 #1401, #1404–#1411 đã vào main; probe Live hiện tại PASS | Đóng từng acceptance còn mở; triển khai phòng ngừa sự cố #1413; đủ bằng chứng thông báo/provider |
+| 4. Ổn định | Các sửa P0/P1 #1401, #1404–#1411 và phòng ngừa sự cố #1413 đã vào main; probe Live sau rollout PASS | Đóng từng acceptance còn mở; đủ bằng chứng thông báo/provider và diễn tập vận hành pilot |
 | 5. Pilot | Hai salon Live là bối cảnh vận hành, không thay biên bản pilot | Ba salon, thành phần người dùng đúng yêu cầu, 7–14 ngày, số đo và kết luận |
 | 6. Trial/thanh toán | PR #1411 triển khai trial 14 ngày + 7 ngày continuity + read-only; activation V1 thủ công theo báo cáo đã duyệt | Masterplan còn yêu cầu tự thanh toán: cần xác nhận phạm vi nghiệm thu V1 thủ công hoặc xây/chứng nhận riêng self-pay; không tự đổi chính sách |
 | 7. Bán có kiểm soát | Chưa tìm thấy bằng chứng đủ trong bộ hồ sơ được kiểm tra | Cohort 10 salon, funnel 30 ngày, hỗ trợ và tỷ lệ chuyển đổi có dữ liệu |
@@ -46,7 +58,7 @@ ngày 20/09. Nguồn viết tắt được giải thích ở mục 6.
 
 | ID | Tiêu chí | Trạng thái/bằng chứng | Việc cần đóng tiếp theo |
 |---|---|---|---|
-| V1-01 | Bản phát hành/code/schema | PASS probe Live 20/09; code khớp main. Chưa full schema/ACL audit mới | Dùng schema-first runbook cho #1413; ghi SHA và bằng chứng sau phát hành |
+| V1-01 | Bản phát hành/code/schema | PASS rollout #1413 ngày 21/09 trong phạm vi không migration: merge SHA và deployment READY được ghi nhận; health/readiness PASS | Với release có migration, bắt buộc thực hiện schema-first rehearsal/audit riêng; manual deploy hiện chỉ trả deployment ID ở `/api/version` |
 | V1-02 | Trang salon | Có PASS HTTP lịch sử 11/09; chưa kiểm lại từng trang trong đợt này | Read-only UI smoke từng URL trong danh sách salon phát hành |
 | V1-03 | Đăng ký salon mới | PARTIAL; R11 còn Google QA deferred | P0-02: hoàn thành từng phương thức đăng ký đã chọn bán |
 | V1-04 | Đăng nhập/khôi phục | PASS QA lịch sử; CI #1413 recovery xanh | Ghép callback/email provider và salon trắng vào P0-02 |
@@ -71,7 +83,7 @@ ngày 20/09. Nguồn viết tắt được giải thích ở mục 6.
 | V1-23 | Thông báo/reminder | P1-01 delivery truth đã deploy; synthetic callback PASS | Provider QA terminal delivery chưa hoàn tất trong hồ sơ; acceptance 24h/3h và opt-out |
 | V1-24 | Admin một tay | Mobile QA một phần | iPhone vật lý: hôm nay/doanh thu/khách/lịch/cảnh báo |
 | V1-25 | EN/VI và thiết bị | P1-03 bốn device/language profiles PASS | Profiles không phải phần cứng thật; hoàn tất matrix vật lý theo phạm vi phát hành |
-| V1-26 | Incident và recovery | P1-06 drill/restore có bằng chứng; 20 tests rerun PASS | #1413 chưa merge/deploy; ghi người trực và release verification |
+| V1-26 | Incident và recovery | P1-06 drill/restore có bằng chứng; #1413 đã merge/deploy; CI và post-deploy verification PASS | Ghi người trực và thực hiện rehearsal vận hành trong pilot; rollout kỹ thuật không thay thế chứng cứ con người |
 | V1-27 | Restore/offboarding | P1-06 PostgreSQL rehearsal lịch sử PASS | Gắn thời gian phục hồi, người phụ trách và recovery acceptance vào biên bản |
 | V1-28 | Trial/giá/thanh toán | #1411 đã deploy; QA expiry/manual billing PASS | Chốt khác biệt self-pay Masterplan và activation thủ công V1; Preview Auth hạn chế còn được ghi nhận |
 | V1-29 | AI brief nếu nằm trong V1 | NOT PROVEN riêng cho pilot | Chốt scope pilot; nếu bật phải kiểm nguồn và các hành động có rủi ro |
@@ -89,7 +101,7 @@ ngày 20/09. Nguồn viết tắt được giải thích ở mục 6.
 | P1-03 | #1409 merged; profile EN/VI PASS | Người mới, thời gian, máy thật | QA/pilot: ghi từng nhiệm vụ, số trợ giúp và kết quả |
 | P1-04 | #1410 merged; 60 browser PASS, 3 SKIP; 32 unit PASS theo báo cáo | Attestation đúng cấu hình từng salon | Owner + QA: xác nhận cấu hình và rehearsal không dùng khách thật |
 | P1-05 | #1411 merged; giá/trial/manual activation đã có QA | Scope self-pay khác Masterplan; authenticated Preview chưa proven | Huy chốt phạm vi thương mại; kỹ thuật giữ nguyên chính sách đã triển khai |
-| P1-06 | #1413 Ready, CI xanh; 20 tests rerun PASS | Chưa có quyền merge/rollout mới; prevention chưa Live | **Hạng mục kỹ thuật đang tiếp tục**: hoàn tất hồ sơ review rồi chờ duyệt rollout #1413 |
+| P1-06 | #1413 merged; CI cuối xanh; 20 tests local PASS; manual Production deployment READY; health/readiness và hai trang Hi-Lite PASS | Phần kỹ thuật release prevention đã Live; chưa có bằng chứng người trực/rehearsal pilot | Đóng phần kỹ thuật. Chuyển phần con người sang checklist pilot, không mở thêm hotfix nếu không có lỗi mới |
 | P1-07 | Chưa thấy bộ đo đủ điều kiện | Ba salon/7–14 ngày/thành phần người dùng/KPI | Huy + pilot owners: xác định salon thứ ba và người tham gia |
 
 Không mở nhánh hoặc PR trùng cho những thay đổi đã merge. Không sửa sản phẩm
@@ -135,10 +147,14 @@ Lệnh đã chạy trong đợt này:
 git fetch origin main
 gh pr list --state merged --limit 20 --json number,title,mergedAt,mergeCommit
 gh pr view 1413 --json state,headRefOid,mergeable,statusCheckRollup,url,body
+gh pr merge 1413 --merge
+npx vercel --prod --yes
+npx vercel inspect nailiq-21m7ll6xv-bepnhobencha-2588s-projects.vercel.app
 node scripts/monitor-production-health.mjs --base-url https://www.nailiq.ca --allow-production-read-only
 ./node_modules/.bin/vitest run src/shared/security/__tests__/productionReleaseBoundary.spec.ts src/shared/security/__tests__/staffOffboardingBoundary.spec.ts src/shared/security/__tests__/staffOffboardingDurableNotificationBoundary.spec.ts
 ```
 
-Không có commit/push/merge/deploy, migration, provider send, booking mới hoặc
-thay đổi salon trong đợt cập nhật này. Bảng này cần cập nhật theo evidence mới;
-không tự chuyển NOT PROVEN thành PASS khi thời gian trôi qua.
+Rollout #1413 được thực hiện theo phê duyệt riêng: merge và manual Production
+deploy, không migration, provider send, booking mới hoặc thay đổi dữ liệu salon.
+Bảng này cần tiếp tục cập nhật theo evidence mới; không tự chuyển NOT PROVEN
+thành PASS khi thời gian trôi qua.
