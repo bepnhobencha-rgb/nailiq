@@ -154,6 +154,7 @@ describe("superadmin Server Action inventory", () => {
     const expected = [
       "announcementsActions.ts",
       "auditLogActions.ts",
+      "digestBackfillActions.ts",
       "errorMonitorActions.ts",
       "guidedSetupQaControlAction.ts",
       "impersonationActions.ts",

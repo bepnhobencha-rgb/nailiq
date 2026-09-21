@@ -16,6 +16,8 @@ const mocks = vi.hoisted(() => ({
   missingData: "",
   missingSalon: false,
   alreadySent: false,
+  receiptExists: false,
+  filters: [] as Array<[string, string, unknown]>,
   actions: [] as Array<Record<string, unknown>>,
 }));
 
@@ -55,7 +57,11 @@ vi.mock("@/shared/lib/supabase/serviceRole", () => ({
         columns = value;
         return chain;
       };
-      for (const method of ["eq", "gte", "lt", "not", "limit"]) {
+      chain.eq = (column: string, value: unknown) => {
+        mocks.filters.push([table, column, value]);
+        return chain;
+      };
+      for (const method of ["gte", "lt", "not", "limit"]) {
         chain[method] = () => chain;
       }
       chain.maybeSingle = () => Promise.resolve(mocks.query(table, columns));
@@ -116,6 +122,8 @@ describe("runDigest generation and delivery recovery", () => {
     mocks.missingData = "";
     mocks.missingSalon = false;
     mocks.alreadySent = false;
+    mocks.receiptExists = false;
+    mocks.filters = [];
     mocks.actions = [{ agent: "social_content", action_type: "sent_social_draft", payload: {} }];
     mocks.generate.mockReset().mockResolvedValue(providerResponse());
     mocks.send.mockReset().mockResolvedValue({ data: { id: "receipt-1" }, error: null });
@@ -141,6 +149,9 @@ describe("runDigest generation and delivery recovery", () => {
           feature_flags: mocks.flags,
           ai_manager_instructions: "PRIVATE-INSTRUCTIONS-MUST-NOT-LEAK",
         };
+      } else if (table === "ai_digest_deliveries") {
+        key = "receipt";
+        data = mocks.receiptExists ? { id: "durable-delivery" } : null;
       } else if (table === "ai_actions_log" && columns === "id") {
         key = "dedupe";
         data = mocks.alreadySent ? { id: "previous-delivery" } : null;
@@ -277,6 +288,19 @@ describe("runDigest generation and delivery recovery", () => {
     expect(mocks.rpc).not.toHaveBeenCalled();
   });
 
+  it("honors an authoritative receipt even when the legacy log is missing", async () => {
+    mocks.receiptExists = true;
+    await expect(runDigest(SALON_ID)).resolves.toEqual({ status: "skipped", reason: "already_sent" });
+    expect(mocks.send).not.toHaveBeenCalled();
+  });
+
+  it("uses report dates so a backfill delivered today cannot suppress today's digest", async () => {
+    await runDigest(SALON_ID);
+    expect(mocks.filters).toContainEqual(["ai_digest_deliveries", "digest_date", "2026-09-20"]);
+    expect(mocks.filters).toContainEqual(["ai_actions_log", "payload->>today", "2026-09-20"]);
+    expect(mocks.send).toHaveBeenCalledTimes(1);
+  });
+
   it("reports notifications-disabled instead of claiming delivery", async () => {
     mocks.settings.enabled = false;
     await expect(runDigest(SALON_ID)).resolves.toEqual({ status: "skipped", reason: "notifications_disabled" });
@@ -291,7 +315,7 @@ describe("runDigest generation and delivery recovery", () => {
     expect(mocks.rpc).not.toHaveBeenCalled();
   });
 
-  it.each(["salon", "dedupe", "today", "tomorrow", "actions", "alerts", "settings"])(
+  it.each(["salon", "receipt", "dedupe", "today", "tomorrow", "actions", "alerts", "settings"])(
     "does not send fabricated or incomplete data after a %s read failure",
     async (query) => {
       mocks.errors[query] = { message: "database unavailable" };

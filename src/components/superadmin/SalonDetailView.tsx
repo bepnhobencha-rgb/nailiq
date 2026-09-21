@@ -7,6 +7,7 @@ import { SalonOverrideCard } from "@/components/superadmin/SalonOverrideCard";
 import { SalonReleaseFeaturesCard } from "@/components/superadmin/SalonReleaseFeaturesCard";
 import { SquareConnectionCard } from "@/components/superadmin/SquareConnectionCard";
 import { TenantStatusCard } from "@/components/superadmin/TenantStatusCard";
+import { DigestBackfillCard } from "@/components/superadmin/DigestBackfillCard";
 import type { SuperAdminSalonDetail } from "@/shared/superadmin/superadminTypes";
 import type { SquareConnectionStatus } from "@/shared/superadmin/squareConnectionTypes";
 
@@ -57,6 +58,7 @@ export function SalonDetailView({
       </div>
 
       <div className="mt-6 flex flex-col gap-5">
+        {canManage ? <DigestBackfillCard salonId={salon.id} salonName={salon.name || salon.slug} /> : null}
         {canManage ? <TenantStatusCard salon={salon} /> : null}
         <ImpersonateButton
           salonId={salon.id}
