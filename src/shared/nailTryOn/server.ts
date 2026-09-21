@@ -31,12 +31,15 @@ const qualitySchema = z.object({
 export type ServerQualityVerdict = z.infer<typeof qualitySchema>;
 
 const autoMappingSchema = z.object({
-  serviceIds: z.array(z.string()).max(50),
-  addonServiceIds: z.array(z.string()).max(50),
-  defaultServiceId: z.string().nullable(),
-  confidence: z.number().min(0).max(1),
-  reason: z.string().max(240),
-  attributes: z.array(z.string().max(40)).max(12),
+  bestServiceId: z.string().nullable(),
+  alternativeServiceIds: z.array(z.string()).max(2),
+  addonServiceIds: z.array(z.string()).max(8),
+  baseServiceKnown: z.boolean(),
+  visualConfidence: z.number().min(0).max(1),
+  serviceConfidence: z.number().min(0).max(1),
+  reason: z.string().max(180),
+  attributes: z.array(z.string().max(40)).max(10),
+  requiredQuestion: z.string().max(160).nullable(),
 });
 
 function openaiClient(timeout: number) {
@@ -80,6 +83,8 @@ export async function autoMapNailDesign(args: {
     id: service.id,
     name: service.name,
     type: service.isAddon ? "addon" : "service",
+    category: service.category ?? null,
+    description: service.description ?? null,
     priceCents: service.priceCents ?? null,
     durationMinutes: service.durationMinutes ?? null,
   }));
@@ -93,9 +98,10 @@ export async function autoMapNailDesign(args: {
             type: "input_text",
             text: [
               "You are NailIQ's salon menu mapper. Analyze the reference nail design and map it only to items in the supplied salon menu.",
-              "Select every MAIN service that can realistically create the look, the relevant add-ons, and one best default main service.",
-              "Never invent IDs. Do not select removal-only services. Prefer an exact enhancement family (acrylic, Gel-X, dip, builder gel) when visually or textually clear.",
-              "If the base enhancement cannot be known from the image, include the plausible salon main services and lower confidence. Keep the reason concise for a salon owner.",
+              "First identify only visible facts: color, finish, shape, length, technique, and art complexity. An image cannot prove whether the base is acrylic, Gel-X, dip, builder gel, shellac, or natural nail.",
+              "Choose one best MAIN service and at most two alternatives only when the design name/description explicitly identifies the base system or the menu contains an exact named style service (for example Shellac French). Otherwise set bestServiceId=null, baseServiceKnown=false, and ask one short customer question.",
+              "Select every required add-on that is explicitly visible, such as French, chrome, extra length, stones, or detailed nail art. Never invent IDs or select removal-only services.",
+              "visualConfidence measures visible attributes. serviceConfidence measures the service match. Never give serviceConfidence above 0.74 when the base system is unknown. Keep the reason under two short sentences.",
               `Design: ${JSON.stringify({ name: args.designName, description: args.description || null })}`,
               `Salon menu: ${JSON.stringify(menu)}`,
             ].join("\n"),
@@ -106,8 +112,7 @@ export async function autoMapNailDesign(args: {
       text: { format: zodTextFormat(autoMappingSchema, "nail_design_service_mapping") },
     });
     if (!response.output_parsed) throw new Error("mapping_response_invalid");
-    const sanitized = sanitizeAutoMapping(response.output_parsed, args.services);
-    if (sanitized.serviceIds.length) return sanitized;
+    return sanitizeAutoMapping(response.output_parsed, args.services);
   } catch {
     // A salon can still publish and map designs when the AI provider is unavailable.
   }

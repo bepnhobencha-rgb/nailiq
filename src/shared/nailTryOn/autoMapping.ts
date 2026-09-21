@@ -2,17 +2,22 @@ export type AutoMappingService = {
   id: string;
   name: string;
   isAddon: boolean;
+  category?: string | null;
+  description?: string | null;
   priceCents?: number | null;
   durationMinutes?: number | null;
 };
 
 export type AutoMappingProposal = {
-  serviceIds: readonly string[];
+  bestServiceId: string | null;
+  alternativeServiceIds: readonly string[];
   addonServiceIds: readonly string[];
-  defaultServiceId: string | null;
-  confidence: number;
+  baseServiceKnown: boolean;
+  visualConfidence: number;
+  serviceConfidence: number;
   reason: string;
   attributes?: readonly string[];
+  requiredQuestion?: string | null;
 };
 
 export type AutoMappingResult = {
@@ -20,8 +25,12 @@ export type AutoMappingResult = {
   addonServiceIds: string[];
   defaultServiceId: string | null;
   confidence: number;
+  visualConfidence: number;
+  serviceConfidence: number;
+  baseServiceKnown: boolean;
   reason: string;
   attributes: string[];
+  requiredQuestion: string | null;
   status: "ai_suggested" | "ready" | "needs_review";
 };
 
@@ -35,76 +44,80 @@ const featureTerms = [
   ["almond", "coffin", "stiletto", "ballerina", "square", "oval", "shape"],
 ] as const;
 
+const baseFamilies = ["acrylic", "gel x", "gel-x", "builder", "dip", "sns", "gel", "shellac", "manicure", "pedicure", "polish"] as const;
+
 function normalize(value: string) {
   return value.normalize("NFD").replace(/[\u0300-\u036f]/g, "").toLowerCase();
 }
 
-function uniqueKnown(ids: readonly string[], allowed: Set<string>) {
-  return [...new Set(ids)].filter((id) => allowed.has(id));
+function clamp(value: number) {
+  return Math.max(0, Math.min(1, Number.isFinite(value) ? value : 0));
 }
 
-export function sanitizeAutoMapping(
-  proposal: AutoMappingProposal,
-  services: readonly AutoMappingService[],
-): AutoMappingResult {
+function uniqueKnown(ids: readonly string[], allowed: Set<string>, limit: number) {
+  return [...new Set(ids)].filter((id) => allowed.has(id)).slice(0, limit);
+}
+
+export function sanitizeAutoMapping(proposal: AutoMappingProposal, services: readonly AutoMappingService[]): AutoMappingResult {
   const mainIds = new Set(services.filter((service) => !service.isAddon).map((service) => service.id));
   const addonIds = new Set(services.filter((service) => service.isAddon).map((service) => service.id));
-  const serviceIds = uniqueKnown(proposal.serviceIds, mainIds);
-  const addonServiceIds = uniqueKnown(proposal.addonServiceIds, addonIds);
-  const defaultServiceId = proposal.defaultServiceId && serviceIds.includes(proposal.defaultServiceId)
-    ? proposal.defaultServiceId
-    : serviceIds[0] || null;
-  const confidence = Math.max(0, Math.min(1, Number.isFinite(proposal.confidence) ? proposal.confidence : 0));
-  const reason = proposal.reason.trim().slice(0, 240) || "AI matched this design against the salon menu.";
-  const attributes = [...new Set((proposal.attributes || []).map((value) => value.trim()).filter(Boolean))].slice(0, 12);
+  const bestServiceId = proposal.baseServiceKnown && proposal.bestServiceId && mainIds.has(proposal.bestServiceId) ? proposal.bestServiceId : null;
+  const alternatives = uniqueKnown(proposal.alternativeServiceIds, mainIds, 2).filter((id) => id !== bestServiceId);
+  const serviceIds = bestServiceId ? [bestServiceId, ...alternatives] : [];
+  const addonServiceIds = uniqueKnown(proposal.addonServiceIds, addonIds, 8);
+  const visualConfidence = clamp(proposal.visualConfidence);
+  const baseServiceKnown = proposal.baseServiceKnown && Boolean(bestServiceId);
+  const rawServiceConfidence = clamp(proposal.serviceConfidence);
+  const serviceConfidence = baseServiceKnown ? rawServiceConfidence : Math.min(rawServiceConfidence, 0.74);
+  const confidence = Math.min(visualConfidence, serviceConfidence);
+  const reason = proposal.reason.trim().slice(0, 180) || "NailIQ analyzed the visible design and salon menu.";
+  const attributes = [...new Set((proposal.attributes || []).map((value) => value.trim()).filter(Boolean))].slice(0, 10);
+  const requiredQuestion = baseServiceKnown
+    ? null
+    : (proposal.requiredQuestion?.trim().slice(0, 160) || "Do you want this look on natural nails, or with added length?");
   return {
     serviceIds,
     addonServiceIds,
-    defaultServiceId,
+    defaultServiceId: bestServiceId,
     confidence,
+    visualConfidence,
+    serviceConfidence,
+    baseServiceKnown,
     reason,
     attributes,
-    status: serviceIds.length > 0 && confidence >= 0.72 ? "ai_suggested" : "needs_review",
+    requiredQuestion,
+    status: baseServiceKnown && confidence >= 0.9 ? "ai_suggested" : "needs_review",
   };
 }
 
-export function heuristicAutoMapping(
-  designText: string,
-  services: readonly AutoMappingService[],
-): AutoMappingResult {
+export function heuristicAutoMapping(designText: string, services: readonly AutoMappingService[]): AutoMappingResult {
   const text = normalize(designText);
   const main = services.filter((service) => !service.isAddon);
   const addons = services.filter((service) => service.isAddon);
-  const attributes = featureTerms
-    .filter((terms) => terms.some((term) => text.includes(normalize(term))))
-    .map((terms) => terms[0]);
+  const attributes = featureTerms.filter((terms) => terms.some((term) => text.includes(normalize(term)))).map((terms) => terms[0]);
+  const explicitFamilies = baseFamilies.filter((term) => text.includes(term));
   const scoredMain = main.map((service, index) => {
-    const name = normalize(service.name);
-    let score = 0;
-    for (const term of ["acrylic", "gel x", "gel-x", "builder", "dip", "sns", "gel", "shellac", "manicure", "pedicure", "polish"]) {
-      if (text.includes(term) && name.includes(term)) score += 4;
-    }
-    if (!text.includes("toe") && !text.includes("pedi") && name.includes("manicure")) score += 1;
+    const haystack = normalize(`${service.name} ${service.category || ""} ${service.description || ""}`);
+    const score = explicitFamilies.reduce((total, term) => total + (haystack.includes(term) ? 4 : 0), 0);
     return { service, score, index };
   }).sort((a, b) => b.score - a.score || a.index - b.index);
-  const bestScore = scoredMain[0]?.score || 0;
-  const hasStrongMatch = bestScore >= 4;
-  const serviceIds = scoredMain.filter((item) => hasStrongMatch && item.score === bestScore).map((item) => item.service.id);
-  const fallback = serviceIds.length ? serviceIds : (main[0] ? [main[0].id] : []);
+  const best = scoredMain[0];
+  const baseServiceKnown = explicitFamilies.length > 0 && Boolean(best?.score);
   const addonServiceIds = addons.filter((service) => {
-    const name = normalize(service.name);
+    const name = normalize(`${service.name} ${service.description || ""}`);
     return featureTerms.some((terms) => terms.some((term) => text.includes(normalize(term))) && terms.some((term) => name.includes(normalize(term))));
   }).map((service) => service.id);
-  const confidence = hasStrongMatch ? 0.74 : 0.45;
-  return {
-    serviceIds: fallback,
+  return sanitizeAutoMapping({
+    bestServiceId: baseServiceKnown ? best.service.id : null,
+    alternativeServiceIds: [],
     addonServiceIds,
-    defaultServiceId: fallback[0] || null,
-    confidence,
-    reason: hasStrongMatch
-      ? "Matched the design description to the closest services in this salon's menu."
-      : "No strong service match was found; the first available service needs owner review.",
+    baseServiceKnown,
+    visualConfidence: attributes.length ? 0.78 : 0.55,
+    serviceConfidence: baseServiceKnown ? 0.9 : 0.4,
+    reason: baseServiceKnown
+      ? "The design text explicitly names a base service available in this salon."
+      : "The visible style is clear, but the image cannot identify the underlying nail system.",
     attributes,
-    status: hasStrongMatch && fallback.length > 0 ? "ai_suggested" : "needs_review",
-  };
+    requiredQuestion: baseServiceKnown ? null : "Natural nails or extensions—and if extensions, which system do you prefer?",
+  }, services);
 }
