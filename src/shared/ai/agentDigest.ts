@@ -388,6 +388,7 @@ export type DigestDeliveryResult =
         | "settings_unavailable"
         | "provider_unavailable"
         | "no_recipients"
+        | "recipients_changed"
         | "send_failed";
     };
 
@@ -401,6 +402,8 @@ export async function sendDigestEmail(
    *  runDigest, so the slug is threaded down rather than re-queried. */
   slug?: string | null,
   unclosed?: UnclosedBookingsResult,
+  /** Incident recovery may pin the reviewed recipient set; normal cron omits it. */
+  expectedRecipients?: readonly string[],
 ): Promise<DigestDeliveryResult> {
   const db = createServiceRoleClient();
 
@@ -460,6 +463,10 @@ export async function sendDigestEmail(
   }
   if (recipients.length === 0) {
     return { status: "failed", reason: "no_recipients" };
+  }
+  if (expectedRecipients && JSON.stringify([...recipients].sort()) !==
+    JSON.stringify([...new Set(expectedRecipients.map((email) => email.toLowerCase()))].sort())) {
+    return { status: "failed", reason: "recipients_changed" };
   }
 
   const esc = (s: string) =>
@@ -580,20 +587,17 @@ export async function runDigest(salonId: string): Promise<DigestRunResult> {
     const tz = s.timezone ?? "America/Los_Angeles";
     const todayYmd = salonToday(tz);
 
-    // Dedupe: only one digest per day per salon
-    const { startUtc, endUtc } = salonDayRangeUtc(todayYmd, tz);
-    const { data: existing, error: dedupeError } = await db
-      .from("ai_actions_log" as never)
-      .select("id")
-      .eq("salon_id", salonId)
-      .eq("action_type", "digest_sent")
-      .gte("created_at", startUtc)
-      .lt("created_at", endUtc)
-      .limit(1)
-      .maybeSingle();
-
-    if (dedupeError) throw new Error("digest_delivery_history_unavailable");
-    if (existing) return { status: "skipped", reason: "already_sent" };
+    // A recovery email can be delivered on the following day. Dedupe on the
+    // report's date, never its delivery/created_at timestamp.
+    const [receipt, legacyDelivery] = await Promise.all([
+      db.from("ai_digest_deliveries" as never).select("id")
+        .eq("salon_id", salonId).eq("digest_date", todayYmd).limit(1).maybeSingle(),
+      db.from("ai_actions_log" as never).select("id")
+        .eq("salon_id", salonId).eq("action_type", "digest_sent")
+        .eq("payload->>today", todayYmd).limit(1).maybeSingle(),
+    ]);
+    if (receipt.error || legacyDelivery.error) throw new Error("digest_delivery_history_unavailable");
+    if (receipt.data || legacyDelivery.data) return { status: "skipped", reason: "already_sent" };
 
     // Gather data in parallel
     const [

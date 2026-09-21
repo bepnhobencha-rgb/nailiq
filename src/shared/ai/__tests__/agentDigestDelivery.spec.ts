@@ -165,6 +165,24 @@ describe("daily digest delivery truth", () => {
     });
   });
 
+  it("blocks recovery when recipients change after review", async () => {
+    const result = await sendDigestEmail(
+      "22222222-2222-4222-8222-222222222222", "Tech Nails", "Recovery summary", "2026-09-20",
+      [], null, undefined, ["previous-owner@example.com"],
+    );
+    expect(result).toEqual({ status: "failed", reason: "recipients_changed" });
+    expect(mocks.send).not.toHaveBeenCalled();
+  });
+
+  it("accepts the pinned normalized recipient set without changing ordinary cron", async () => {
+    mocks.send.mockResolvedValue({ data: { id: "receipt-pin" }, error: null });
+    await expect(sendDigestEmail(
+      "22222222-2222-4222-8222-222222222222", "Tech Nails", "Recovery summary", "2026-09-20",
+      [], null, undefined, ["OWNER@example.com"],
+    )).resolves.toEqual({ status: "sent", providerMessageId: "receipt-pin", recipientCount: 1 });
+    expect(mocks.send).toHaveBeenCalledTimes(1);
+  });
+
   it("treats a disabled notification channel as an intentional no-op", async () => {
     mocks.settings = { enabled: false };
 
