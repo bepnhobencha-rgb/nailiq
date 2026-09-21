@@ -18,6 +18,8 @@ const eslintConfig = defineConfig([
   globalIgnores([
     // Default ignores of eslint-config-next:
     ".next/**",
+    "qa/digest-backfill/.next/**",
+    "qa/digest-backfill/next-env.d.ts",
     "qa/mfa-status/.next/**",
     "qa/mfa-status/next-env.d.ts",
     "qa/booking-error/.next/**",

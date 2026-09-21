@@ -1,0 +1,24 @@
+import { test, expect } from "@playwright/test";
+test("check, explicit send, success and date reset", async ({ page }) => {
+  await page.goto("/");
+  const date = page.getByLabel("Report date · Ngày báo cáo");
+  const check = page.getByRole("button", { name: "Check only · Kiểm tra" });
+  const send = page.getByRole("button", { name: "Confirm send · Xác nhận gửi" });
+  await expect(check).toBeDisabled();
+  await expect(send).toHaveCount(0);
+  await date.fill("2026-09-20");
+  await check.click();
+  await expect(page.getByRole("status")).toContainText("2 configured recipients");
+  await expect(page.getByRole("status")).toContainText("chưa gửi");
+  await send.click();
+  await expect(page.getByRole("status")).toContainText("receipt saved");
+  await expect(page.getByRole("status")).toContainText("not yet verified");
+  await expect(send).toHaveCount(0);
+  await expect(check).toBeDisabled();
+  await date.fill("2026-09-19");
+  await expect(check).toBeEnabled();
+  await check.click();
+  await expect(page.getByRole("status")).toContainText("verification_required");
+  await expect(send).toHaveCount(0);
+  expect(await page.evaluate(() => document.documentElement.scrollWidth <= window.innerWidth)).toBe(true);
+});

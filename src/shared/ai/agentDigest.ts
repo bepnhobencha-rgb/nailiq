@@ -73,6 +73,11 @@ async function getBookingStats(salonId: string, tz: string): Promise<BookingStat
       .not("status", "in", '("cancelled","cancelled_before_window","no_show")'),
   ]);
 
+  // An unavailable query is not a zero-revenue day. Never mail invented totals.
+  if (today.error || tomorrow.error || !today.data || tomorrow.count == null) {
+    throw new Error("digest_booking_stats_unavailable");
+  }
+
   const rows = (today.data ?? []) as { status: string; price_cents: number | null; created_at: string; client_profile_id: string | null }[];
   const todayStart = new Date(startUtc).getTime();
 
@@ -97,13 +102,15 @@ async function getTodayAgentActions(salonId: string, tz: string): Promise<AgentS
   const todayYmd = salonToday(tz);
   const { startUtc, endUtc } = salonDayRangeUtc(todayYmd, tz);
 
-  const { data } = await db
+  const { data, error } = await db
     .from("ai_actions_log" as never)
     .select("agent, action_type, payload")
     .eq("salon_id", salonId)
     .gte("created_at", startUtc)
     .lt("created_at", endUtc)
     .not("action_type", "in", '("skipped_no_channel","suggestion_pending")');
+
+  if (error) throw new Error("digest_actions_unavailable");
 
   const rows = (data ?? []) as { agent: string; action_type: string; payload: unknown }[];
   const map = new Map<string, AgentSummary>();
@@ -126,13 +133,15 @@ async function getTodayWatchdogAlerts(salonId: string, tz: string): Promise<Watc
   const todayYmd = salonToday(tz);
   const { startUtc, endUtc } = salonDayRangeUtc(todayYmd, tz);
 
-  const { data } = await db
+  const { data, error } = await db
     .from("watchdog_alerts" as never)
     .select("kind, summary, severity")
     .eq("salon_id", salonId)
     .gte("created_at", startUtc)
     .lt("created_at", endUtc)
     .not("severity", "eq", "info");
+
+  if (error) throw new Error("digest_alerts_unavailable");
 
   return ((data ?? []) as WatchdogAlert[]);
 }
@@ -255,8 +264,9 @@ Rules:
 - Return ONLY the email body text, nothing else`;
 
   if (!ai) {
-    // Fallback plain summary
-    return context;
+    // Use the same owner-safe deterministic summary as a failed draft; the
+    // internal prompt context is not an email template.
+    return null;
   }
 
   try {
@@ -275,9 +285,7 @@ Rules:
       messages: [{ role: "user", content: prompt }],
       }),
     );
-    // A response cut off mid-generation is worse than no digest at all — skip
-    // sending (caller treats null as "don't send today") rather than mail a
-    // broken half-sentence to the owner.
+    // Reject partial prose; the caller sends the deterministic summary instead.
     if (resp.stop_reason === "max_tokens") return null;
     const text = resp.content[0]?.type === "text" ? resp.content[0].text.trim() : "";
     return text.length > 50 ? text : null;
@@ -367,7 +375,7 @@ export type PendingApprovalDigestItem = {
 export type DigestDeliveryResult =
   | {
       status: "sent";
-      providerMessageId: string | null;
+      providerMessageId: string;
       recipientCount: number;
     }
   | {
@@ -380,6 +388,7 @@ export type DigestDeliveryResult =
         | "settings_unavailable"
         | "provider_unavailable"
         | "no_recipients"
+        | "recipients_changed"
         | "send_failed";
     };
 
@@ -393,6 +402,8 @@ export async function sendDigestEmail(
    *  runDigest, so the slug is threaded down rather than re-queried. */
   slug?: string | null,
   unclosed?: UnclosedBookingsResult,
+  /** Incident recovery may pin the reviewed recipient set; normal cron omits it. */
+  expectedRecipients?: readonly string[],
 ): Promise<DigestDeliveryResult> {
   const db = createServiceRoleClient();
 
@@ -452,6 +463,10 @@ export async function sendDigestEmail(
   }
   if (recipients.length === 0) {
     return { status: "failed", reason: "no_recipients" };
+  }
+  if (expectedRecipients && JSON.stringify([...recipients].sort()) !==
+    JSON.stringify([...new Set(expectedRecipients.map((email) => email.toLowerCase()))].sort())) {
+    return { status: "failed", reason: "recipients_changed" };
   }
 
   const esc = (s: string) =>
@@ -531,51 +546,58 @@ ${unclosed!.items.map((b) => `
     },
   );
 
-  if (error) {
-    console.error("[sendDigestEmail] resend", error);
+  if (error || !data?.id?.trim()) {
+    console.error("[sendDigestEmail] provider_acceptance_unverified");
     return { status: "failed", reason: "send_failed" };
   }
 
   return {
     status: "sent",
-    providerMessageId: data?.id ?? null,
+    providerMessageId: data.id,
     recipientCount: recipients.length,
   };
 }
 
 // ─── Main ─────────────────────────────────────────────────────────────────────
 
-export async function runDigest(salonId: string): Promise<void> {
+export type DigestRunResult =
+  | { status: "sent"; bodySource: "ai" | "deterministic" }
+  | {
+      status: "skipped";
+      reason: "feature_disabled" | "already_sent" | "notifications_disabled";
+    };
+
+export async function runDigest(salonId: string): Promise<DigestRunResult> {
   try {
     const db = createServiceRoleClient();
 
-    const { data: salonRow } = await db
+    const { data: salonRow, error: salonError } = await db
       .from("salons" as never)
       .select("name, slug, feature_flags, timezone, ai_manager_instructions")
       .eq("id", salonId)
       .maybeSingle();
 
     const s = salonRow as { name?: string; slug?: string; feature_flags?: Record<string, unknown>; timezone?: string; ai_manager_instructions?: string | null } | null;
-    if (!s) return;
-    if (s.feature_flags?.ai_unified_digest !== true) return;
+    if (salonError || !s) throw new Error("digest_salon_unavailable");
+    if (s.feature_flags?.ai_unified_digest !== true) {
+      return { status: "skipped", reason: "feature_disabled" };
+    }
 
     const salonName = s.name ?? "our salon";
     const tz = s.timezone ?? "America/Los_Angeles";
     const todayYmd = salonToday(tz);
 
-    // Dedupe: only one digest per day per salon
-    const { startUtc, endUtc } = salonDayRangeUtc(todayYmd, tz);
-    const { data: existing } = await db
-      .from("ai_actions_log" as never)
-      .select("id")
-      .eq("salon_id", salonId)
-      .eq("action_type", "digest_sent")
-      .gte("created_at", startUtc)
-      .lt("created_at", endUtc)
-      .limit(1)
-      .maybeSingle();
-
-    if (existing) return; // already sent today
+    // A recovery email can be delivered on the following day. Dedupe on the
+    // report's date, never its delivery/created_at timestamp.
+    const [receipt, legacyDelivery] = await Promise.all([
+      db.from("ai_digest_deliveries" as never).select("id")
+        .eq("salon_id", salonId).eq("digest_date", todayYmd).limit(1).maybeSingle(),
+      db.from("ai_actions_log" as never).select("id")
+        .eq("salon_id", salonId).eq("action_type", "digest_sent")
+        .eq("payload->>today", todayYmd).limit(1).maybeSingle(),
+    ]);
+    if (receipt.error || legacyDelivery.error) throw new Error("digest_delivery_history_unavailable");
+    if (receipt.data || legacyDelivery.data) return { status: "skipped", reason: "already_sent" };
 
     // Gather data in parallel
     const [
@@ -622,6 +644,7 @@ export async function runDigest(salonId: string): Promise<void> {
       noShowCount: stats.noShow,
     };
     let body: string | null;
+    let bodySource: "ai" | "deterministic" = "ai";
     if (ruleFirstOptimizationEnabled(s.feature_flags)) {
       const material = shouldUseAiDigest({
         agentActionCount: agentActions.reduce((sum, item) => sum + item.actions.length, 0),
@@ -638,25 +661,15 @@ export async function runDigest(salonId: string): Promise<void> {
             maxCalls: 1,
           })
         : false;
-      body = claimed
-        ? (await draftDigest(context, salonId, salonName, "vi")) ??
-          deterministicDigestBody(
-            salonName,
-            stats,
-            unclosed.count,
-            groundingFacts,
-          )
-        : deterministicDigestBody(
-            salonName,
-            stats,
-            unclosed.count,
-            groundingFacts,
-          );
+      body = claimed ? await draftDigest(context, salonId, salonName, "vi") : null;
     } else {
       body = await draftDigest(context, salonId, salonName, "vi");
     }
-    if (!body) return;
-    if (!isDigestGrounded(body, groundingFacts)) {
+    // Delivery must not depend on the optional prose generator or optimization
+    // flag. Timeout, truncation, malformed output and grounding failure all use
+    // verified booking totals through the existing send/receipt path.
+    if (!body || !isDigestGrounded(body, groundingFacts)) {
+      bodySource = "deterministic";
       body = deterministicDigestBody(
         salonName,
         stats,
@@ -685,7 +698,7 @@ export async function runDigest(salonId: string): Promise<void> {
       unclosed,
     );
 
-    if (delivery.status === "skipped") return;
+    if (delivery.status === "skipped") return delivery;
     if (delivery.status === "failed") {
       throw new Error(`digest_delivery_${delivery.reason}`);
     }
@@ -706,6 +719,7 @@ export async function runDigest(salonId: string): Promise<void> {
     if (deliveryRecordError) {
       throw new Error("digest_delivery_record_failed");
     }
+    return { status: "sent", bodySource };
   } catch (e) {
     console.error("[runDigest]", e);
     throw e;

@@ -243,8 +243,10 @@ export async function GET(req: Request): Promise<NextResponse> {
     if (salonHour === 21 && flags.ai_unified_digest) {
       try {
         const { runDigest } = await import("@/shared/ai/agentDigest");
-        await runDigest(salon.id);
-        entry.digest = "ok";
+        const digest = await runDigest(salon.id);
+        entry.digest = digest.status === "sent" ? "ok" : `skipped_${digest.reason}`;
+        // No recipient, booking data or prompt content in operational logs.
+        console.info("[manager] digest_result", { salonId: salon.id, ...digest });
       } catch (e) {
         console.error("[manager] digest", salon.slug, e);
         entry.digest = "failed";

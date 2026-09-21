@@ -4,6 +4,8 @@ const {
   createServiceRoleClient,
   recordAiWorkerHeartbeat,
   runWatchdog,
+  runDigest,
+  salonNowMinutes,
   select,
   syncManagerExceptionSignals,
   surfaceStrategistOperationalNoteApproval,
@@ -11,6 +13,8 @@ const {
     createServiceRoleClient: vi.fn(),
     recordAiWorkerHeartbeat: vi.fn(),
     runWatchdog: vi.fn(),
+    runDigest: vi.fn(),
+    salonNowMinutes: vi.fn(),
     select: vi.fn(),
     syncManagerExceptionSignals: vi.fn(),
     surfaceStrategistOperationalNoteApproval: vi.fn(),
@@ -23,8 +27,9 @@ vi.mock("@/shared/ai/executionHeartbeat", () => ({
   recordAiWorkerHeartbeat,
 }));
 vi.mock("@/shared/lib/salonTime", () => ({
-  salonNowMinutes: () => 0,
+  salonNowMinutes,
 }));
+vi.mock("@/shared/ai/agentDigest", () => ({ runDigest }));
 vi.mock("@/shared/watchdog/agentWatchdog", () => ({
   runWatchdog,
 }));
@@ -51,6 +56,8 @@ describe("AI manager cron route", () => {
     createServiceRoleClient.mockReset();
     recordAiWorkerHeartbeat.mockReset();
     runWatchdog.mockReset();
+    runDigest.mockReset();
+    salonNowMinutes.mockReset().mockReturnValue(0);
     surfaceStrategistOperationalNoteApproval.mockReset();
     syncManagerExceptionSignals.mockReset();
     recordAiWorkerHeartbeat.mockResolvedValue(undefined);
@@ -66,6 +73,65 @@ describe("AI manager cron route", () => {
   afterEach(() => {
     if (originalSecret === undefined) delete process.env.CRON_SECRET;
     else process.env.CRON_SECRET = originalSecret;
+  });
+
+  it.each(["already_sent", "notifications_disabled", "feature_disabled"])(
+    "reports digest %s honestly without declaring delivery or failure",
+    async (reason) => {
+      process.env.CRON_SECRET = "correct-secret";
+      salonNowMinutes.mockReturnValue(21 * 60);
+      select.mockResolvedValue({ data: [{
+        ...operationalTenant, id: "synthetic-salon", slug: "e2e-digest",
+        timezone: "America/Los_Angeles", feature_flags: { ai_unified_digest: true },
+      }], error: null });
+      runDigest.mockResolvedValue({ status: "skipped", reason });
+      const response = await GET(new Request("https://example.invalid/api/cron/manager", {
+        headers: { authorization: "Bearer correct-secret" },
+      }));
+      expect(response.status).toBe(200);
+      expect(await response.json()).toMatchObject({
+        results: [{ salon: "e2e-digest", digest: `skipped_${reason}` }],
+        summary: { agent_runs: 1, agent_failures: 0 },
+      });
+    },
+  );
+
+  it.each(["ai", "deterministic"])("records accepted %s digest as success", async (bodySource) => {
+    process.env.CRON_SECRET = "correct-secret";
+    salonNowMinutes.mockReturnValue(21 * 60);
+    select.mockResolvedValue({ data: [{
+      ...operationalTenant, id: "synthetic-salon", slug: "e2e-digest",
+      feature_flags: { ai_unified_digest: true },
+    }], error: null });
+    runDigest.mockResolvedValue({ status: "sent", bodySource });
+    const response = await GET(new Request("https://example.invalid/api/cron/manager", {
+      headers: { authorization: "Bearer correct-secret" },
+    }));
+    expect(response.status).toBe(200);
+    expect(await response.json()).toMatchObject({
+      results: [{ digest: "ok" }], summary: { agent_runs: 2, agent_failures: 0 },
+    });
+  });
+
+  it("propagates digest delivery failure into heartbeat and exception handling", async () => {
+    process.env.CRON_SECRET = "correct-secret";
+    salonNowMinutes.mockReturnValue(21 * 60);
+    select.mockResolvedValue({ data: [{
+      ...operationalTenant, id: "synthetic-salon", slug: "e2e-digest",
+      feature_flags: { ai_unified_digest: true },
+    }], error: null });
+    runDigest.mockRejectedValue(new Error("digest_delivery_send_failed"));
+    const response = await GET(new Request("https://example.invalid/api/cron/manager", {
+      headers: { authorization: "Bearer correct-secret" },
+    }));
+    expect(response.status).toBe(500);
+    expect(await response.json()).toMatchObject({
+      results: [{ digest: "failed" }],
+      summary: { agent_failures: 1, failed_agents: ["e2e-digest:digest"] },
+    });
+    expect(syncManagerExceptionSignals).toHaveBeenCalledWith("synthetic-salon",
+      expect.objectContaining({ digest: "failed" }));
+    expect(recordAiWorkerHeartbeat).toHaveBeenLastCalledWith(expect.objectContaining({ phase: "failed" }));
   });
 
   it("fails closed when the cron secret is missing", async () => {
