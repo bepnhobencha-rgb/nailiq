@@ -15,6 +15,12 @@ export function summarizeManagerRun(
     const salon = String(result.salon ?? "unknown");
     for (const [agent, outcome] of Object.entries(result)) {
       if (agent === "salon") continue;
+      // Explicit digest no-ops are neither sends nor failed agent runs.
+      if (agent === "digest" && (
+        outcome === "skipped_feature_disabled" ||
+        outcome === "skipped_already_sent" ||
+        outcome === "skipped_notifications_disabled"
+      )) continue;
       agentRuns++;
       if (outcome !== "ok") failedAgents.push(`${salon}:${agent}`);
     }
