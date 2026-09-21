@@ -282,7 +282,10 @@ const RELEASE_SHAPE = {
   // +8 controlled canary, bulk-release, pause, and recipient-cohort columns.
   // +1 typed booking OTP proof channel (R07; locally rehearsed).
   // +10 R10 customer authority/lease columns; measured on disposable QA.
-  columns: 3798,
+  // Production-parity restoration 20260908014241 adds the five-column
+  // public_booking_resource_catalog view. information_schema.columns counts
+  // view columns as well as base-table columns.
+  columns: 3803,
   // The upsell migration replaces two legacy member-write policies with one
   // service-role-only immutable claim policy. The staff-lifecycle hardening
   // removes the browser DELETE policy so hard deletion cannot bypass the
@@ -1080,8 +1083,10 @@ function main() {
   // tables; legacy verification adds one more private read-check table. Check
   // each table's browser denial and FORCE RLS below as well as the exact count;
   // public/authenticated reachability must remain unchanged. Bulk email adds
-  // three more service-role-only tables.
-  const GRANTS = { anon: 56, authenticated: 78, service_role: 233 } as const;
+  // three more service-role-only tables. The production-parity resource
+  // catalog adds one narrow public view reachable by all three API roles; its
+  // five-column projection is separately pinned by the P0-03 boundary tests.
+  const GRANTS = { anon: 57, authenticated: 79, service_role: 234 } as const;
   for (const [role, want] of Object.entries(GRANTS)) {
     const got = num(
       `select count(distinct table_name) from (
