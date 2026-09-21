@@ -1,6 +1,7 @@
 {
   "git": {
     "deploymentEnabled": {
+      "main": false,
       "fix/square-card-delivery-truth-20260911": false,
       "fix/card-capture-pause-bridge-20260911": false,
       "fix/p0-group-503-20260911": false,
