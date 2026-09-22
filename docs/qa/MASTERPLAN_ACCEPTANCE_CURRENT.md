@@ -45,7 +45,7 @@ nghĩa đã xác nhận có lỗi.
 
 | Giai đoạn | Bằng chứng có thể xác nhận | Điều kiện còn thiếu để đóng |
 |---|---|---|
-| 1. Môi trường và đăng ký | Email/Auth recovery và trial đã có; Ngày 3 app-side Google contract local PASS 81/81 và build PASS | Google OAuth thật vẫn NOT_PROVEN: QA provider OFF và Preview chưa có branch-scoped QA environment; cần hosted QA E2E trước khi ký nghiệm thu |
+| 1. Môi trường và đăng ký | Day 2 salon trắng và Day 3 Google OAuth thật đã PASS hosted QA trên Preview branch-scoped; private/off defaults, trial 14 ngày, callback recovery, chống user/salon trùng và cleanup đã được đọc lại từ QA | Chưa phải Production/pilot proof; clean-browser/device return-login và owner mới thực tế vẫn là bằng chứng nâng cao |
 | 2. Tiếp tân | Năm việc cốt lõi đã có QA desktop/WebKit; sửa UX nằm trong PR #1409 đã merge | Người mới tạo hẹn dưới 60 giây và walk-in dưới 30 giây; xác nhận chế độ thường/cao điểm với người dùng |
 | 3. Admin iPhone | QA profile iPhone SE/Pro Max/iPad có bằng chứng | Dùng một tay trên iPhone vật lý và hoàn tất năm việc Admin |
 | 4. Ổn định | Các sửa P0/P1 #1401, #1404–#1411 và phòng ngừa sự cố #1413 đã vào main; probe Live sau rollout PASS | Đóng từng acceptance còn mở; đủ bằng chứng thông báo/provider và diễn tập vận hành pilot |
@@ -62,7 +62,7 @@ ngày 20/09. Nguồn viết tắt được giải thích ở mục 6.
 |---|---|---|---|
 | V1-01 | Bản phát hành/code/schema | PASS rollout #1413 ngày 21/09 trong phạm vi không migration: merge SHA và deployment READY được ghi nhận; health/readiness PASS | Với release có migration, bắt buộc thực hiện schema-first rehearsal/audit riêng; manual deploy hiện chỉ trả deployment ID ở `/api/version` |
 | V1-02 | Trang salon | Có PASS HTTP lịch sử 11/09; chưa kiểm lại từng trang trong đợt này | Read-only UI smoke từng URL trong danh sách salon phát hành |
-| V1-03 | Đăng ký salon mới | PARTIAL; Ngày 3 local chứng minh callback/membership/chống salon trùng và UI desktop/mobile, nhưng Google provider QA đang OFF | P0-02: cấu hình isolated Preview + Google QA, chạy hosted E2E rồi cleanup synthetic data |
+| V1-03 | Đăng ký salon mới | PASS HOSTED QA: email/synthetic salon và Google OAuth thật đã tạo đúng một private salon; 14-day trial, defaults, membership và cleanup được đọc lại | Chưa phải Production/pilot proof; owner thật và clean-browser/device return-login nếu cần mức bằng chứng cao hơn |
 | V1-04 | Đăng nhập/khôi phục | PASS QA lịch sử; CI #1413 recovery xanh | Ghép callback/email provider và salon trắng vào P0-02 |
 | V1-05 | Cookie bảo mật | PASS QA lịch sử; code nằm trong main | Giữ regression trên ứng viên phát hành, không tính cookie lịch sử là kiểm tra phiên hiện tại |
 | V1-06 | MFA SuperAdmin | PASS QA; CI #1413 MFA xanh | Quét QR/Authenticator trên máy thật nếu đưa vào ký nghiệm thu vật lý |
@@ -96,7 +96,7 @@ ngày 20/09. Nguồn viết tắt được giải thích ở mục 6.
 | Mã | Bản sửa/QA đã có | Phần còn mở | Người thực hiện/bước kế tiếp |
 |---|---|---|---|
 | P0-01 | #1401 merged 11/09; #1404 merged 14/09; regression và diagnostics | Chưa chứng minh nguyên nhân từng 503 lịch sử; không tự tạo lỗi trên Live | Kỹ thuật: ghép log có request/stage/SHA nếu còn; ghi rõ giới hạn lịch sử |
-| P0-02 | Auth/email/recovery synthetic có bằng chứng; Ngày 3 app-side Google local PASS (12 browser + 69 contract/unit) và build PASS | Google/provider hosted end-to-end và toàn bộ salon trắng; QA Google provider đang OFF, Preview PR #1418 chưa có QA env branch-scoped | QA + chủ tài khoản: phê duyệt cấu hình isolated Preview, OAuth QA account và cleanup; không tự gửi thư thử |
+| P0-02 | Đã PASS hosted QA: Preview branch-scoped dùng QA disposable, Google provider QA riêng, salon trắng/email synthetic, Google OAuth thật, callback recovery, chống trùng, private/off defaults và cleanup đều có evidence; local 12 browser + 69 contract/unit và build PASS | Không còn điểm chặn kỹ thuật Day 2/Day 3 ở mức QA; còn clean-browser/device return-login, UX logout trong Guided Setup và pilot owner thật | Đóng P0-02 ở mức QA. Chuyển UX logout/progress sang backlog và giữ Production/pilot là cổng riêng |
 | P0-03 | QA disposable `uhpzafoiifupyypkcwln` đã nhận full migrations; rehearsal/ACL/Advisor 0 ERROR; tenant E2E 18/18; WAF version 9 có `booking-page-load` 60/60s/IP và `contact-submit` 5/3600s/IP, vượt ngưỡng chỉ log | Production Supabase vẫn còn 1 Advisor ERROR cho view đến khi hotfix được duyệt; WAF cần thời gian quan sát false positive; PR/Preview/CI chưa phải Production proof | Kỹ thuật: review PR/Preview, quan sát log-only, sau đó xin rollout migration riêng và kiểm chứng Production metadata/ACL/Advisor |
 | P1-01 | #1406/#1407 merged; synthetic delivery truth PASS | Provider delivery/callback acceptance | QA: chuẩn bị người nhận/case cụ thể trước một lượt provider được phép |
 | P1-02 | #1408 merged; Sandbox/backend/browser PASS | Live exception recovery cần Owner; dữ liệu cũ không đại diện hôm nay | Owner + QA: duyệt từng trường hợp sau snapshot read-only mới |
