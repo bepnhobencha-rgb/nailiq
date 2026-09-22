@@ -17,6 +17,12 @@ export const runtime = "nodejs";
 export const dynamic = "force-dynamic";
 export const maxDuration = 300; // 5 min
 
+// The hourly scheduler gets three bounded opportunities to deliver the same
+// salon-local daily digest. runDigest owns the durable same-day receipt check
+// and the provider idempotency key, so a later attempt cannot create a second
+// report after an earlier attempt was accepted.
+const DIGEST_RETRY_HOURS = new Set([21, 22, 23]);
+
 export async function GET(req: Request): Promise<NextResponse> {
   const authorizationError = requireCronAuthorization(req);
   if (authorizationError) return authorizationError;
@@ -239,8 +245,8 @@ export async function GET(req: Request): Promise<NextResponse> {
       }
     }
 
-    // Unified Digest — replaces Báo Cáo Viên + individual agent alerts at 21:00
-    if (salonHour === 21 && flags.ai_unified_digest) {
+    // Unified Digest — first attempt at 21:00, bounded catch-up at 22:00/23:00.
+    if (DIGEST_RETRY_HOURS.has(salonHour) && flags.ai_unified_digest) {
       try {
         const { runDigest } = await import("@/shared/ai/agentDigest");
         const digest = await runDigest(salon.id);

@@ -18,7 +18,6 @@ import { sendOwnerAlert } from "@/shared/ai/sendOwnerAlert";
  */
 
 const str = (v: unknown): string => (v == null ? "" : String(v));
-const num = (v: unknown): number => (v == null ? 0 : Number(v));
 
 const DOW = ["Sunday", "Monday", "Tuesday", "Wednesday", "Thursday", "Friday", "Saturday"];
 
@@ -136,16 +135,16 @@ async function writeSpikeAlert(
   const title = `Tỷ lệ huỷ lịch tăng ${diff}pp tuần này`;
   const body = `Tuần này ${current.cancelCount} lịch bị huỷ (${current.ratePct}%), so với ${prior.ratePct}% tuần trước.${worstDay ? ` Ngày nhiều huỷ nhất: ${worstDay}.` : ""} Nên kiểm tra lý do và liên hệ lại khách hàng.`;
 
-  await db.from("watchdog_alerts" as never).insert({
+  const { error } = await db.from("watchdog_alerts" as never).insert({
     salon_id: salonId,
     kind: "cancellation_spike",
     severity: current.ratePct >= 30 ? "critical" : "warning",
     title,
     body,
-    summary: body,
     dedupe_key: dedupeKey,
     snapshot: { current, prior },
   } as never);
+  if (error) throw new Error("cancellation_spike_alert_write_failed");
 }
 
 // ── Weekly pattern email (Monday only) ───────────────────────────────────────

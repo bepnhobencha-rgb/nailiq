@@ -113,6 +113,63 @@ describe("AI manager cron route", () => {
     });
   });
 
+  it.each([22, 23])("retries an unsent unified digest at %d:00 salon time", async (hour) => {
+    process.env.CRON_SECRET = "correct-secret";
+    salonNowMinutes.mockReturnValue(hour * 60);
+    select.mockResolvedValue({ data: [{
+      ...operationalTenant, id: "synthetic-salon", slug: "e2e-digest",
+      timezone: "America/Los_Angeles", feature_flags: { ai_unified_digest: true },
+    }], error: null });
+    runDigest.mockResolvedValue({ status: "sent", bodySource: "deterministic" });
+
+    const response = await GET(new Request("https://example.invalid/api/cron/manager", {
+      headers: { authorization: "Bearer correct-secret" },
+    }));
+
+    expect(response.status).toBe(200);
+    expect(runDigest).toHaveBeenCalledOnce();
+    expect(await response.json()).toMatchObject({
+      results: [{ salon: "e2e-digest", digest: "ok" }],
+    });
+  });
+
+  it("does not run the unified digest outside its bounded delivery window", async () => {
+    process.env.CRON_SECRET = "correct-secret";
+    salonNowMinutes.mockReturnValue(20 * 60);
+    select.mockResolvedValue({ data: [{
+      ...operationalTenant, id: "synthetic-salon", slug: "e2e-digest",
+      timezone: "America/Los_Angeles", feature_flags: { ai_unified_digest: true },
+    }], error: null });
+
+    const response = await GET(new Request("https://example.invalid/api/cron/manager", {
+      headers: { authorization: "Bearer correct-secret" },
+    }));
+
+    expect(response.status).toBe(200);
+    expect(runDigest).not.toHaveBeenCalled();
+  });
+
+  it("treats an already-delivered retry as a safe no-op", async () => {
+    process.env.CRON_SECRET = "correct-secret";
+    salonNowMinutes.mockReturnValue(22 * 60);
+    select.mockResolvedValue({ data: [{
+      ...operationalTenant, id: "synthetic-salon", slug: "e2e-digest",
+      timezone: "America/Los_Angeles", feature_flags: { ai_unified_digest: true },
+    }], error: null });
+    runDigest.mockResolvedValue({ status: "skipped", reason: "already_sent" });
+
+    const response = await GET(new Request("https://example.invalid/api/cron/manager", {
+      headers: { authorization: "Bearer correct-secret" },
+    }));
+
+    expect(response.status).toBe(200);
+    expect(runDigest).toHaveBeenCalledOnce();
+    expect(await response.json()).toMatchObject({
+      results: [{ salon: "e2e-digest", digest: "skipped_already_sent" }],
+      summary: { agent_failures: 0 },
+    });
+  });
+
   it("propagates digest delivery failure into heartbeat and exception handling", async () => {
     process.env.CRON_SECRET = "correct-secret";
     salonNowMinutes.mockReturnValue(21 * 60);

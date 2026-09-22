@@ -18,6 +18,7 @@ const mocks = vi.hoisted(() => ({
   alreadySent: false,
   receiptExists: false,
   filters: [] as Array<[string, string, unknown]>,
+  selections: [] as Array<[string, string]>,
   actions: [] as Array<Record<string, unknown>>,
 }));
 
@@ -55,6 +56,7 @@ vi.mock("@/shared/lib/supabase/serviceRole", () => ({
       const chain: Record<string, unknown> = {};
       chain.select = (value: string) => {
         columns = value;
+        mocks.selections.push([table, value]);
         return chain;
       };
       chain.eq = (column: string, value: unknown) => {
@@ -124,6 +126,7 @@ describe("runDigest generation and delivery recovery", () => {
     mocks.alreadySent = false;
     mocks.receiptExists = false;
     mocks.filters = [];
+    mocks.selections = [];
     mocks.actions = [{ agent: "social_content", action_type: "sent_social_draft", payload: {} }];
     mocks.generate.mockReset().mockResolvedValue(providerResponse());
     mocks.send.mockReset().mockResolvedValue({ data: { id: "receipt-1" }, error: null });
@@ -196,6 +199,19 @@ describe("runDigest generation and delivery recovery", () => {
     await expect(runDigest(SALON_ID)).resolves.toEqual({ status: "sent", bodySource: "ai" });
     expect(sentEmail().text).toContain(AI_BODY);
     expectRecordedDelivery();
+  });
+
+  it("reads watchdog alerts through the deployed title contract", async () => {
+    await expect(runDigest(SALON_ID)).resolves.toEqual({ status: "sent", bodySource: "ai" });
+
+    expect(mocks.selections).toContainEqual([
+      "watchdog_alerts",
+      "kind, title, severity",
+    ]);
+    expect(mocks.selections).not.toContainEqual([
+      "watchdog_alerts",
+      "kind, summary, severity",
+    ]);
   });
 
   describe.each([false, true])("AI recovery with optimization=%s", (optimized) => {
