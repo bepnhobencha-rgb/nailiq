@@ -1,6 +1,6 @@
 # NailIQ — Bảng nghiệm thu Masterplan
 
-Cập nhật: 21/09/2026. Đây là bảng theo dõi nghiệm thu hiện hành; không thay đổi
+Cập nhật: 22/09/2026. Đây là bảng theo dõi nghiệm thu hiện hành; không thay đổi
 phạm vi, chính sách hay điều kiện đạt trong `docs/MASTER_PLAN.md`.
 
 **Kết luận: chưa đủ bằng chứng nghiệm thu toàn bộ Masterplan.** Không quy đổi
@@ -9,9 +9,9 @@ nghĩa đã xác nhận có lỗi.
 
 ## 1. Mốc và cách đọc
 
-- `origin/main`: `bb2f866fa9d6a459637350a946868440ab5a05dd`, đã fetch ngày 21/09.
-  Đây là merge SHA docs-only của PR #1416; Production app vẫn ở rollout #1413
-  như dòng dưới, không được suy từ `main` rằng Production đã tự deploy lại.
+- `origin/main`: `a78950cd9f9b4d9106eda81df10dbb00d3731d41`, đã fetch ngày 22/09.
+  Đây là merge SHA của PR #1419; không được suy từ `main` rằng mọi acceptance
+  bên dưới đã được kiểm lại trên Production.
 - PR #1413 đã merge lúc `2026-09-21T15:00:00Z`. Production được deploy thủ
   công từ clean detached worktree đúng merge SHA trên; deployment
   `dpl_H7Tg9nPPvo6deeGDfQ7Xa5jcEM6n` ở trạng thái READY và được alias tới
@@ -45,7 +45,7 @@ nghĩa đã xác nhận có lỗi.
 
 | Giai đoạn | Bằng chứng có thể xác nhận | Điều kiện còn thiếu để đóng |
 |---|---|---|
-| 1. Môi trường và đăng ký | Có môi trường QA, Auth recovery và trial; code hiện tại đã deploy | Email/Google → salon trắng → 14 ngày → đúng Dashboard trên điện thoại với chứng cứ đầy đủ; Google QA còn deferred trong hồ sơ R11 |
+| 1. Môi trường và đăng ký | Email/Auth recovery và trial đã có; Ngày 3 app-side Google contract local PASS 81/81 và build PASS | Google OAuth thật vẫn NOT_PROVEN: QA provider OFF và Preview chưa có branch-scoped QA environment; cần hosted QA E2E trước khi ký nghiệm thu |
 | 2. Tiếp tân | Năm việc cốt lõi đã có QA desktop/WebKit; sửa UX nằm trong PR #1409 đã merge | Người mới tạo hẹn dưới 60 giây và walk-in dưới 30 giây; xác nhận chế độ thường/cao điểm với người dùng |
 | 3. Admin iPhone | QA profile iPhone SE/Pro Max/iPad có bằng chứng | Dùng một tay trên iPhone vật lý và hoàn tất năm việc Admin |
 | 4. Ổn định | Các sửa P0/P1 #1401, #1404–#1411 và phòng ngừa sự cố #1413 đã vào main; probe Live sau rollout PASS | Đóng từng acceptance còn mở; đủ bằng chứng thông báo/provider và diễn tập vận hành pilot |
@@ -62,7 +62,7 @@ ngày 20/09. Nguồn viết tắt được giải thích ở mục 6.
 |---|---|---|---|
 | V1-01 | Bản phát hành/code/schema | PASS rollout #1413 ngày 21/09 trong phạm vi không migration: merge SHA và deployment READY được ghi nhận; health/readiness PASS | Với release có migration, bắt buộc thực hiện schema-first rehearsal/audit riêng; manual deploy hiện chỉ trả deployment ID ở `/api/version` |
 | V1-02 | Trang salon | Có PASS HTTP lịch sử 11/09; chưa kiểm lại từng trang trong đợt này | Read-only UI smoke từng URL trong danh sách salon phát hành |
-| V1-03 | Đăng ký salon mới | PARTIAL; R11 còn Google QA deferred | P0-02: hoàn thành từng phương thức đăng ký đã chọn bán |
+| V1-03 | Đăng ký salon mới | PARTIAL; Ngày 3 local chứng minh callback/membership/chống salon trùng và UI desktop/mobile, nhưng Google provider QA đang OFF | P0-02: cấu hình isolated Preview + Google QA, chạy hosted E2E rồi cleanup synthetic data |
 | V1-04 | Đăng nhập/khôi phục | PASS QA lịch sử; CI #1413 recovery xanh | Ghép callback/email provider và salon trắng vào P0-02 |
 | V1-05 | Cookie bảo mật | PASS QA lịch sử; code nằm trong main | Giữ regression trên ứng viên phát hành, không tính cookie lịch sử là kiểm tra phiên hiện tại |
 | V1-06 | MFA SuperAdmin | PASS QA; CI #1413 MFA xanh | Quét QR/Authenticator trên máy thật nếu đưa vào ký nghiệm thu vật lý |
@@ -96,7 +96,7 @@ ngày 20/09. Nguồn viết tắt được giải thích ở mục 6.
 | Mã | Bản sửa/QA đã có | Phần còn mở | Người thực hiện/bước kế tiếp |
 |---|---|---|---|
 | P0-01 | #1401 merged 11/09; #1404 merged 14/09; regression và diagnostics | Chưa chứng minh nguyên nhân từng 503 lịch sử; không tự tạo lỗi trên Live | Kỹ thuật: ghép log có request/stage/SHA nếu còn; ghi rõ giới hạn lịch sử |
-| P0-02 | Auth/email/recovery synthetic có bằng chứng | Google/provider end-to-end và toàn bộ salon trắng | QA + chủ tài khoản: ca QA được kiểm soát, không tự gửi thư thử |
+| P0-02 | Auth/email/recovery synthetic có bằng chứng; Ngày 3 app-side Google local PASS (12 browser + 69 contract/unit) và build PASS | Google/provider hosted end-to-end và toàn bộ salon trắng; QA Google provider đang OFF, Preview PR #1418 chưa có QA env branch-scoped | QA + chủ tài khoản: phê duyệt cấu hình isolated Preview, OAuth QA account và cleanup; không tự gửi thư thử |
 | P0-03 | QA disposable `uhpzafoiifupyypkcwln` đã nhận full migrations; rehearsal/ACL/Advisor 0 ERROR; tenant E2E 18/18; WAF version 9 có `booking-page-load` 60/60s/IP và `contact-submit` 5/3600s/IP, vượt ngưỡng chỉ log | Production Supabase vẫn còn 1 Advisor ERROR cho view đến khi hotfix được duyệt; WAF cần thời gian quan sát false positive; PR/Preview/CI chưa phải Production proof | Kỹ thuật: review PR/Preview, quan sát log-only, sau đó xin rollout migration riêng và kiểm chứng Production metadata/ACL/Advisor |
 | P1-01 | #1406/#1407 merged; synthetic delivery truth PASS | Provider delivery/callback acceptance | QA: chuẩn bị người nhận/case cụ thể trước một lượt provider được phép |
 | P1-02 | #1408 merged; Sandbox/backend/browser PASS | Live exception recovery cần Owner; dữ liệu cũ không đại diện hôm nay | Owner + QA: duyệt từng trường hợp sau snapshot read-only mới |
@@ -140,6 +140,8 @@ thật vào báo cáo QA. Người lớn tuổi và tiếp tân ít dùng công 
   [P1-05](P1-05-TRIAL-PRICING-AUDIT-2026-09-15.md),
   [P1-06](p1-06-incident-restore-support-2026-09-16.md).
 - [P0-03 tenant/role + quota/WAF runtime](p0-03-tenant-role-quota-waf-runtime-2026-09-21.md).
+- [Masterplan Ngày 2 — đăng ký salon mới](masterplan-day-2-registration-2026-09-22.md).
+- [Masterplan Ngày 3 — Google signup](masterplan-day-3-google-signup-2026-09-22.md).
 - Nguồn 30 ID: bản local lịch sử
   `/Users/huytran/nailiq-v1-acceptance-20260911/docs/qa/V1_ACCEPTANCE_2026-09-11.md`;
   không coi file local này là tài liệu đã merge.

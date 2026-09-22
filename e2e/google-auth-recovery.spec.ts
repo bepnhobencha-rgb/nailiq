@@ -57,8 +57,12 @@ for (const language of ["en", "vi"] as const) {
         if (request.method() !== "GET" && request.method() !== "HEAD") {
           return route.fulfill({ status: 204, body: "" });
         }
-        const appOrigin = new URL(String(info.project.use.baseURL)).origin;
-        if (url.origin !== appOrigin) return route.abort("blockedbyclient");
+        // WebKit can upgrade loopback HTTP asset requests to HTTPS under the
+        // app CSP. Keep the test hermetic by allowing either loopback scheme,
+        // while continuing to block every non-local host.
+        if (!["localhost", "127.0.0.1"].includes(url.hostname)) {
+          return route.abort("blockedbyclient");
+        }
         return route.continue();
       });
       await page.goto(path);
