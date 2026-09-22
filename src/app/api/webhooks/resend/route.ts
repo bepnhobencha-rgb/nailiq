@@ -10,6 +10,7 @@ export const runtime = "nodejs";
 
 import { NextResponse } from "next/server";
 import { createServiceRoleClient } from "@/shared/lib/supabase/serviceRole";
+import { classifyResendQaEvent, resolveResendQaBoundary } from "@/shared/notifications/resendQaBoundary";
 import {
   parseResendCustomerDeliveryMaterial,
   parseResendBookingOtpDeliveryMaterial,
@@ -73,6 +74,10 @@ export async function POST(request: Request) {
     signature: request.headers.get("svix-signature"),
   });
   if (!event) return json({ ok: false, code: "invalid_signature" }, 401);
+
+  const qaBoundary = classifyResendQaEvent(event, resolveResendQaBoundary());
+  if (qaBoundary === "ignore") return json({ ok: true, code: "event_ignored" });
+  if (qaBoundary === "unavailable") return json({ ok: false, code: "qa_boundary_unavailable" }, 503);
 
   const registeredMaterial = parseResendRegisteredEmailDeliveryMaterial(event);
   const ownerMaterial = parseResendOwnerDeliveryMaterial(event);

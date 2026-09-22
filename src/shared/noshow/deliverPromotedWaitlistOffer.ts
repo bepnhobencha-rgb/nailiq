@@ -9,6 +9,7 @@ import { getResendClient, getResendFrom } from "@/shared/lib/resend";
 import { createServiceRoleClient } from "@/shared/lib/supabase/serviceRole";
 import { sendSmsReminder } from "@/shared/lib/twilioSms";
 import { buildWaitlistSms } from "@/shared/lib/smsTemplateRegistry";
+import { resendQaTagsForRecipient, resolveResendQaBoundary } from "@/shared/notifications/resendQaBoundary";
 
 export type PromotedWaitlistOffer = {
   waitlistEntryId: string;
@@ -266,6 +267,9 @@ async function deliverChannel(input: {
     })
     : null;
   const html = emailExperience?.html ?? "";
+  const qaTags = input.channel === "email"
+    ? resendQaTagsForRecipient(snapshot.recipient, resolveResendQaBoundary())
+    : [];
   const payloadFingerprint = sha256(JSON.stringify({
     v: 1,
     channel: input.channel,
@@ -273,6 +277,7 @@ async function deliverChannel(input: {
     subject,
     text: textBody,
     html,
+    ...(qaTags?.length ? { qaTags } : {}),
   }));
 
   const { data, error } = await createServiceRoleClient().rpc(
@@ -300,6 +305,16 @@ async function deliverChannel(input: {
     : snapshot.emailOutboundEnabled;
   if (!outboundEnabled) {
     await complete({ outboxId, attemptToken, status: "suppressed", errorCode: "channel_disabled" });
+    return;
+  }
+  if (input.channel === "email" && ["1", "true", "yes"].includes(
+    (process.env.DISABLE_OUTBOUND_EMAIL ?? "").trim().toLowerCase(),
+  )) {
+    await complete({ outboxId, attemptToken, status: "suppressed", errorCode: "outbound_email_disabled" });
+    return;
+  }
+  if (input.channel === "email" && qaTags === null) {
+    await complete({ outboxId, attemptToken, status: "suppressed", errorCode: "qa_boundary_invalid" });
     return;
   }
   if (input.channel === "email" && await isEmailSuppressed(snapshot.recipient)) {
@@ -350,6 +365,7 @@ async function deliverChannel(input: {
         ...(emailExperience?.tags ?? []),
         { name: "nailiq_flow", value: "waitlist_offer" },
         { name: "nailiq_claim", value: outboxId },
+        ...(qaTags ?? []),
       ],
     });
     const receipt = result.data?.id?.trim() ?? "";
