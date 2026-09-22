@@ -1,12 +1,14 @@
 # P0-03 — Tenant/role, quota và WAF runtime
 
-Ngày kiểm tra: 21/09/2026
-Nhánh kiểm tra: `audit/p0-03-tenant-runtime-20260921`
-Base: `bb2f866fa9d6a459637350a946868440ab5a05dd`
+Ngày kiểm tra ban đầu: 21/09/2026
+Nhánh triển khai: `audit/p0-03-tenant-runtime-20260921`
+Base triển khai: `bb2f866fa9d6a459637350a946868440ab5a05dd`
+Production closeout: PR #1417, merge SHA
+`7c5fad5bc9d52e24fcf852168b5d8184358b639e`
 
 ## Kết luận
 
-**QA PASS — Production database rollout và thời gian quan sát WAF vẫn là gate riêng.**
+**PRODUCTION DATABASE PASS — thời gian quan sát WAF vẫn là gate riêng.**
 
 - **Tenant/role: PASS trong phạm vi hiện có.** CI real-auth gần nhất kiểm tra năm
   vai trò, cách ly hai tenant, thu hồi session, thu hồi membership và hạ quyền
@@ -19,17 +21,17 @@ Base: `bb2f866fa9d6a459637350a946868440ab5a05dd`
   60 request/60 giây/IP và `contact-submit` 5 request/3.600 giây/IP. Cả hai dùng
   follow-up action `log`, không deny/challenge/429. Rule stale-writer cũ vẫn giữ
   nguyên; không có draft hoặc system bypass.
-- **Supabase Advisor QA: PASS điều kiện “không ERROR”.** QA mới trả 0 ERROR và
-  20 WARN SECURITY DEFINER đã biết/được quản lý riêng. Production vẫn còn một
-  ERROR cho `public_booking_resource_catalog` cho đến khi migration hotfix được
-  duyệt rollout riêng; QA PASS không được gọi là Production PASS.
+- **Supabase Advisor Production: PASS điều kiện “không ERROR”.** Migration
+  `20260921170000` đã được áp đúng phạm vi; Production hiện trả 0 ERROR và
+  20 WARN đã biết/được quản lý riêng. Metadata, exact function signatures và ACL
+  đã được kiểm chứng sau rollout.
 - **QA disposable: PASS.** Project `nailiq-p0-03-qa-20260921`
   (`uhpzafoiifupyypkcwln`) đã nhận toàn bộ migration history cùng hotfix; remote
   migration list khớp local đến `20260921170000`.
 
 Không có dữ liệu salon/khách Production bị thay đổi. Không gửi SMS/email/call,
-không gọi payment provider và không deploy code/database Production. Vercel WAF
-Production chỉ được bổ sung hai rule quan sát log-only theo phê duyệt cụ thể.
+không gọi payment provider. PR #1417 và migration P0-03 đã được rollout theo phê
+duyệt cụ thể; WAF Production vẫn chỉ dùng hai rule quan sát log-only.
 
 ## Bằng chứng tenant và vai trò
 
@@ -65,10 +67,10 @@ Catalog metadata hiện hành:
 - projection chỉ có `id`, `salon_id`, `name`, `kind`, `display_order` và lọc
   resource/salon đang active, published, resource-enabled.
 
-Security Advisor hiện trả:
+Security Advisor trước hotfix trả một ERROR `security_definer_view` cho
+`public.public_booking_resource_catalog`. Sau rollout #1417, Advisor hiện trả:
 
-- 1 ERROR: `security_definer_view` cho
-  `public.public_booking_resource_catalog`;
+- 0 ERROR;
 - 1 WARN: `pg_net` còn ở schema `public`;
 - 11 WARN cho anonymous SECURITY DEFINER function;
 - 7 WARN cho authenticated SECURITY DEFINER function.
@@ -87,10 +89,10 @@ từ `supabase_migrations.schema_migrations` và khôi phục local tại:
 
 Migration này đã tồn tại trên Production; file local chỉ khôi phục source truth,
 không phải yêu cầu áp lại Production. Một regression test mới khóa projection,
-filter và read-only ACL. Advisor ERROR vẫn là điểm mở, không bị che bởi việc
-khôi phục parity.
+filter và read-only ACL. Việc khôi phục parity không được dùng để che Advisor
+ERROR; lỗi này chỉ được đóng sau rollout và kiểm chứng Production của #1417.
 
-Hotfix local tiếp theo nằm tại
+Hotfix đã merge và áp Production nằm tại
 `supabase/migrations/20260921170000_harden_public_booking_resource_catalog_invoker.sql`:
 
 - chuyển view sang `security_invoker=true` để loại definer-view ERROR;
@@ -108,12 +110,36 @@ Hotfix local tiếp theo nằm tại
   có dashboard session, public booking vẫn tạo client anon riêng và không tái sử
   dụng cookie/session đó.
 
-Hotfix này ở trạng thái **implemented/tested local và QA**, chưa Production.
-Toàn bộ migration stack đã dựng lại thành công trên Supabase local và QA;
-rehearsal transactional tạo tenant/resource synthetic, thử vai trò anon rồi
+Hotfix này ở trạng thái **implemented, tested local/QA, merged và Production
+verified**. Toàn bộ migration stack đã dựng lại thành công trên Supabase local và
+QA; rehearsal transactional tạo tenant/resource synthetic, thử vai trò anon rồi
 `ROLLBACK` đã PASS trên cả local và QA. Executable proof cho allowlist SECURITY
-DEFINER/ACL cũng PASS. QA Advisor trả 0 ERROR/20 WARN; remote lint không có lỗi
-chặn và chỉ còn warning lịch sử ngoài phạm vi P0-03.
+DEFINER/ACL cũng PASS. Production Advisor hiện trả 0 ERROR/20 WARN.
+
+## Bằng chứng rollout Production
+
+- PR #1417 merge lúc `2026-09-22T01:15:54Z`; merge SHA
+  `7c5fad5bc9d52e24fcf852168b5d8184358b639e`.
+- Standard migration dry-run dừng an toàn do Production lưu nhiều timestamp lịch
+  sử khác local. Một migration workspace tối thiểu được dựng với stub cho đúng
+  517 history record hiện hữu; dry-run sau đó liệt kê duy nhất
+  `20260921170000`, rồi push thành công. Migration tự bao transaction và đặt
+  `lock_timeout = 5s`.
+- Migration list sau push khớp local/remote tại `20260921170000`. Migration
+  parity `20260908014241` đã tồn tại trên Production và không bị áp lại.
+- Schema dump xác nhận `public_booking_resource_catalog` có
+  `security_invoker=true`; helper private có đúng return shape/filter; `private`
+  schema và helper chỉ cho `anon`/`service_role`; snapshot không cấp EXECUTE cho
+  `authenticated`.
+- Security Advisor Production: **0 ERROR, 20 WARN**.
+- Vercel project đang `sourceless`, vì vậy exact merge SHA được manual deploy từ
+  clean detached worktree. Deployment `dpl_AKUpBoxBUQU4Hdcmd8TAVuMRRfJM` READY
+  và alias tới `www.nailiq.ca`.
+- Sau deploy: `/api/health`, `/hilite-anaheim` và `/hilite-studio` đều HTTP 200;
+  không thấy runtime error trong cửa sổ log 10 phút.
+- CI và E2E hậu-merge trên exact SHA SUCCESS, gồm non-RC và Receptionist Center
+  desktop/mobile. Job có điều kiện bị SKIPPED không được tính là PASS.
+- Không tạo booking, không gửi thông báo và không gọi provider.
 
 ## Kiểm thử local sau thay đổi
 
@@ -160,6 +186,10 @@ Production project `nailiq`:
   `log`;
 - trước publish, draft diff chứa đúng hai `rules.insert`; sau publish version 9
   không còn draft. Rule stale-writer hiện hữu không bị sửa;
+- kiểm tra read-only ngày 22/09: cả hai rule vẫn active/valid, follow-up action
+  vẫn là `log`, không có draft. Truy vấn `vercel.firewall_action.count` trong
+  24 giờ gần nhất không trả nhóm mang ID của hai rule quan sát; dữ liệu tổng
+  hợp này chưa đủ kết luận không có false positive hoặc đã đủ traffic để enforce;
 - `booking-submit` và `auth-attempt` vẫn là hook dự phòng vì booking/auth hiện đi
   qua Supabase client SDK thay vì POST vào page route; không tạo rule chưa có
   runtime callsite;
@@ -172,20 +202,21 @@ Production project `nailiq`:
 Lớp durable limiter tại `src/proxy.ts` vẫn bảo vệ booking page, auth và public
 API độc lập với WAF, nhưng không được dùng để tuyên bố WAF rate limiting đã bật.
 
-## Việc còn lại trước Production
+## Việc còn lại để đóng toàn bộ P0-03
 
 1. Quan sát log-only WAF để phát hiện false positive trước mọi đề xuất enforce;
-   không đổi action trong PR này.
-2. Review PR/Preview và CI. Preview dùng QA disposable, không dùng Production.
-3. Xin duyệt riêng nếu muốn áp migration `20260921170000` lên Supabase
-   Production. Sau rollout phải rerun metadata/ACL/Advisor và yêu cầu 0 ERROR.
-4. Chỉ đóng P0-03 Production sau bằng chứng rollout; QA PASS không thay thế
-   Production verification hoặc pilot.
+   không đổi action chỉ vì database đã PASS.
+2. Thu thập số liệu traffic/false positive và lập đề xuất enforce + rollback riêng
+   nếu bằng chứng đủ. Không gọi log-only là protection enforcement.
+3. Pilot/traffic thực vẫn NOT PROVEN; automated CI và synthetic QA không thay thế
+   bằng chứng này.
 
 ## Lệnh xác minh chính
 
 ```sh
 gh pr view 1416 --json state,mergeCommit,statusCheckRollup,url,mergedAt,headRefOid
+gh pr view 1417 --json state,mergeCommit,statusCheckRollup,url,mergedAt,headRefOid
+gh run view 35675117163 --json name,status,conclusion,url,headSha,jobs
 npx supabase db advisors --linked --type security --level warn --fail-on none --output-format json
 npx vercel firewall overview --json
 npx vercel firewall rules list --json

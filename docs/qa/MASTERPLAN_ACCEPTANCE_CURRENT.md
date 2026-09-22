@@ -9,20 +9,19 @@ nghĩa đã xác nhận có lỗi.
 
 ## 1. Mốc và cách đọc
 
-- `origin/main`: `a78950cd9f9b4d9106eda81df10dbb00d3731d41`, đã fetch ngày 22/09.
-  Đây là merge SHA của PR #1419; không được suy từ `main` rằng mọi acceptance
+- `origin/main`: `7e19ae1316e493925aafec0f32cf1acb1e68599d`, đã fetch ngày 22/09.
+  Đây là merge SHA của PR #1420; không được suy từ `main` rằng mọi acceptance
   bên dưới đã được kiểm lại trên Production.
-- PR #1413 đã merge lúc `2026-09-21T15:00:00Z`. Production được deploy thủ
-  công từ clean detached worktree đúng merge SHA trên; deployment
-  `dpl_H7Tg9nPPvo6deeGDfQ7Xa5jcEM6n` ở trạng thái READY và được alias tới
-  `www.nailiq.ca`.
-- Kiểm tra trực tiếp sau deploy: `/api/health` trả `ok`; `/api/ready` trả
-  `ready`, `database_schema=ok`, `cron_authorization=ok`; hai trang
-  `/hilite-anaheim` và `/hilite-studio` đều HTTP 200. `/api/version` trả
-  deployment ID của manual deploy, không trả Git SHA; liên kết SHA → deployment
-  dựa trên clean worktree dùng để chạy lệnh deploy và cần được giữ trong hồ sơ
-  phát hành.
-- Health/readiness chỉ chứng minh các kiểm tra được endpoint thực hiện; không
+- PR #1420 đã merge và được deploy thủ công từ clean detached worktree đúng
+  merge SHA; deployment `dpl_CeYSH44TZug6G55Bfmd1owX5JH3Z` ở trạng thái
+  READY và được alias tới `www.nailiq.ca`. Sau deploy, `/api/health` và
+  `/api/ready` PASS; hai trang `/hilite-anaheim` và `/hilite-studio` HTTP 200.
+  Không có migration, provider call hoặc thông báo trong rollout này.
+- PR #1417 đã merge lúc `2026-09-22T01:15:54Z`. Vì Vercel project đang ở chế
+  độ `sourceless`, Git integration không tự tạo deployment cho merge này.
+  Production đã được deploy thủ công từ clean detached worktree đúng merge SHA;
+  deployment `dpl_AKUpBoxBUQU4Hdcmd8TAVuMRRfJM` READY trước #1420.
+- Health/readiness và HTTP probes chỉ chứng minh các kiểm tra được endpoint thực hiện; không
   chứng minh mọi migration/ACL, mọi salon hay mọi hành trình khách hàng đều đúng.
 - P1-06: [PR #1413](https://github.com/bepnhobencha-rgb/nailiq/pull/1413) đã
   MERGED và triển khai Production thủ công. Ứng viên cuối trước merge là
@@ -33,8 +32,20 @@ nghĩa đã xác nhận có lỗi.
   bộ E2E bắt buộc, gồm Receptionist Center desktop/mobile, non-RC, recovery thật
   và tenant-role/session revocation. Các job `MQA-0148 source` và `AI Triage`
   SKIPPED theo workflow, không được tính là PASS.
-- Không chạy provider hoặc gửi thông báo trong rollout này. Không có migration
+- Không chạy provider hoặc gửi thông báo trong rollout #1413. Không có migration
   thuộc PR #1413.
+- P0-03: [PR #1417](https://github.com/bepnhobencha-rgb/nailiq/pull/1417) đã
+  MERGED. Supabase Production đã áp đúng migration
+  `20260921170000_harden_public_booking_resource_catalog_invoker.sql`; migration
+  parity `20260908014241` đã tồn tại từ trước và không bị áp lại. Metadata, exact
+  function signatures, ACL và Security Advisor đều được kiểm chứng; Advisor hiện
+  **0 ERROR, 20 WARN**. Bằng chứng rollout #1417 được ghi riêng trong tài liệu
+  P0-03 bên dưới.
+- CI và E2E hậu-merge của SHA `7c5fad5` đều SUCCESS. E2E gồm i18n/copy, smoke,
+  visual, tenant-role/session revocation real-auth, settings/SuperAdmin recovery,
+  non-RC và Receptionist Center desktop/mobile. Hai job có điều kiện `MQA-0148`
+  và `AI Triage` SKIPPED, không được tính là PASS.
+- Rollout #1417 không gọi provider, không tạo booking và không gửi thông báo.
 - Bảng 30 tiêu chí V1 ngày 11/09 là nguồn ID/điều kiện. Các nhãn “chưa merge”
   trong báo cáo lịch sử được đối chiếu lại bằng Git/GitHub; không sửa lại lịch sử.
 - `PASS QA`: đạt phạm vi QA đã nêu. `DEPLOYED`: code đã nằm trong SHA Live.
@@ -60,15 +71,15 @@ ngày 20/09. Nguồn viết tắt được giải thích ở mục 6.
 
 | ID | Tiêu chí | Trạng thái/bằng chứng | Việc cần đóng tiếp theo |
 |---|---|---|---|
-| V1-01 | Bản phát hành/code/schema | PASS rollout #1413 ngày 21/09 trong phạm vi không migration: merge SHA và deployment READY được ghi nhận; health/readiness PASS | Với release có migration, bắt buộc thực hiện schema-first rehearsal/audit riêng; manual deploy hiện chỉ trả deployment ID ở `/api/version` |
-| V1-02 | Trang salon | Có PASS HTTP lịch sử 11/09; chưa kiểm lại từng trang trong đợt này | Read-only UI smoke từng URL trong danh sách salon phát hành |
+| V1-01 | Bản phát hành/code/schema | PASS rollout #1417 trong phạm vi migration P0-03: exact migration đã dry-run/apply, metadata/ACL/Advisor PASS; #1420 đã manual deploy READY và health/readiness PASS | Mỗi release có migration tiếp theo vẫn phải rehearsal/audit riêng; Vercel project `sourceless` nên cần giữ bằng chứng clean worktree → deployment |
+| V1-02 | Trang salon | `/hilite-anaheim` và `/hilite-studio` HTTP 200 sau rollout #1417 và #1420 | Read-only UI smoke toàn bộ danh sách salon phát hành vẫn là gate riêng |
 | V1-03 | Đăng ký salon mới | PASS HOSTED QA: email/synthetic salon và Google OAuth thật đã tạo đúng một private salon; 14-day trial, defaults, membership và cleanup được đọc lại | Chưa phải Production/pilot proof; owner thật và clean-browser/device return-login nếu cần mức bằng chứng cao hơn |
-| V1-04 | Đăng nhập/khôi phục | PASS QA lịch sử; CI #1413 recovery xanh | Ghép callback/email provider và salon trắng vào P0-02 |
+| V1-04 | Đăng nhập/khôi phục | PASS QA lịch sử; CI hậu-merge #1417 settings/SuperAdmin recovery xanh; Day 2/3 callback recovery QA PASS | Production/pilot owner mới vẫn là cổng riêng |
 | V1-05 | Cookie bảo mật | PASS QA lịch sử; code nằm trong main | Giữ regression trên ứng viên phát hành, không tính cookie lịch sử là kiểm tra phiên hiện tại |
-| V1-06 | MFA SuperAdmin | PASS QA; CI #1413 MFA xanh | Quét QR/Authenticator trên máy thật nếu đưa vào ký nghiệm thu vật lý |
+| V1-06 | MFA SuperAdmin | PASS QA; CI hậu-merge #1417 SuperAdmin recovery xanh | Quét QR/Authenticator trên máy thật nếu đưa vào ký nghiệm thu vật lý |
 | V1-07 | Cấu hình salon | P1-04 PASS QA, PR #1410 đã deploy | Owner từng salon xác nhận catalog/giờ/thợ/resource |
-| V1-08 | Tenant/role | PASS trong phạm vi tự động hiện hành: CI real-auth #1416 tenant roles/session revocation SUCCESS; Production metadata read-only có 241/241 public tables bật RLS | Giữ regression trên mỗi release có thay đổi auth/ACL; pilot người thật vẫn là bằng chứng riêng |
-| V1-09 | Chống lạm dụng | QA PASS: durable quota + 48/48 focused tests; QA disposable migration/rehearsal/ACL/Advisor 0 ERROR; tenant E2E 18/18; Vercel Firewall version 9 có hai SDK rules runtime log-only. Production DB vẫn còn 1 Advisor ERROR đến khi hotfix được duyệt rollout riêng | Quan sát WAF log-only; review PR/Preview; chỉ xin Production migration sau CI/Preview PASS, rồi kiểm chứng Advisor 0 ERROR |
+| V1-08 | Tenant/role | PASS trong phạm vi tự động hiện hành: CI hậu-merge #1417 tenant roles/session revocation SUCCESS; Production metadata read-only có 241/241 public tables bật RLS | Giữ regression trên mỗi release có thay đổi auth/ACL; pilot người thật vẫn là bằng chứng riêng |
+| V1-09 | Chống lạm dụng | Production DB closure PASS: migration P0-03 đã áp, view dùng `security_invoker`, helper/snapshot có exact ACL và Advisor 0 ERROR/20 WARN. Durable quota và tenant QA PASS. Hai WAF SDK rules vẫn active/valid ở log-only, không có pending draft | Quan sát đủ log-only để đánh giá false positive trước mọi đề xuất enforce; pilot/traffic thực vẫn NOT PROVEN |
 | V1-10 | Booking cá nhân | PASS Live lịch sử Studio; P1-04 QA | Nghiệm thu đúng cấu hình từng salon pilot |
 | V1-11 | Giờ/resource | P1-04 unit/browser PASS | Owner xác nhận shift/capability/giường và rehearsal từng salon |
 | V1-12 | Booking nhóm | #1401 và #1404 đã deploy; lỗi dependency/failure recovery có regression | Phân loại incident 503 lịch sử và chứng cứ runtime; không yêu cầu mọi 503 phải biến mất |
@@ -97,7 +108,7 @@ ngày 20/09. Nguồn viết tắt được giải thích ở mục 6.
 |---|---|---|---|
 | P0-01 | #1401 merged 11/09; #1404 merged 14/09; regression và diagnostics | Chưa chứng minh nguyên nhân từng 503 lịch sử; không tự tạo lỗi trên Live | Kỹ thuật: ghép log có request/stage/SHA nếu còn; ghi rõ giới hạn lịch sử |
 | P0-02 | Đã PASS hosted QA: Preview branch-scoped dùng QA disposable, Google provider QA riêng, salon trắng/email synthetic, Google OAuth thật, callback recovery, chống trùng, private/off defaults và cleanup đều có evidence; local 12 browser + 69 contract/unit và build PASS | Không còn điểm chặn kỹ thuật Day 2/Day 3 ở mức QA; còn clean-browser/device return-login, UX logout trong Guided Setup và pilot owner thật | Đóng P0-02 ở mức QA. Chuyển UX logout/progress sang backlog và giữ Production/pilot là cổng riêng |
-| P0-03 | QA disposable `uhpzafoiifupyypkcwln` đã nhận full migrations; rehearsal/ACL/Advisor 0 ERROR; tenant E2E 18/18; WAF version 9 có `booking-page-load` 60/60s/IP và `contact-submit` 5/3600s/IP, vượt ngưỡng chỉ log | Production Supabase vẫn còn 1 Advisor ERROR cho view đến khi hotfix được duyệt; WAF cần thời gian quan sát false positive; PR/Preview/CI chưa phải Production proof | Kỹ thuật: review PR/Preview, quan sát log-only, sau đó xin rollout migration riêng và kiểm chứng Production metadata/ACL/Advisor |
+| P0-03 | PR #1417 merged; migration `20260921170000` đã áp Production; metadata/function signatures/ACL/Advisor PASS với 0 ERROR/20 WARN; deployment READY; hậu-merge CI/E2E SUCCESS; WAF version 9 có `booking-page-load` 60/60s/IP và `contact-submit` 5/3600s/IP, vượt ngưỡng chỉ log | Database/ACL đã đóng. WAF cần thời gian quan sát false positive; chưa có bằng chứng enforce hay traffic/pilot thực | Kỹ thuật: giữ log-only, thu thập số liệu và chỉ đề xuất enforce bằng thay đổi riêng có rollback; không mở thêm migration cho lỗi đã đóng |
 | P1-01 | #1406/#1407 merged; synthetic delivery truth PASS | Provider delivery/callback acceptance | QA: chuẩn bị người nhận/case cụ thể trước một lượt provider được phép |
 | P1-02 | #1408 merged; Sandbox/backend/browser PASS | Live exception recovery cần Owner; dữ liệu cũ không đại diện hôm nay | Owner + QA: duyệt từng trường hợp sau snapshot read-only mới |
 | P1-03 | #1409 merged; profile EN/VI PASS | Người mới, thời gian, máy thật | QA/pilot: ghi từng nhiệm vụ, số trợ giúp và kết quả |
