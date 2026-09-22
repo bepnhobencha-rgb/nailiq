@@ -126,7 +126,7 @@ async function getTodayAgentActions(salonId: string, tz: string): Promise<AgentS
   return Array.from(map.values());
 }
 
-type WatchdogAlert = { kind: string; summary: string; severity: string };
+type WatchdogAlert = { kind: string; title: string; severity: string };
 
 async function getTodayWatchdogAlerts(salonId: string, tz: string): Promise<WatchdogAlert[]> {
   const db = createServiceRoleClient();
@@ -135,7 +135,7 @@ async function getTodayWatchdogAlerts(salonId: string, tz: string): Promise<Watc
 
   const { data, error } = await db
     .from("watchdog_alerts" as never)
-    .select("kind, summary, severity")
+    .select("kind, title, severity")
     .eq("salon_id", salonId)
     .gte("created_at", startUtc)
     .lt("created_at", endUtc)
@@ -204,7 +204,7 @@ function buildContext(
     agentLines.push(label[a.agent] ?? `${a.agent}: ${count} hành động`);
   }
 
-  const alertLines = alerts.map((al) => `[${al.severity.toUpperCase()}] ${al.summary}`);
+  const alertLines = alerts.map((al) => `[${al.severity.toUpperCase()}] ${al.title}`);
   const approvalsSection = pendingApprovalSummaries.length > 0
     ? `\nVIỆC CHỜ MINH DUYỆT (${pendingApprovalSummaries.length}):\n${pendingApprovalSummaries.map((s) => `- ${s}`).join("\n")}\nXem chi tiết: /dashboard/{slug}/approvals`
     : "";
