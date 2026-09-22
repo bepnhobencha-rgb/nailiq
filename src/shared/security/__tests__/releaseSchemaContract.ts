@@ -12,16 +12,19 @@ import { expect } from "vitest";
 // +3 indexes; plus +1 service-only expired-grace pause function.
 // P1-01 adds one service-only Waitlist terminal-delivery truth projection.
 // P1-05 adds five trial-entitlement functions and seven enforcement triggers.
+// P0-03 restores the five-column public booking resource catalog view that was
+// already applied in Production. information_schema.columns and the grant
+// matrix both count that view.
 // This is the local release contract, not a claim about Production's schema.
 const EXPECTED_RELEASE_SHAPE = {
   tables: 246,
-  columns: 3798,
+  columns: 3803,
   policies: 225,
   functions: 600,
   triggers: 169,
   indexes: 1012,
 };
-const EXPECTED_GRANTS = { anon: 56, authenticated: 78, service_role: 233 };
+const EXPECTED_GRANTS = { anon: 57, authenticated: 79, service_role: 234 };
 
 function numericObject(source: string, name: string): Record<string, number> {
   const file = ts.createSourceFile("check-schema-parity.ts", source, ts.ScriptTarget.Latest, true);

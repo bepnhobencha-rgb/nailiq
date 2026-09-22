@@ -5,9 +5,11 @@ run against the candidate database before this becomes release evidence; this
 document does not claim a Production deployment.
 
 The release contract contains thirteen anonymous-executable `SECURITY DEFINER`
-signatures (eleven function names; `create_public_booking` has legacy/priced/SMS-aware rollout
-overloads). They are not unreviewed exceptions: they are
-the complete allowlist of public booking RPCs that must cross RLS without
+signatures in the exposed `public` schema (eleven function names;
+`create_public_booking` has legacy/priced/SMS-aware rollout overloads), plus one
+resource projection helper in the non-exposed `private` schema. They are not
+unreviewed exceptions: together they are the complete allowlist of public
+booking boundaries that must cross RLS without
 granting anonymous users direct access to customer, booking, OTP, or salon
 control-plane tables.
 
@@ -16,8 +18,9 @@ Every entry is required to satisfy the executable proof in
 
 - owned by `postgres`;
 - pinned `search_path`;
-- `PUBLIC` and `authenticated` cannot execute it;
-- only `anon` and `service_role` can execute it;
+- `PUBLIC` cannot execute it; public-schema mutation/identity RPCs also deny
+  `authenticated` unless their exact contract says otherwise;
+- only the explicitly documented roles can execute each boundary;
 - its result contract and security-critical input guards remain present; and
 - the protected underlying tables remain inaccessible directly or protected by
   RLS.
@@ -29,6 +32,7 @@ Every entry is required to satisfy the executable proof in
 | `create_public_booking` (legacy + fingerprinted + SMS-aware overloads) | Public booking must insert through business-rule and rate-limit enforcement because direct anonymous booking inserts are revoked. The legacy signature remains only for the Phase-A asset overlap. | The implementations derive money server-side and enforce salon/phone limits; the SMS-aware overload requires payload-bound idempotency, an accepted pricing fingerprint, and exact unconsumed SMS ownership for phone-bound incentives. The previous priced arity forwards NULL proof and retains safe no-discount/replay compatibility. |
 | `finalize_public_booking_profile` | A newly committed booking must atomically finalize its verification without reopening direct profile writes. | Recent booking capability; durable profile link; exact OTP salon, phone, expiry, and single-use state. Global phone-verification and marketing-consent writes require SMS proof; other allowed channels can finalize the booking only. |
 | `get_booking_client_snapshot` | A just-created booking with verified phone ownership may request a small returning-client snapshot without exposing client profiles directly. | Booking ID, salon, canonical phone, and ten-minute freshness must match. SMS proof must be linked to and consumed by this exact booking, with finite timestamps showing consumption after verification and before expiry. Email, staff, demo, and legacy proof return no CRM snapshot. The service-only two-argument overload is unchanged. |
+| `private.public_booking_resources_for_salon` | The public snapshot needs active bed/chair identity without granting clients direct access to private `salon_resources` columns. It replaces the previous definer-view boundary with an invoker view plus one narrow helper outside exposed Data API schemas. | Returns only `id`, `name`, `kind`, and `display_order` for one published, resource-enabled salon. Only the stateless `anon` booking client and `service_role` may execute it; `PUBLIC` and `authenticated` stay denied and direct table reads remain RLS-blocked. |
 | `public_booking_capacity_for_range` | Resource-aware public scheduling needs staff and physical-resource conflicts but must not read booking, segment, or customer records. | Returns only staff/resource IDs and occupied start/end timestamps for the requested salon and range; terminal states are excluded. |
 | `public_booking_occupancy_for_range` | Public scheduling needs occupied intervals but must not read booking/customer records. | Returns only staff ID and start/end timestamps. |
 | `public_resolve_domain` | Middleware maps a hostname to a slug; invoker mode would fail because anonymous direct `salons` reads are revoked. | Returns one slug for an exact normalized host. |

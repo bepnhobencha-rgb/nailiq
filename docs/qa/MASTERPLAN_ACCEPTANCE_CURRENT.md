@@ -9,7 +9,9 @@ nghĩa đã xác nhận có lỗi.
 
 ## 1. Mốc và cách đọc
 
-- `origin/main`: `ae406a2419f924a6c0a1b209a61f018a1af6a04a`, đã fetch ngày 21/09.
+- `origin/main`: `bb2f866fa9d6a459637350a946868440ab5a05dd`, đã fetch ngày 21/09.
+  Đây là merge SHA docs-only của PR #1416; Production app vẫn ở rollout #1413
+  như dòng dưới, không được suy từ `main` rằng Production đã tự deploy lại.
 - PR #1413 đã merge lúc `2026-09-21T15:00:00Z`. Production được deploy thủ
   công từ clean detached worktree đúng merge SHA trên; deployment
   `dpl_H7Tg9nPPvo6deeGDfQ7Xa5jcEM6n` ở trạng thái READY và được alias tới
@@ -65,8 +67,8 @@ ngày 20/09. Nguồn viết tắt được giải thích ở mục 6.
 | V1-05 | Cookie bảo mật | PASS QA lịch sử; code nằm trong main | Giữ regression trên ứng viên phát hành, không tính cookie lịch sử là kiểm tra phiên hiện tại |
 | V1-06 | MFA SuperAdmin | PASS QA; CI #1413 MFA xanh | Quét QR/Authenticator trên máy thật nếu đưa vào ký nghiệm thu vật lý |
 | V1-07 | Cấu hình salon | P1-04 PASS QA, PR #1410 đã deploy | Owner từng salon xác nhận catalog/giờ/thợ/resource |
-| V1-08 | Tenant/role | CI #1413 tenant roles/session revocation SUCCESS | Ghép đầy đủ phép đọc/ghi và thu hồi quyền vào ma trận P0-03 |
-| V1-09 | Chống lạm dụng | PR #1405 đã deploy; có guard trong code | Kiểm chứng cấu hình quota/WAF hiện hành; không kết luận từ tên PR |
+| V1-08 | Tenant/role | PASS trong phạm vi tự động hiện hành: CI real-auth #1416 tenant roles/session revocation SUCCESS; Production metadata read-only có 241/241 public tables bật RLS | Giữ regression trên mỗi release có thay đổi auth/ACL; pilot người thật vẫn là bằng chứng riêng |
+| V1-09 | Chống lạm dụng | QA PASS: durable quota + 48/48 focused tests; QA disposable migration/rehearsal/ACL/Advisor 0 ERROR; tenant E2E 18/18; Vercel Firewall version 9 có hai SDK rules runtime log-only. Production DB vẫn còn 1 Advisor ERROR đến khi hotfix được duyệt rollout riêng | Quan sát WAF log-only; review PR/Preview; chỉ xin Production migration sau CI/Preview PASS, rồi kiểm chứng Advisor 0 ERROR |
 | V1-10 | Booking cá nhân | PASS Live lịch sử Studio; P1-04 QA | Nghiệm thu đúng cấu hình từng salon pilot |
 | V1-11 | Giờ/resource | P1-04 unit/browser PASS | Owner xác nhận shift/capability/giường và rehearsal từng salon |
 | V1-12 | Booking nhóm | #1401 và #1404 đã deploy; lỗi dependency/failure recovery có regression | Phân loại incident 503 lịch sử và chứng cứ runtime; không yêu cầu mọi 503 phải biến mất |
@@ -95,7 +97,7 @@ ngày 20/09. Nguồn viết tắt được giải thích ở mục 6.
 |---|---|---|---|
 | P0-01 | #1401 merged 11/09; #1404 merged 14/09; regression và diagnostics | Chưa chứng minh nguyên nhân từng 503 lịch sử; không tự tạo lỗi trên Live | Kỹ thuật: ghép log có request/stage/SHA nếu còn; ghi rõ giới hạn lịch sử |
 | P0-02 | Auth/email/recovery synthetic có bằng chứng | Google/provider end-to-end và toàn bộ salon trắng | QA + chủ tài khoản: ca QA được kiểm soát, không tự gửi thư thử |
-| P0-03 | Tenant/role CI xanh; #1405 merged | Ma trận quyền + quota/WAF runtime hiện hành | Kỹ thuật: tổng hợp phép đọc/ghi và kiểm cấu hình read-only |
+| P0-03 | QA disposable `uhpzafoiifupyypkcwln` đã nhận full migrations; rehearsal/ACL/Advisor 0 ERROR; tenant E2E 18/18; WAF version 9 có `booking-page-load` 60/60s/IP và `contact-submit` 5/3600s/IP, vượt ngưỡng chỉ log | Production Supabase vẫn còn 1 Advisor ERROR cho view đến khi hotfix được duyệt; WAF cần thời gian quan sát false positive; PR/Preview/CI chưa phải Production proof | Kỹ thuật: review PR/Preview, quan sát log-only, sau đó xin rollout migration riêng và kiểm chứng Production metadata/ACL/Advisor |
 | P1-01 | #1406/#1407 merged; synthetic delivery truth PASS | Provider delivery/callback acceptance | QA: chuẩn bị người nhận/case cụ thể trước một lượt provider được phép |
 | P1-02 | #1408 merged; Sandbox/backend/browser PASS | Live exception recovery cần Owner; dữ liệu cũ không đại diện hôm nay | Owner + QA: duyệt từng trường hợp sau snapshot read-only mới |
 | P1-03 | #1409 merged; profile EN/VI PASS | Người mới, thời gian, máy thật | QA/pilot: ghi từng nhiệm vụ, số trợ giúp và kết quả |
@@ -137,6 +139,7 @@ thật vào báo cáo QA. Người lớn tuổi và tiếp tân ít dùng công 
   [P1-04](P1-04-SALON-BOOKING-TRUTH-2026-09-15.md),
   [P1-05](P1-05-TRIAL-PRICING-AUDIT-2026-09-15.md),
   [P1-06](p1-06-incident-restore-support-2026-09-16.md).
+- [P0-03 tenant/role + quota/WAF runtime](p0-03-tenant-role-quota-waf-runtime-2026-09-21.md).
 - Nguồn 30 ID: bản local lịch sử
   `/Users/huytran/nailiq-v1-acceptance-20260911/docs/qa/V1_ACCEPTANCE_2026-09-11.md`;
   không coi file local này là tài liệu đã merge.

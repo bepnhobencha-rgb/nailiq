@@ -102,6 +102,8 @@ describe("public RPC role grant boundary", () => {
       "src/shared/booking/loadGroupDayTimeline.ts",
       "src/shared/booking/loadGroupSmartSchedule.ts",
       "src/shared/booking/checkGroupSlotsAvailable.ts",
+      "src/shared/booking/loadBookingServices.ts",
+      "src/shared/booking/resolvePublicBookingPage.ts",
     ].map(read);
 
     for (const source of publicBookingSources) {

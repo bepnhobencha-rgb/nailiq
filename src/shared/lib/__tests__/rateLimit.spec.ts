@@ -50,4 +50,15 @@ describe("programmatic Vercel firewall lookup", () => {
       false,
     );
   });
+
+  it("exports only rule IDs that have runtime callsites", async () => {
+    const { RATE_LIMIT_IDS } = await import("../rateLimit");
+
+    expect(RATE_LIMIT_IDS).toEqual({
+      bookingSubmit: "booking-submit",
+      bookingPageLoad: "booking-page-load",
+      authAttempt: "auth-attempt",
+      contactSubmit: "contact-submit",
+    });
+  });
 });
