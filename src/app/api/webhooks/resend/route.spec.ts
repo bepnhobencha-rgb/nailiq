@@ -92,6 +92,24 @@ function request(raw: string, headers: Record<string, string> = {}) {
   });
 }
 
+const qaProjectRef = "uhpzafoiifupyypkcwln";
+function configureQaBoundary(recipient = "owner@example.com") {
+  vi.stubEnv("NAILIQ_RESEND_QA_WEBHOOK_ONLY", "1");
+  vi.stubEnv("VERCEL_ENV", "preview");
+  vi.stubEnv("NAILIQ_DISPOSABLE_DB", "1");
+  vi.stubEnv("NAILIQ_QA_EXPECTED_SUPABASE_PROJECT_REF", qaProjectRef);
+  vi.stubEnv("NEXT_PUBLIC_SUPABASE_URL", `https://${qaProjectRef}.supabase.co`);
+  vi.stubEnv("SUPABASE_INTERNAL_URL", `https://${qaProjectRef}.supabase.co`);
+  vi.stubEnv("NAILIQ_QA_RESEND_EMAIL_RECIPIENT", recipient);
+}
+
+function withQaTags(raw: string, ref = qaProjectRef) {
+  const parsed = JSON.parse(raw) as { data: { tags: Record<string, string> } };
+  parsed.data.tags.nailiq_env = "qa";
+  parsed.data.tags.nailiq_qa_ref = ref;
+  return JSON.stringify(parsed);
+}
+
 describe("Resend owner delivery webhook", () => {
   beforeEach(() => {
     vi.clearAllMocks();
@@ -117,6 +135,62 @@ describe("Resend owner delivery webhook", () => {
     mocks.verify.mockImplementation(() => { throw new Error("bad signature"); });
     const response = await POST(request(payload()));
     expect(response.status).toBe(401);
+    expect(mocks.createService).not.toHaveBeenCalled();
+  });
+
+  it("ignores a signed QA-tagged event on a normal endpoint before database access", async () => {
+    const response = await POST(request(withQaTags(payload())));
+    expect(response.status).toBe(200);
+    await expect(response.json()).resolves.toEqual({ ok: true, code: "event_ignored" });
+    expect(mocks.createService).not.toHaveBeenCalled();
+  });
+
+  it("ignores non-QA and mismatched QA events on a QA-only endpoint", async () => {
+    configureQaBoundary();
+    for (const raw of [
+      payload(),
+      withQaTags(payload(), "otherprojectref00000"),
+      withQaTags(customerPayload()),
+    ]) {
+      const response = await POST(request(raw));
+      expect(response.status).toBe(200);
+      await expect(response.json()).resolves.toEqual({ ok: true, code: "event_ignored" });
+    }
+    expect(mocks.createService).not.toHaveBeenCalled();
+  });
+
+  it("records only the exact signed QA event for the pinned project and recipient", async () => {
+    configureQaBoundary();
+    const response = await POST(request(withQaTags(payload())));
+    expect(response.status).toBe(200);
+    expect(mocks.rpc).toHaveBeenCalledTimes(1);
+    expect(mocks.rpc.mock.calls[0]?.[0]).toBe("record_resend_owner_delivery_event");
+  });
+
+  it("fails closed if QA-only mode loses the disposable marker", async () => {
+    configureQaBoundary();
+    vi.stubEnv("NAILIQ_DISPOSABLE_DB", "0");
+    const response = await POST(request(withQaTags(payload())));
+    expect(response.status).toBe(503);
+    await expect(response.json()).resolves.toEqual({ ok: false, code: "qa_boundary_unavailable" });
+    expect(mocks.createService).not.toHaveBeenCalled();
+  });
+
+  it("fails closed if a QA-only endpoint resolves to the Production project", async () => {
+    configureQaBoundary();
+    vi.stubEnv("NEXT_PUBLIC_SUPABASE_URL", "https://fshmobzyjhmtvndobwsy.supabase.co");
+    vi.stubEnv("SUPABASE_INTERNAL_URL", "https://fshmobzyjhmtvndobwsy.supabase.co");
+    const response = await POST(request(withQaTags(payload())));
+    expect(response.status).toBe(503);
+    expect(mocks.createService).not.toHaveBeenCalled();
+  });
+
+  it("never treats an unconfigured disposable endpoint as a normal webhook", async () => {
+    vi.stubEnv("NAILIQ_RESEND_QA_WEBHOOK_ONLY", "");
+    vi.stubEnv("NAILIQ_DISPOSABLE_DB", "1");
+    const response = await POST(request(payload()));
+    expect(response.status).toBe(200);
+    await expect(response.json()).resolves.toEqual({ ok: true, code: "event_ignored" });
     expect(mocks.createService).not.toHaveBeenCalled();
   });
 

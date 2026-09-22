@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { createHash } from "node:crypto";
 
 vi.mock("server-only", () => ({}));
@@ -34,6 +34,17 @@ const input = {
     offerEpoch: 2,
   },
 };
+
+const qaProjectRef = "uhpzafoiifupyypkcwln";
+function configureQaBoundary(recipient = "mai@example.test") {
+  vi.stubEnv("NAILIQ_RESEND_QA_WEBHOOK_ONLY", "1");
+  vi.stubEnv("VERCEL_ENV", "preview");
+  vi.stubEnv("NAILIQ_DISPOSABLE_DB", "1");
+  vi.stubEnv("NAILIQ_QA_EXPECTED_SUPABASE_PROJECT_REF", qaProjectRef);
+  vi.stubEnv("NEXT_PUBLIC_SUPABASE_URL", `https://${qaProjectRef}.supabase.co`);
+  vi.stubEnv("SUPABASE_INTERNAL_URL", `https://${qaProjectRef}.supabase.co`);
+  vi.stubEnv("NAILIQ_QA_RESEND_EMAIL_RECIPIENT", recipient);
+}
 
 function sha256(value: string): string {
   return createHash("sha256").update(value, "utf8").digest("hex");
@@ -75,8 +86,11 @@ function loadedMaterial(channel: "sms" | "email", snapshotOverride: Record<strin
 }
 
 describe("durable promoted waitlist offer delivery", () => {
+  afterEach(() => vi.unstubAllEnvs());
+
   beforeEach(() => {
     vi.clearAllMocks();
+    vi.stubEnv("DISABLE_OUTBOUND_EMAIL", "0");
     mocks.suppressed.mockResolvedValue(false);
     mocks.sms.mockResolvedValue({ ok: true, messageSid: `SM${"a".repeat(32)}` });
     mocks.email.mockResolvedValue({ data: { id: "re-test" }, error: null });
@@ -208,6 +222,50 @@ describe("durable promoted waitlist offer delivery", () => {
     const completes = mocks.rpc.mock.calls.filter(([name]) => name === "complete_waitlist_offer_delivery");
     expect(completes).toHaveLength(2);
     expect(completes.every(([, args]) => args.p_status === "suppressed")).toBe(true);
+  });
+
+  it.each(["1", "true", " YES "])(
+    "suppresses email before Resend when the global email kill switch is %s",
+    async (flag) => {
+      vi.stubEnv("DISABLE_OUTBOUND_EMAIL", flag);
+      await deliverPromotedWaitlistOffer(input);
+      expect(mocks.sms).toHaveBeenCalledTimes(1);
+      expect(mocks.email).not.toHaveBeenCalled();
+      expect(mocks.suppressed).not.toHaveBeenCalled();
+      const emailComplete = mocks.rpc.mock.calls
+        .filter(([name]) => name === "complete_waitlist_offer_delivery")
+        .find(([, args]) => args.p_outbox_id === "77777777-7777-4777-8777-777777777777");
+      expect(emailComplete?.[1]).toMatchObject({
+        p_status: "suppressed",
+        p_provider_receipt: null,
+        p_error_code: "outbound_email_disabled",
+      });
+    },
+  );
+
+  it("adds environment and project tags to a safely pinned QA email", async () => {
+    configureQaBoundary();
+    await deliverPromotedWaitlistOffer(input);
+    expect(mocks.email).toHaveBeenCalledTimes(1);
+    expect(mocks.email.mock.calls[0]?.[0].tags).toEqual(expect.arrayContaining([
+      { name: "nailiq_env", value: "qa" },
+      { name: "nailiq_qa_ref", value: qaProjectRef },
+    ]));
+  });
+
+  it("suppresses a QA email before provider access if the recipient or project pin is wrong", async () => {
+    configureQaBoundary("someone-else@example.test");
+    await deliverPromotedWaitlistOffer(input);
+    expect(mocks.email).not.toHaveBeenCalled();
+    expect(mocks.suppressed).not.toHaveBeenCalled();
+    expect(mocks.sms).toHaveBeenCalledTimes(1);
+    const emailComplete = mocks.rpc.mock.calls
+      .filter(([name]) => name === "complete_waitlist_offer_delivery")
+      .find(([, args]) => args.p_outbox_id === "77777777-7777-4777-8777-777777777777");
+    expect(emailComplete?.[1]).toMatchObject({
+      p_status: "suppressed",
+      p_error_code: "qa_boundary_invalid",
+    });
   });
 
   it("binds each rendered channel to the authoritative material loader snapshot", async () => {
