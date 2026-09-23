@@ -183,10 +183,7 @@ export const EMAIL_EXPERIENCE_REGISTRY = {
     audience: "operator",
     consent: "system",
     deliveryTruth: "registered_webhook",
-    sourceModules: [
-      "src/shared/superadmin/superadminActions.ts",
-      "src/app/api/qa/one-email-20260922/route.ts",
-    ],
+    sourceModules: ["src/shared/superadmin/superadminActions.ts"],
   },
   website_import_complete: {
     audience: "owner",
