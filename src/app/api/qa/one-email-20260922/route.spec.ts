@@ -61,7 +61,7 @@ describe("QA one-email read-only preflight", () => {
     expect(response.status).toBe(200);
     expect(await response.json()).toEqual({
       ok: false,
-      checks: expect.objectContaining({ providerKeyPresent: false, qaKeyValid: true }),
+      checks: expect.objectContaining({ providerKeyPresent: false, qaKeyValid: true, qaProbeStatus: "ok" }),
     });
     expect(fetch).toHaveBeenCalledWith(
       `${URL}/rest/v1/salons?select=id&limit=1`,
@@ -77,8 +77,11 @@ describe("QA one-email read-only preflight", () => {
   });
 
   it("reports a failed QA key probe without guessing", async () => {
-    vi.stubGlobal("fetch", vi.fn().mockResolvedValue({ ok: false }));
+    vi.stubGlobal("fetch", vi.fn().mockResolvedValue({ ok: false, status: 401 }));
     const response = await GET(request());
-    expect((await response.json()).checks.qaKeyValid).toBe(false);
+    expect((await response.json()).checks).toEqual(expect.objectContaining({
+      qaKeyValid: false,
+      qaProbeStatus: "http_401",
+    }));
   });
 });

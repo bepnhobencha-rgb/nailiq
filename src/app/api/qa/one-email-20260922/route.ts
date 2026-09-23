@@ -46,9 +46,9 @@ function configurationChecks(): Record<string, boolean> {
   };
 }
 
-async function qaServiceKeyWorks(): Promise<boolean> {
+async function probeQaServiceKey(): Promise<{ valid: boolean; status: string }> {
   const key = process.env.SUPABASE_SERVICE_ROLE_KEY?.trim();
-  if (!key) return false;
+  if (!key) return { valid: false, status: "missing_key" };
   try {
     const response = await fetch(`${QA_URL}/rest/v1/salons?select=id&limit=1`, {
       method: "GET",
@@ -56,11 +56,13 @@ async function qaServiceKeyWorks(): Promise<boolean> {
       cache: "no-store",
       signal: AbortSignal.timeout(3_000),
     });
-    if (!response.ok) return false;
+    if (!response.ok) return { valid: false, status: `http_${response.status}` };
     const rows: unknown = await response.json();
-    return Array.isArray(rows);
+    return Array.isArray(rows)
+      ? { valid: true, status: "ok" }
+      : { valid: false, status: "unexpected_payload" };
   } catch {
-    return false;
+    return { valid: false, status: "network_error" };
   }
 }
 
@@ -70,12 +72,15 @@ export async function GET(request: Request): Promise<Response> {
     return Response.json({ ok: false }, { status: 404 });
   }
   const checks = configurationChecks();
-  const qaKeyValid = checks.preview && checks.qaBranch && checks.disposable &&
+  const qaBoundaryValid = checks.preview && checks.qaBranch && checks.disposable &&
     checks.qaPin && checks.publicQaUrl && checks.serverQaUrl &&
-    checks.qaServiceKeyPresent && await qaServiceKeyWorks();
-  const result = { ...checks, qaKeyValid };
+    checks.qaServiceKeyPresent;
+  const probe = qaBoundaryValid
+    ? await probeQaServiceKey()
+    : { valid: false, status: "not_run" };
+  const result = { ...checks, qaKeyValid: probe.valid, qaProbeStatus: probe.status };
   return Response.json(
-    { ok: Object.values(result).every(Boolean), checks: result },
+    { ok: Object.values(checks).every(Boolean) && probe.valid, checks: result },
     { headers: { "Cache-Control": "private, no-store, max-age=0" } },
   );
 }
