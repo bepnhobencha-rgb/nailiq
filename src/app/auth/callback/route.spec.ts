@@ -190,6 +190,29 @@ describe("OAuth and email-link callback session boundary", () => {
     );
     expect(exchangeCodeForSession).not.toHaveBeenCalled();
   });
+
+  it.each([
+    ["flow_state_expired", "link_session_expired"],
+    ["flow_state_not_found", "link_session_expired"],
+    ["unexpected_error", "session"],
+    [undefined, "session"],
+  ])("handles exchange error %s without granting a session", async (code, expected) => {
+    const { getUser } = installAuthClient({
+      exchangeError: { code, message: "private@example.test token=never-reflect" },
+    });
+    const response = await GET(
+      new NextRequest("https://www.nailiq.ca/auth/callback?code=stale-code&invite=unclaimed"),
+    );
+    expect(response.headers.get("location")).toBe(
+      `https://www.nailiq.ca/login?error=${expected}`,
+    );
+    expect(response.cookies.getAll()).toHaveLength(0);
+    expect(getUser).not.toHaveBeenCalled();
+    expect(resolveRoleAndSlugForUser).not.toHaveBeenCalled();
+    expect(createServiceRoleClient).not.toHaveBeenCalled();
+    expect(claimInviteToken).not.toHaveBeenCalled();
+    expect(recordAuthEvent).not.toHaveBeenCalled();
+  });
 });
 
 describe("Callback failures remain visible without reflecting provider text", () => {
@@ -197,6 +220,7 @@ describe("Callback failures remain visible without reflecting provider text", ()
     "?error=access_denied",
     "?error_description=Email%20link%20is%20invalid%20or%20has%20expired",
     "?error=access_denied&error_description=",
+    "?error=flow_state_expired&error_description=private%40example.test",
     "",
   ])("returns a recognized login error for %s", async (query) => {
     createServerClient.mockClear();

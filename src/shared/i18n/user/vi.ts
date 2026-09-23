@@ -723,6 +723,8 @@ export const userVi: UserMessages = {
       "Vui lòng xác nhận email trước khi tiếp tục. Kiểm tra hộp thư để bấm vào liên kết xác nhận chúng tôi đã gửi.",
     pkceRestart:
       "Liên kết đăng nhập này được mở ở trình duyệt khác hoặc đã hết hạn. Hãy bắt đầu đăng nhập lại trong trình duyệt này.",
+    linkSessionExpired:
+      "Phiên đăng nhập từ liên kết này đã hết hạn hoặc không còn khả dụng. Hãy đăng nhập bằng email và mật khẩu, hoặc dùng cách đăng nhập trước đó. Bạn không cần đăng ký lại.",
     sessionError: "Không thể hoàn tất đăng nhập. Vui lòng thử lại.",
     forgotPasswordLink: "Quên mật khẩu?",
     verifyTitle: "Nhập mã OTP",

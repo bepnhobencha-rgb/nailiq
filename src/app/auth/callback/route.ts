@@ -81,15 +81,24 @@ export async function GET(request: NextRequest) {
   if (exchangeErr) {
     const isMissingPkceVerifier =
       exchangeErr.code === "pkce_code_verifier_not_found";
+    const isUnavailableFlowState =
+      exchangeErr.code === "flow_state_expired" ||
+      exchangeErr.code === "flow_state_not_found";
     if (isMissingPkceVerifier) {
       console.warn("[auth/callback] PKCE verifier missing; restart sign-in");
+    } else if (isUnavailableFlowState) {
+      console.warn("[auth/callback] Sign-in flow unavailable; restart sign-in");
     } else {
       console.error("[auth/callback] exchangeCodeForSession", exchangeErr);
     }
     const dest = new URL("/login", request.url);
     dest.searchParams.set(
       "error",
-      isMissingPkceVerifier ? "pkce_restart" : "session",
+      isMissingPkceVerifier
+        ? "pkce_restart"
+        : isUnavailableFlowState
+          ? "link_session_expired"
+          : "session",
     );
     return NextResponse.redirect(dest);
   }
