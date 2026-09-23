@@ -33,28 +33,30 @@ function authorized(request: Request): boolean {
   return timingSafeEqual(Buffer.from(expected), Buffer.from(supplied));
 }
 
-function configurationReady(): boolean {
+function configurationChecks(): Record<string, boolean> {
   const env = process.env;
-  return env.VERCEL_ENV === "preview" &&
-    env.VERCEL_GIT_COMMIT_REF === QA_BRANCH &&
-    env.NAILIQ_DISPOSABLE_DB === "1" &&
-    env.NAILIQ_QA_EXPECTED_SUPABASE_PROJECT_REF === QA_REF &&
-    env.NEXT_PUBLIC_SUPABASE_URL === QA_URL &&
-    env.SUPABASE_INTERNAL_URL === QA_URL &&
-    env.NAILIQ_RESEND_QA_WEBHOOK_ONLY === "1" &&
-    env.NAILIQ_QA_RESEND_EMAIL_RECIPIENT === RECIPIENT &&
-    env.DISABLE_OUTBOUND_SMS === "1" &&
-    env.DISABLE_OUTBOUND_CALLS === "1" &&
-    env.DISABLE_OUTBOUND_EMAIL === "1" &&
-    env.PAYMENT_LEDGER_WORKERS_ENABLED === "false" &&
-    env.NAILIQ_APPROVED_NO_SHOW_CHARGE_DISPATCH === "false" &&
-    env.NAILIQ_APPROVED_CANCELLATION_FEE_DISPATCH === "false" &&
-    env.NAILIQ_CARD_SAVE_DISPATCH_DISABLED === "true" &&
-    env.NAILIQ_SQUARE_PAYMENT_WEBHOOK_INGESTION === "false" &&
-    !!env.RESEND_API_KEY?.trim() &&
-    !!env.SUPABASE_SERVICE_ROLE_KEY?.trim() &&
-    /@nailiq\.ca>?$/i.test(getResendFrom()) &&
-    resolveResendQaBoundary(env).mode === "qa";
+  return {
+    preview: env.VERCEL_ENV === "preview",
+    qaBranch: env.VERCEL_GIT_COMMIT_REF === QA_BRANCH,
+    disposable: env.NAILIQ_DISPOSABLE_DB === "1",
+    qaPin: env.NAILIQ_QA_EXPECTED_SUPABASE_PROJECT_REF === QA_REF,
+    publicQaUrl: env.NEXT_PUBLIC_SUPABASE_URL === QA_URL,
+    serverQaUrl: env.SUPABASE_INTERNAL_URL === QA_URL,
+    qaMode: env.NAILIQ_RESEND_QA_WEBHOOK_ONLY === "1" &&
+      resolveResendQaBoundary(env).mode === "qa",
+    recipientPin: env.NAILIQ_QA_RESEND_EMAIL_RECIPIENT === RECIPIENT,
+    smsOff: env.DISABLE_OUTBOUND_SMS === "1",
+    callsOff: env.DISABLE_OUTBOUND_CALLS === "1",
+    emailOff: env.DISABLE_OUTBOUND_EMAIL === "1",
+    ledgerOff: env.PAYMENT_LEDGER_WORKERS_ENABLED === "false",
+    noShowChargeOff: env.NAILIQ_APPROVED_NO_SHOW_CHARGE_DISPATCH === "false",
+    cancellationChargeOff: env.NAILIQ_APPROVED_CANCELLATION_FEE_DISPATCH === "false",
+    cardSaveOff: env.NAILIQ_CARD_SAVE_DISPATCH_DISABLED === "true",
+    squareIngestionOff: env.NAILIQ_SQUARE_PAYMENT_WEBHOOK_INGESTION === "false",
+    providerKeyPresent: !!env.RESEND_API_KEY?.trim(),
+    qaServiceKeyPresent: !!env.SUPABASE_SERVICE_ROLE_KEY?.trim(),
+    senderDomain: /@nailiq\.ca>?$/i.test(getResendFrom()),
+  };
 }
 
 async function qaServiceKeyWorks(): Promise<boolean> {
@@ -76,13 +78,18 @@ async function qaServiceKeyWorks(): Promise<boolean> {
 }
 
 async function ready(): Promise<boolean> {
-  return configurationReady() && await qaServiceKeyWorks();
+  return Object.values(configurationChecks()).every(Boolean) && await qaServiceKeyWorks();
 }
 
 /** Read-only, secret-protected QA gate. No configuration values are returned. */
 export async function GET(request: Request): Promise<Response> {
   if (!authorized(request)) return json({ ok: false }, 404);
-  return json({ ok: await ready() });
+  const checks = configurationChecks();
+  const qaKeyValid = Object.values(checks).every(Boolean) && await qaServiceKeyWorks();
+  return json({ ok: Object.values(checks).every(Boolean) && qaKeyValid, checks: {
+    ...checks,
+    qaKeyValid,
+  } });
 }
 
 /** Exactly one fixed recipient and payload; no request body is used. */

@@ -65,7 +65,11 @@ describe("QA one-email route", () => {
   it("probes the pinned QA database without sending", async () => {
     const response = await GET(request());
     expect(response.status).toBe(200);
-    expect(await response.json()).toEqual({ ok: true });
+    expect(await response.json()).toEqual({ ok: true, checks: expect.objectContaining({
+      publicQaUrl: true,
+      serverQaUrl: true,
+      qaKeyValid: true,
+    }) });
     expect(fetch).toHaveBeenCalledWith(
       `${URL}/rest/v1/salons?select=id&limit=1`,
       expect.objectContaining({ method: "GET", cache: "no-store" }),
