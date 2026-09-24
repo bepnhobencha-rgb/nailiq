@@ -530,3 +530,63 @@ specific fix, not for the whole Day 6 acceptance plan.
   mới; Preview hiện có vẫn là ứng viên runtime đã kiểm chứng.
 - Ready for review chỉ là sẵn sàng để xét duyệt, không phải xác nhận V1-21,
   V1-24, ngày 6 hoặc Master Plan đạt 100%. Giữ toàn bộ mục chưa nghiệm thu.
+
+## CI của commit tài liệu và điều tra WebKit — 24/09/2026
+
+- PR #1424 OPEN/Ready, head `04c7adf11e451e4ae0ac4bdfc64ac11dad76e141`.
+  Runtime không đổi so với `6c31974`; worktree sạch trước lượt điều tra này.
+- [E2E run 36024787391](https://github.com/bepnhobencha-rgb/nailiq/actions/runs/36024787391):
+  receptionist desktop **109 passed / 4 skipped**, mobile **103 passed /
+  10 skipped**, settings recovery **196 passed**. Non-RC FAIL làm gate tổng
+  hợp FAIL; không phải hai lỗi độc lập. Snapshot cuối: 19 SUCCESS, 2 FAILURE,
+  1 SKIPPED. AI triage SUCCESS không phải bằng chứng sửa lỗi.
+- Job non-RC `107718614804`, substep booking diagnostics: **9 passed /
+  1 failed**, `--repeat-each=10 --retries=0`. Repeat 7 thất bại ở
+  `e2e/booking.spec.ts:77`, sau assertion `booking-success` visible đã PASS.
+- Artifact `playwright-report-shard-1`, attachment
+  `booking-submission-diagnostics`: RPC create HTTP 200; response body được
+  kiểm tra riêng xác nhận `success=true` và có booking ID (không sao chép ID
+  hay contact vào báo cáo). Card-capability/Wix bridge trả 200/ok; đây là QA
+  với provider OFF, không chứng minh provider thật đã thực hiện tác vụ.
+- Có event `page-crash` ở khoảng 31.37 giây. Trace cho thấy assertion success
+  visible hoàn tất, sau đó khoảng 24 giây trước pageClosed; evaluate sau đó
+  trả `Target crashed`. Snapshot sau success bị thiếu; ảnh cuối vẫn ở
+  Submitting. Không gọi đây là bằng chứng hình ảnh màn hình success đã render
+  hoàn chỉnh, cũng không quy thành booking thất bại hay tự động gửi lại.
+- Không có pageerror trong attachment. Đây là dấu hiệu browser process
+  crash, **nguyên nhân gốc chưa xác định** (không khẳng định OOM, lỗi WebKit,
+  app hay tracing). Test và DonePanel không có diff so với base `f6bf087`;
+  điều đó chưa loại trừ thay đổi gián tiếp hay khác biệt môi trường.
+- Đã chạy lại local macOS, production build và Supabase loopback cô lập,
+  không dotenv/provider credentials. Thêm config chẩn đoán kế thừa guard
+  local-only, giữ nguyên test/assertion, trace/video khi FAIL:
+
+```sh
+node qa/day5/run-local.mjs test --config qa/day6/booking-submit-diagnostic.config.ts --grep 'Complete booking end-to-end' --project=mobile --repeat-each=10 --retries=0
+```
+
+  **10/10 PASS, 50.6 giây, không retry**, teardown hoàn tất. Lượt đầu chưa
+  chạy được test vì sandbox npm offline cache; sau phê duyệt quyền truy cập
+  local runner chạy thành công. Không tính lỗi cache là lỗi NailIQ.
+- Bổ sung `DEBUG=pw:browser` chỉ cho substep này để lần CI kế tiếp lưu native
+  stderr/exit evidence, theo [Playwright CI debugging](https://playwright.dev/docs/ci#debugging-browser-launches).
+  Không bật `pw:api`/`pw:protocol`, không thay retry/timeout/assertion, không
+  thay app, policy hay database. Thay đổi này **local-only, chưa kiểm chứng
+  trên CI**; cần phê duyệt commit/push batch chẩn đoán trước lần chạy mới.
+- Kiểm tra local bổ sung: `npx tsc --noEmit`, ESLint cho config mới và
+  `git diff --check` PASS. Workflow parse bằng `js-yaml` PASS; kiểm tra giữ
+  `--repeat-each=10 --retries=0` và chỉ bật `DEBUG=pw:browser` PASS. Report
+  JSON nằm trong `test-results/` bị git-ignore, không đưa artifact vào commit.
+  Không chạy lại Next build vì không thay runtime/app code.
+- **FAIL cho gate phát hành; PASS cho 10 local repeats; NOT PROVEN cho root
+  cause và iPhone vật lý.** Không merge/deploy, migration, email/SMS/payment
+  hoặc provider call. Fixture iPhone hosted trước đó giữ nguyên, không bị
+  teardown local đụng tới.
+
+### Phê duyệt batch chẩn đoán
+
+- Huy trả lời “Duyệt” cho commit/push đúng batch chẩn đoán vào PR #1424
+  và chạy CI tiếp. Phạm vi gồm workflow logging, config tái hiện local và
+  hai báo cáo QA. Không merge/deploy, migration hoặc thông báo/provider.
+- Kết quả CI mới phải được đọc theo SHA sau push; phê duyệt xuất bản không
+  chuyển lỗi WebKit lịch sử thành PASS hoặc đóng nghiệm thu thiết bị thật.

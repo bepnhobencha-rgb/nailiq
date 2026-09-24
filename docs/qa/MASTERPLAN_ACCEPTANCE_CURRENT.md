@@ -13,6 +13,13 @@ nghĩa đã xác nhận có lỗi.
 
 ### Checkpoint Preview Ngày 5–6 — 24/09/2026
 
+- **Checkpoint mới hơn, chưa đạt CI:** PR đã Ready for review ở commit tài
+  liệu `04c7adf11e451e4ae0ac4bdfc64ac11dad76e141`. E2E run
+  `36024787391` ghi nhận WebKit `page-crash` ở 1/10 lần đặt hẹn; non-RC và
+  gate tổng hợp FAIL. Booking synthetic trả `success=true`, nhưng chưa xác
+  định nguyên nhân browser crash. Local macOS cùng assertion: 10/10 PASS,
+  retries=0; không thay thế kết quả Linux CI. Giữ chặn phát hành. Mốc CI xanh
+  `6c31974` bên dưới là lịch sử, không phải CI hiện hành của `04c7adf`.
 - PR [#1424](https://github.com/bepnhobencha-rgb/nailiq/pull/1424) OPEN/Draft,
   head `6c31974ac4568e30fb083b459462fe9a1b9f62cb`. Đã commit/push và deploy
   Preview theo phê duyệt; **chưa merge hoặc deploy Production**.
