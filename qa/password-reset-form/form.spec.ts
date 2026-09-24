@@ -142,15 +142,30 @@ for (const language of ["en", "vi"] as const) {
 }
 
 const superadminCopy = {
-  unconfirmed: `${copy.en.unconfirmed} / ${copy.vi.unconfirmed}`,
-  server_error: "Something went wrong. Try again. / Có lỗi xảy ra. Vui lòng thử lại.",
-  no_session: "Reset link is no longer valid. Request a new one. / Link đặt lại không còn hiệu lực. Vui lòng yêu cầu link mới.",
-  no_role: "This account is not an active SuperAdmin. / Tài khoản này không phải SuperAdmin đang hoạt động.",
-  weak_password: "Password must be 8–72 characters. / Mật khẩu phải có 8–72 ký tự.",
-  mismatch: "Passwords don't match. / Mật khẩu không khớp.",
+  en: {
+    unconfirmed: copy.en.unconfirmed,
+    server_error: "Something went wrong. Try again.",
+    no_session: "Reset link is no longer valid. Request a new one.",
+    no_role: "This account is not an active SuperAdmin.",
+    weak_password: "Password must be 8–72 characters.",
+    mismatch: "Passwords don't match.",
+  },
+  vi: {
+    unconfirmed: copy.vi.unconfirmed,
+    server_error: "Có lỗi xảy ra. Vui lòng thử lại.",
+    no_session: "Link đặt lại không còn hiệu lực. Vui lòng yêu cầu link mới.",
+    no_role: "Tài khoản này không phải SuperAdmin đang hoạt động.",
+    weak_password: "Mật khẩu phải có 8–72 ký tự.",
+    mismatch: "Mật khẩu không khớp.",
+  },
 };
-const superadminBack = "Back to sign in / Quay lại đăng nhập";
-test.describe("SuperAdmin bilingual form", () => {
+for (const language of ["en", "vi"] as const) {
+const expected = superadminCopy[language];
+const superadminBack = copy[language].back;
+test.describe(`SuperAdmin ${language} form`, () => {
+  test.beforeEach(async ({ page }) => {
+    await page.addInitScript(lang => localStorage.setItem("nailiq-user-lang", lang), language);
+  });
   for (const fault of ["429", "503", "abort", "server_error", "no_session", "no_role", "weak_password"] as const) {
     test(`${fault}: preserve form and only navigate after acknowledged retry`, async ({ page, context }, info) => {
       const state = await intercept(context, fault);
@@ -162,7 +177,7 @@ test.describe("SuperAdmin bilingual form", () => {
       for (const field of await fields.all()) await field.fill(password);
       await form.getByRole("button").click();
       const transport = ["429", "503", "abort"].includes(fault);
-      await expect(form.getByRole("alert")).toHaveText(transport ? superadminCopy.unconfirmed : superadminCopy[fault as keyof typeof superadminCopy]);
+      await expect(form.getByRole("alert")).toHaveText(transport ? expected.unconfirmed : expected[fault as keyof typeof expected]);
       for (const field of await fields.all()) {
         await expect(field).toHaveValue(password);
         await expect(field).toHaveAttribute("aria-invalid", "true");
@@ -199,16 +214,16 @@ test.describe("SuperAdmin bilingual form", () => {
     const form = page.getByTestId("superadmin-reset-password-form");
     const fields = form.locator("input");
     await form.getByRole("button").click();
-    await expect(form.getByRole("alert")).toHaveText(superadminCopy.weak_password);
+    await expect(form.getByRole("alert")).toHaveText(expected.weak_password);
     for (const field of await fields.all()) {
       await expect(field).toHaveAttribute("maxlength", "72");
       await field.fill("short");
     }
     await form.getByRole("button").click();
-    await expect(form.getByRole("alert")).toHaveText(superadminCopy.weak_password);
+    await expect(form.getByRole("alert")).toHaveText(expected.weak_password);
     await fields.first().fill(password);
     await form.getByRole("button").click();
-    await expect(form.getByRole("alert")).toHaveText(superadminCopy.mismatch);
+    await expect(form.getByRole("alert")).toHaveText(expected.mismatch);
     expect(state.calls).toBe(0);
   });
   test("unconfirmed password returns to SuperAdmin sign in without success or mutation", async ({ page, context }) => {
@@ -234,12 +249,14 @@ test.describe("SuperAdmin bilingual form", () => {
       await form.locator("input").last().press("Enter");
       expect(state.calls).toBe(1);
       release();
-      await expect(form.getByRole("alert")).toHaveText(superadminCopy.unconfirmed);
+      await expect(form.getByRole("alert")).toHaveText(expected.unconfirmed);
       await expect(form.getByRole("button")).toBeEnabled();
       expect(state.calls).toBe(1);
     } finally { release(); }
   });
 });
+
+}
 
 // Hold application chunks so the user-visible server HTML is tested before
 // React attaches handlers. Never forward a password action to the fixture.
@@ -270,7 +287,7 @@ test("SuperAdmin waits for hydration before accepting password input", async ({ 
     await expect(fields.first()).toHaveValue(password);
     await expect(fields.last()).toHaveValue(password);
     await form.getByRole("button").click();
-    await expect(form.getByRole("alert")).toHaveText(superadminCopy.unconfirmed);
+    await expect(form.getByRole("alert")).toHaveText(superadminCopy.en.unconfirmed);
     expect(state.calls).toBe(1);
     await expect(fields.first()).toHaveValue(password);
     await expect(fields.last()).toHaveValue(password);
