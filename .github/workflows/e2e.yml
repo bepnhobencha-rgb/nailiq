@@ -632,6 +632,9 @@ jobs:
           --project=mobile --repeat-each=10 --retries=0 --reporter=list,html,json
           --output=test-results/booking-submit-webkit
         env:
+          # Capture native browser stderr/exit evidence for intermittent page
+          # crashes. Do not enable pw:api/pw:protocol (payloads/contact data).
+          DEBUG: pw:browser
           PLAYWRIGHT_HTML_OUTPUT_DIR: playwright-report/booking-submit-webkit
           PLAYWRIGHT_JSON_OUTPUT_NAME: playwright-report/booking-submit-webkit-results.json
       - name: Run group guest placeholders in WebKit

@@ -124,7 +124,11 @@ function AcceptancePanel({ language }: { language: "en" | "vi" }) {
               : "Synthetic data; no message or provider call."}
           </p>
         </header>
-        <OnlineWaitlistPanel slug="e2e-waitlist-delivery" entries={entries} />
+        <OnlineWaitlistPanel
+          slug="e2e-waitlist-delivery"
+          entries={entries}
+          observedAtIso="2026-09-24T03:37:00.000Z"
+        />
       </main>
     </UserLanguageProvider>
   );

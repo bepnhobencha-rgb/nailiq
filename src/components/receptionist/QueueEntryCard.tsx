@@ -93,6 +93,8 @@ export type QueueEntryCardProps = {
   labels: {
     /** Hero suffix below the big wait number, e.g. "chờ" / "waiting" */
     waitHeroSuffix: string;
+    minuteUnit?: string;
+    durationMinutes?: (minutes: number) => string;
     priorityHigh: string;
     priorityMedium: string;
     priorityLow: string;
@@ -334,14 +336,14 @@ export function QueueEntryCard({
                   emphasizeWait ? "text-lg" : "text-base",
                 )}
               >
-                min
+                {labels.minuteUnit ?? "min"}
               </span>
             </p>
             <p className="mt-1 truncate text-[11px] uppercase tracking-wide text-nq-muted">
               {labels.waitHeroSuffix} · {serviceName}
               {typeof serviceDurationMinutes === "number" &&
               serviceDurationMinutes > 0 ? (
-                <span className="font-mono"> · {serviceDurationMinutes}m</span>
+                <span className="font-mono"> · {labels.durationMinutes?.(serviceDurationMinutes) ?? `${serviceDurationMinutes}m`}</span>
               ) : null}
             </p>
           </div>
@@ -351,7 +353,7 @@ export function QueueEntryCard({
           {serviceName}
           {typeof serviceDurationMinutes === "number" &&
           serviceDurationMinutes > 0 ? (
-            <span className="font-mono"> · {serviceDurationMinutes}m</span>
+            <span className="font-mono"> · {labels.durationMinutes?.(serviceDurationMinutes) ?? `${serviceDurationMinutes}m`}</span>
           ) : null}
         </p>
       )}

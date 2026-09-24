@@ -993,6 +993,7 @@ function StaffTimelineGridImpl({
                */}
               <StaffAvatar
                 name={s.name}
+                language={language}
                 status={s.status}
                 workload={s.workload}
                 showWorkload={showStaffPerformanceDetail}

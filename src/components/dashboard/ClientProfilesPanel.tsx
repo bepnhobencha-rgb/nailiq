@@ -13,6 +13,7 @@ import {
 import { LayoutGrid, List, Table2 } from "lucide-react";
 
 import { Badge } from "@/components/ui/Badge";
+import { Button } from "@/components/ui/Button";
 import { EmptyState } from "@/components/ui/EmptyState";
 import { SkeletonCardGrid } from "@/components/ui/Skeleton";
 import { Toggle } from "@/components/ui/Toggle";
@@ -331,6 +332,7 @@ export function ClientProfilesPanel({
         total: number;
         page: number;
         pageSize: number;
+        search: string;
       }
     | {
         kind: "error";
@@ -340,11 +342,12 @@ export function ClientProfilesPanel({
 
   // Search + pagination controls.
   const [search, setSearch] = useState("");
-  const [page, setPage] = useState(1);
+  const page = state.kind === "ok" ? state.page : 1;
   const pageSize = DEFAULT_PAGE_SIZE;
 
   // Debounce timer ref.
   const debounceRef = useRef<ReturnType<typeof setTimeout> | null>(null);
+  const requestVersion = useRef(0);
 
   // Segment filter (client-side within the current page).
   const [segment, setSegment] = useState<SegmentFilter>("all");
@@ -362,26 +365,35 @@ export function ClientProfilesPanel({
 
   // isPending tracks in-flight server requests for subtle loading overlay.
   const [isPending, startTransition] = useTransition();
+  // A new query is not pageable until its debounced request has settled.
+  const queryPending = state.kind === "ok" && state.search !== search.trim();
 
   // ── Fetch helper ──────────────────────────────────────────────────────────
   const fetchPage = useCallback(
     (q: string, p: number) => {
+      const version = ++requestVersion.current;
       startTransition(async () => {
-        const res = await loadClientProfiles(slug, {
-          search: q,
-          page: p,
-          pageSize,
-        });
-        if (res.ok) {
-          setState({
-            kind: "ok",
-            clients: res.clients,
-            total: res.total,
-            page: res.page,
-            pageSize: res.pageSize,
+        try {
+          const res = await loadClientProfiles(slug, {
+            search: q,
+            page: p,
+            pageSize,
           });
-        } else {
-          setState({ kind: "error", error: res.error });
+          if (version !== requestVersion.current) return;
+          if (res.ok) {
+            setState({
+              kind: "ok",
+              clients: res.clients,
+              total: res.total,
+              page: res.page,
+              pageSize: res.pageSize,
+              search: q.trim(),
+            });
+          } else {
+            setState({ kind: "error", error: res.error });
+          }
+        } catch {
+          if (version === requestVersion.current) setState({ kind: "error", error: "server_error" });
         }
       });
     },
@@ -391,6 +403,10 @@ export function ClientProfilesPanel({
   // Initial load.
   useEffect(() => {
     fetchPage("", 1);
+    return () => {
+      requestVersion.current += 1;
+      if (debounceRef.current) clearTimeout(debounceRef.current);
+    };
     // eslint-disable-next-line react-hooks/exhaustive-deps
   }, [slug]);
 
@@ -399,9 +415,9 @@ export function ClientProfilesPanel({
     (value: string) => {
       setSearch(value);
       setSegment("all");
+      requestVersion.current += 1;
       if (debounceRef.current) clearTimeout(debounceRef.current);
       debounceRef.current = setTimeout(() => {
-        setPage(1);
         fetchPage(value, 1);
       }, 300);
     },
@@ -415,18 +431,16 @@ export function ClientProfilesPanel({
       : 1;
 
   const handlePrev = useCallback(() => {
-    if (page <= 1) return;
+    if (page <= 1 || isPending || queryPending) return;
     const next = page - 1;
-    setPage(next);
     fetchPage(search, next);
-  }, [page, search, fetchPage]);
+  }, [page, search, fetchPage, isPending, queryPending]);
 
   const handleNext = useCallback(() => {
-    if (page >= totalPages) return;
+    if (page >= totalPages || isPending || queryPending) return;
     const next = page + 1;
-    setPage(next);
     fetchPage(search, next);
-  }, [page, totalPages, search, fetchPage]);
+  }, [page, totalPages, search, fetchPage, isPending, queryPending]);
 
   // ── Segment filter (client-side within the fetched page) ──────────────────
   const clients = state.kind === "ok" ? state.clients : null;
@@ -490,7 +504,8 @@ export function ClientProfilesPanel({
   );
 
   return (
-    <div className="space-y-5">
+    // Keep the final actions scrollable above the fixed Coco / mobile nav.
+    <div className="space-y-5 pb-24">
       {/* ── Header ── */}
       <header className="flex flex-wrap items-end justify-between gap-3">
         <div>
@@ -510,7 +525,7 @@ export function ClientProfilesPanel({
           <div
             className="flex items-center rounded-xl border border-nq-border/60 bg-nq-surface/50 p-0.5"
             role="group"
-            aria-label="View mode"
+            aria-label={language === "vi" ? "Kiểu hiển thị" : "View mode"}
           >
             <ViewModeButton
               mode="cards"
@@ -564,7 +579,7 @@ export function ClientProfilesPanel({
           <div
             className="flex flex-wrap gap-2"
             role="tablist"
-            aria-label="Filter clients by segment"
+            aria-label={language === "vi" ? "Lọc theo nhóm khách" : "Filter clients by segment"}
           >
             {segmentChips.map((chip) => {
               const active = segment === chip.key;
@@ -579,7 +594,7 @@ export function ClientProfilesPanel({
                   data-testid={`client-segment-${chip.key}`}
                   onClick={() => setSegment(chip.key)}
                   className={cn(
-                    "inline-flex items-center gap-1.5 rounded-full border px-3 py-1.5 text-xs font-medium",
+                    "inline-flex min-h-11 min-w-11 items-center gap-1.5 rounded-full border px-3 py-1.5 text-xs font-medium",
                     "transition-colors duration-[var(--duration-nq-fast)]",
                     active
                       ? "border-nq-primary/50 bg-nq-primary/15 text-nq-primary"
@@ -608,7 +623,7 @@ export function ClientProfilesPanel({
       ) : null}
 
       {/* Subtle loading overlay during pagination / search transitions */}
-      {isPending && state.kind === "ok" ? (
+      {(isPending || queryPending) && state.kind === "ok" ? (
         <div
           aria-live="polite"
           aria-label={messages.loading}
@@ -620,18 +635,21 @@ export function ClientProfilesPanel({
 
       {/* ── Error state ── */}
       {state.kind === "error" ? (
-        <p
+        <div
           role="alert"
           data-testid="client-profiles-error"
           className="rounded-xl border border-nq-error/40 bg-nq-error/10 px-4 py-3 text-sm text-nq-error"
         >
           {errorCopy}
-        </p>
+          <Button className="mt-3 min-h-11" disabled={isPending} onClick={() => fetchPage(search, 1)}>
+            {messages.retry}
+          </Button>
+        </div>
       ) : null}
 
       {/* ── Empty state ── */}
-      {state.kind === "ok" && !isPending && filtered.length === 0 ? (
-        <EmptyState title={messages.empty} />
+      {state.kind === "ok" && !isPending && !queryPending && filtered.length === 0 ? (
+        <EmptyState title={search.trim() ? messages.noSearchResults : messages.empty} />
       ) : null}
 
       {/* ── Client list (view-mode aware) ── */}
@@ -760,15 +778,15 @@ export function ClientProfilesPanel({
       {state.kind === "ok" && totalCount > pageSize ? (
         <div
           className="flex items-center justify-between gap-4 border-t border-nq-border/40 pt-4"
-          aria-label="Pagination"
+          aria-label={language === "vi" ? "Phân trang" : "Pagination"}
         >
           <button
             type="button"
             onClick={handlePrev}
-            disabled={page <= 1 || isPending}
+            disabled={page <= 1 || isPending || queryPending}
             aria-label={messages.prevPage}
             className={cn(
-              "rounded-full border border-nq-border bg-nq-surface/60 px-5 py-2 text-sm font-medium",
+              "min-h-11 scroll-mb-48 rounded-full border border-nq-border bg-nq-surface/60 px-4 py-2 text-sm font-medium xl:scroll-mb-24",
               "transition-colors hover:border-nq-primary/40 hover:text-nq-primary",
               "disabled:cursor-not-allowed disabled:opacity-40",
             )}
@@ -786,10 +804,10 @@ export function ClientProfilesPanel({
           <button
             type="button"
             onClick={handleNext}
-            disabled={page >= totalPages || isPending}
+            disabled={page >= totalPages || isPending || queryPending}
             aria-label={messages.nextPage}
             className={cn(
-              "rounded-full border border-nq-border bg-nq-surface/60 px-5 py-2 text-sm font-medium",
+              "min-h-11 scroll-mb-48 rounded-full border border-nq-border bg-nq-surface/60 px-4 py-2 text-sm font-medium xl:scroll-mb-24",
               "transition-colors hover:border-nq-primary/40 hover:text-nq-primary",
               "disabled:cursor-not-allowed disabled:opacity-40",
             )}
@@ -831,7 +849,7 @@ function ViewModeButton({
       data-testid={testId}
       onClick={() => onClick(mode)}
       className={cn(
-        "flex h-9 w-9 items-center justify-center rounded-lg transition-colors duration-[var(--duration-nq-fast)]",
+        "flex h-11 w-11 items-center justify-center rounded-lg transition-colors duration-[var(--duration-nq-fast)]",
         active
           ? "bg-nq-primary/15 text-nq-primary shadow-sm"
           : "text-nq-muted hover:bg-nq-bg/60 hover:text-nq-foreground",

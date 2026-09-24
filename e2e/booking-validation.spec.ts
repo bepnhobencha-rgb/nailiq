@@ -1,4 +1,5 @@
 import { expect, test, type Page } from "@playwright/test";
+import { randomUUID } from "node:crypto";
 
 import {
   acceptSmsConsentIfPresented,
@@ -65,7 +66,8 @@ test.describe("Booking validation — info step", () => {
   test.beforeEach(async () => {
     const { slug } = await seedTestSalon({
       phone: "15553334444",
-      slug: "e2e-booking-validation",
+      // A new tenant gets a new public cache key, including repeats/retries.
+      slug: `e2e-booking-validation-${randomUUID().slice(0, 12)}`,
       name: "E2E Validation Salon",
     });
     testSlug = slug;

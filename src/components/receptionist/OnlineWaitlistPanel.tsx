@@ -1,10 +1,12 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
+import { createPortal } from "react-dom";
 import { useRouter } from "next/navigation";
 
 import { cn } from "@/shared/lib/cn";
 import { displayCustomerName } from "@/shared/lib/customerDisplayName";
+import { formatWaitlistDate } from "@/shared/lib/waitlistPresentation";
 import { useUserLanguage } from "@/shared/lib/useUserLanguage";
 import { getUserMessages } from "@/shared/i18n/user";
 import { inviteWaitlistEntry } from "@/shared/dashboard/receptionistActions";
@@ -294,9 +296,10 @@ export function OnlineWaitlistPanel({
               : entry.requestKind === "sequence"
                 ? t.sequenceRequest(entry.serviceCount)
                 : entry.serviceName;
+            const bookingDateLabel = formatWaitlistDate(entry.bookingDate, language);
             const subline = entry.preferredSlotLabel?.trim()
-              ? `${requestSummary} · ${entry.bookingDate} · ${entry.preferredSlotLabel}`
-              : `${requestSummary} · ${entry.bookingDate}`;
+              ? `${requestSummary} · ${bookingDateLabel} · ${entry.preferredSlotLabel}`
+              : `${requestSummary} · ${bookingDateLabel}`;
             return (
               <li
                 key={entry.id}
@@ -324,7 +327,12 @@ export function OnlineWaitlistPanel({
                     <div className="flex items-center justify-between gap-2">
                       <button
                         type="button"
-                        onClick={() => setSelectedEntry(entry)}
+                        onClick={(event) => {
+                          // Safari does not focus tapped buttons. Give Drawer an
+                          // explicit trigger to restore after either close path.
+                          event.currentTarget.focus({ preventScroll: true });
+                          setSelectedEntry(entry);
+                        }}
                         aria-label={t.openCustomerDetails(name)}
                         className="min-h-11 min-w-0 truncate rounded-md text-left text-sm font-medium text-nq-foreground underline decoration-nq-border underline-offset-4 outline-none focus-visible:ring-2 focus-visible:ring-nq-primary"
                       >
@@ -459,22 +467,25 @@ export function OnlineWaitlistPanel({
         </ul>
       )}
 
-      {toast ? (
+      {/* Escape the queue's scroll/transform containers so feedback remains
+          visible without moving focus or changing the receptionist's scroll. */}
+      {toast ? createPortal(
         <output
           data-testid="waitlist-toast"
           aria-live="polite"
           className={cn(
-            "mt-2 block rounded-lg border px-3 py-2 text-xs font-medium",
+            "pointer-events-none fixed left-4 right-4 top-[calc(env(safe-area-inset-top)+1rem)] z-[70] block rounded-lg border bg-nq-surface px-4 py-3 text-sm font-medium shadow-nq-card sm:left-auto sm:max-w-sm",
             toast.kind === "success" &&
-              "border-emerald-500/40 bg-emerald-500/10 text-emerald-400",
+              "border-nq-success/40 text-nq-success",
             toast.kind === "info" &&
-              "border-nq-primary/40 bg-nq-primary/10 text-nq-primary",
+              "border-nq-primary/40 text-nq-primary",
             toast.kind === "error" &&
-              "border-nq-error/60 bg-nq-error/15 text-nq-foreground",
+              "border-nq-error/60 text-nq-foreground",
           )}
         >
           {toast.text}
-        </output>
+        </output>,
+        document.body,
       ) : null}
 
       <Drawer
@@ -525,7 +536,7 @@ export function OnlineWaitlistPanel({
               </div>
               <div>
                 <dt className="text-xs font-medium text-nq-muted">{t.dateLabel}</dt>
-                <dd className="mt-1 text-nq-foreground">{selectedEntry.bookingDate}</dd>
+                <dd className="mt-1 text-nq-foreground">{formatWaitlistDate(selectedEntry.bookingDate, language)}</dd>
               </div>
               <div>
                 <dt className="text-xs font-medium text-nq-muted">{t.timeLabel}</dt>

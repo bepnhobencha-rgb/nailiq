@@ -73,6 +73,22 @@ export function projectWalkinGapSafety(
   }
 
   let gapStartsAtMs = nowMs;
+  // Scheduled windows cannot release a technician whom the authoritative
+  // engine still marks busy. This covers early starts and services running
+  // past their planned end: forecast only from the server's ready estimate.
+  // Unknown or expired estimates stay unknown until a fresh server snapshot
+  // confirms completion; never replace them with a false "Ready now".
+  if (
+    !candidate.isAvailableNow || candidate.currentBooking !== null ||
+    reservations.some(({ reservation }) => reservation.status === "in_progress")
+  ) {
+    const readyAtMs = candidate.estimatedReadyAt === null
+      ? NaN : Date.parse(candidate.estimatedReadyAt);
+    if (!Number.isFinite(readyAtMs) || readyAtMs <= nowMs) {
+      return blockedCandidate(candidate);
+    }
+    gapStartsAtMs = readyAtMs;
+  }
   for (const { startsAtMs, endsAtMs } of reservations.sort(
     (a, b) => a.startsAtMs - b.startsAtMs,
   )) {

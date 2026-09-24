@@ -1,5 +1,6 @@
 import { test, expect, type Page } from "@playwright/test";
 import { createClient } from "@supabase/supabase-js";
+import { randomUUID } from "node:crypto";
 
 import {
   acceptSmsConsentIfPresented,
@@ -39,8 +40,8 @@ test.skip(
 
 const supabase = createClient(supabaseUrl, serviceKey);
 
-const PRIMARY_SLUG = "e2e-booking-errors";
-const OTHER_SLUG = "e2e-booking-errors-other";
+let PRIMARY_SLUG: string;
+let OTHER_SLUG: string;
 
 const STANDARD_HOURS = {
   mon: { open: "09:00", close: "17:00", closed: false },
@@ -240,6 +241,13 @@ async function readSelectedSlotIso(page: Page): Promise<{
 
 test.describe("Booking error scenarios — /[slug]", () => {
   test.beforeEach(async () => {
+    // Each test creates a new salon identity. Reusing a deleted salon's slug
+    // can hit the public one-second catalog cache, whose old ID correctly
+    // fails the fresh booking-entitlement check. Keep same-salon pause/reopen
+    // coverage within its own test, without aliasing unrelated test tenants.
+    const suffix = randomUUID().slice(0, 12);
+    PRIMARY_SLUG = `e2e-booking-errors-${suffix}`;
+    OTHER_SLUG = `e2e-booking-other-${suffix}`;
     await seedTestSalon({
       phone: "15553330001",
       slug: PRIMARY_SLUG,

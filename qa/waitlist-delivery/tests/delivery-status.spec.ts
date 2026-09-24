@@ -12,9 +12,12 @@ const copy = {
     blockedTitle: "Notification needs attention",
     pendingTitle: "Notification in progress",
     unverifiedTitle: "Delivery not confirmed",
+    date: "Sep 20, 2026",
+    duration: "Waiting 9 days 12 hr 37 min",
+    group: "2 guests · 1 service",
   },
   vi: {
-    accepted: "SMS · Provider đã nhận",
+    accepted: "SMS · Đơn vị gửi đã nhận",
     delivered: "Email · Đã giao",
     failed: "SMS · Gửi thất bại",
     suppressed: "Email · Khách đã từ chối",
@@ -24,6 +27,9 @@ const copy = {
     blockedTitle: "Cần kiểm tra thông báo",
     pendingTitle: "Thông báo đang được gửi",
     unverifiedTitle: "Chưa xác nhận giao thông báo",
+    date: "20 thg 9, 2026",
+    duration: "Đã chờ 9 ngày 12 giờ 37 phút",
+    group: "2 khách · 1 dịch vụ",
   },
 } as const;
 
@@ -106,6 +112,10 @@ for (const language of ["en", "vi"] as const) {
     await expect(page.getByTestId("waitlist-invite-delivery-group")).toHaveCount(0);
     await expect(page.getByTestId("waitlist-arrange-delivery-group")).toBeVisible();
     await expect(page.getByTestId("waitlist-create-delivery-claimed")).toBeVisible();
+    const groupEntry = page.getByTestId("waitlist-entry-delivery-group");
+    await expect(groupEntry).toContainText(labels.group);
+    await expect(groupEntry).toContainText(labels.date);
+    await expect(groupEntry).not.toContainText("2026-09-20");
 
     // Read-only customer details: no send, call, or booking click.
     await expect(page.getByTestId("waitlist-customer-details")).toHaveCount(0);
@@ -116,7 +126,23 @@ for (const language of ["en", "vi"] as const) {
     const details = page.getByTestId("waitlist-customer-details");
     await expect(details).toBeVisible();
     await expect(details).toContainText("qa@example.test");
+    await expect(details).toContainText(labels.date);
+    await expect(details).toContainText(labels.duration);
+    await expect(details).not.toContainText("13717");
+    if (language === "vi") {
+      await expect(details).not.toContainText(/Waitlist|Provider/);
+    }
+    expect(await page.evaluate(() => document.documentElement.scrollWidth > window.innerWidth)).toBe(false);
+    await testInfo.attach(`waitlist-details-${language}`, {
+      body: await page.screenshot({ fullPage: true }),
+      contentType: "image/png",
+    });
     await page.keyboard.press("Escape");
+    await expect(details).toHaveCount(0);
+    await expect(nameButton).toBeFocused();
+    await nameButton.click();
+    await expect(details).toBeVisible();
+    await page.getByRole("button", { name: language === "vi" ? "Đóng thông tin khách" : "Close customer details", exact: true }).click();
     await expect(details).toHaveCount(0);
     await expect(nameButton).toBeFocused();
     expect(await page.evaluate(() => document.documentElement.scrollWidth > window.innerWidth)).toBe(false);

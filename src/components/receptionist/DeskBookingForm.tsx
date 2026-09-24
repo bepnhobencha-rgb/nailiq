@@ -22,12 +22,14 @@
 import {
   useCallback,
   useEffect,
+  useId,
   useLayoutEffect,
   useMemo,
   useRef,
   useState,
 } from "react";
 import { createPortal } from "react-dom";
+import { useOverlayFocus } from "@/components/ui/useOverlayFocus";
 import {
   addDeskAppointment,
   getDeskBookingData,
@@ -369,6 +371,7 @@ export default function DeskBookingForm({
   anchor,
 }: Props) {
   const tx = COPY[language === "vi" ? "vi" : "en"];
+  const formId = useId();
   // "Notify customer?" channels for the booking confirmation — pre-checked per
   // the salon's smart per-event default for 'create'.
   const [notifyChannels, setNotifyChannels] = useState<NotifyChannels>(() => {
@@ -385,6 +388,7 @@ export default function DeskBookingForm({
   const [phone, setPhone] = useState(initialPhone ?? "");
   const [name, setName] = useState(initialName ?? "");
   const [email, setEmail] = useState(initialEmail ?? "");
+  const emailInputRef = useRef<HTMLInputElement>(null);
   const [serviceId, setServiceId] = useState(initialServiceId ?? "");
   const [addonIds, setAddonIds] = useState<string[]>([]);
   const [staffId, setStaffId] = useState(initialStaffId ?? "");
@@ -435,19 +439,11 @@ export default function DeskBookingForm({
   // eslint-disable-next-line react-hooks/set-state-in-effect -- client-only mount flag for the portal
   useEffect(() => setMounted(true), []);
 
-  // Esc closes the form (QA: modal couldn't be dismissed with Esc).
-  useEffect(() => {
-    const onKey = (e: KeyboardEvent) => {
-      if (e.key === "Escape") onClose();
-    };
-    window.addEventListener("keydown", onKey);
-    return () => window.removeEventListener("keydown", onKey);
-  }, [onClose]);
-
   // Anchored-card mode: when opened from a grid click on a wide screen, render
   // as a card next to the clicked cell (grid stays visible) instead of a
   // centered modal. Mobile / header-button (no anchor) → modal.
   const popoverRef = useRef<HTMLDivElement>(null);
+  useOverlayFocus(mounted, popoverRef, onClose);
   const isWideScreen =
     mounted && typeof window !== "undefined" && window.innerWidth >= 700;
   const anchored = !!anchor && isWideScreen;
@@ -837,6 +833,7 @@ export default function DeskBookingForm({
       setPhone(hit.phone);
       setShowHits(false);
       setClientHits([]);
+      emailInputRef.current?.focus({ preventScroll: true });
     },
     [],
   );
@@ -1026,6 +1023,7 @@ export default function DeskBookingForm({
         ref={popoverRef}
         data-testid="desk-booking-form"
         role="dialog"
+        tabIndex={-1}
         aria-modal="true"
         aria-labelledby="desk-booking-heading"
         className={
@@ -1106,8 +1104,9 @@ export default function DeskBookingForm({
         ) : (
           <div className="space-y-3">
             <div>
-              <label className={labelCls}>{tx.phone}</label>
+              <label htmlFor={`${formId}-phone`} className={labelCls}>{tx.phone}</label>
               <input
+                id={`${formId}-phone`}
                 data-testid="desk-client-phone"
                 className={inputCls}
                 inputMode="tel"
@@ -1120,9 +1119,28 @@ export default function DeskBookingForm({
               ) : null}
             </div>
 
-            <div className="relative">
-              <label className={labelCls}>{tx.name}</label>
+            <div
+              className="relative"
+              onKeyDown={(event) => {
+                if (!showHits || (event.key !== "ArrowDown" && event.key !== "ArrowUp")) return;
+                const results = Array.from(event.currentTarget.querySelectorAll<HTMLButtonElement>('[data-testid="desk-client-search-hit"]'));
+                if (!results.length) return;
+                event.preventDefault();
+                const current = results.indexOf(document.activeElement as HTMLButtonElement);
+                const next = current < 0
+                  ? (event.key === "ArrowDown" ? 0 : results.length - 1)
+                  : (current + (event.key === "ArrowDown" ? 1 : -1) + results.length) % results.length;
+                results[next]?.focus();
+              }}
+              onBlur={(event) => {
+                // Name and search results form one keyboard interaction.
+                // Tabbing into a result must not dismiss it before activation.
+                if (!event.currentTarget.contains(event.relatedTarget)) setShowHits(false);
+              }}
+            >
+              <label htmlFor={`${formId}-name`} className={labelCls}>{tx.name}</label>
               <input
+                id={`${formId}-name`}
                 data-testid="desk-client-name"
                 className={inputCls}
                 value={name}
@@ -1130,10 +1148,6 @@ export default function DeskBookingForm({
                 onChange={(e) => setName(e.target.value)}
                 onFocus={() => {
                   if (clientHits.length > 0) setShowHits(true);
-                }}
-                onBlur={() => {
-                  // Delay so an onMouseDown pick registers before the list hides.
-                  setTimeout(() => setShowHits(false), 150);
                 }}
               />
               {showHits && clientHits.length > 0 ? (
@@ -1152,6 +1166,10 @@ export default function DeskBookingForm({
                           onMouseDown={(e) => {
                             e.preventDefault();
                             pickClient(h);
+                          }}
+                          onClick={(event) => {
+                            // Keyboard activation has no preceding mousedown.
+                            if (event.detail === 0) pickClient(h);
                           }}
                           className="flex min-h-11 w-full items-center justify-between gap-2 px-3 py-2 text-left text-base hover:bg-nq-primary/5"
                         >
@@ -1174,8 +1192,10 @@ export default function DeskBookingForm({
             </div>
 
             <div>
-              <label className={labelCls}>{tx.email}</label>
+              <label htmlFor={`${formId}-email`} className={labelCls}>{tx.email}</label>
               <input
+                id={`${formId}-email`}
+                ref={emailInputRef}
                 data-testid="desk-client-email"
                 className={inputCls}
                 inputMode="email"
@@ -1185,8 +1205,9 @@ export default function DeskBookingForm({
             </div>
 
             <div>
-              <label className={labelCls}>{tx.service}</label>
+              <label htmlFor={`${formId}-service`} className={labelCls}>{tx.service}</label>
               <select
+                id={`${formId}-service`}
                 data-testid="desk-service-select"
                 className={inputCls}
                 value={serviceId}
@@ -1229,8 +1250,9 @@ export default function DeskBookingForm({
             ) : null}
 
             <div>
-              <label className={labelCls}>{tx.staff}</label>
+              <label htmlFor={`${formId}-staff`} className={labelCls}>{tx.staff}</label>
               <select
+                id={`${formId}-staff`}
                 data-testid="desk-staff-select"
                 className={inputCls}
                 value={staffId}
@@ -1263,8 +1285,9 @@ export default function DeskBookingForm({
             </div>
 
             <div>
-              <label className={labelCls}>{tx.date}</label>
+              <label htmlFor={`${formId}-date`} className={labelCls}>{tx.date}</label>
               <input
+                id={`${formId}-date`}
                 data-testid="desk-date-input"
                 type="date"
                 className={inputCls}
@@ -1510,8 +1533,9 @@ export default function DeskBookingForm({
             ) : null}
 
             <div>
-              <label className={labelCls}>{tx.notes}</label>
+              <label htmlFor={`${formId}-notes`} className={labelCls}>{tx.notes}</label>
               <input
+                id={`${formId}-notes`}
                 className={inputCls}
                 value={notes}
                 onChange={(e) => setNotes(e.target.value)}

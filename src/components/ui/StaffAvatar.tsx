@@ -29,6 +29,13 @@ const statusLabels: Record<StaffStatus, string> = {
   offline: "Offline",
 };
 
+const statusLabelsVi: Record<StaffStatus, string> = {
+  available: "Đang rảnh",
+  busy: "Đang bận",
+  overbooked: "Trùng lịch",
+  offline: "Ngoại tuyến",
+};
+
 const workloadFillColors: Record<StaffStatus, string> = {
   available: "bg-nq-success",
   busy: "bg-nq-warning",
@@ -63,6 +70,8 @@ export type StaffAvatarProps = {
   showStatus?: boolean;
   size: StaffSize;
   className?: string;
+  /** Display language only; does not change the server-derived status. */
+  language?: "en" | "vi";
 };
 
 export function StaffAvatar({
@@ -74,6 +83,7 @@ export function StaffAvatar({
   showStatus = true,
   size,
   className,
+  language = "en",
 }: StaffAvatarProps) {
   const initials = getInitials(name);
   const safeWorkload =
@@ -115,7 +125,7 @@ export function StaffAvatar({
         {showStatus ? (
           <span
             role="status"
-            aria-label={statusLabels[status]}
+            aria-label={(language === "vi" ? statusLabelsVi : statusLabels)[status]}
             className={cn(
               "absolute bottom-0 right-0 inline-block rounded-full ring-2 ring-nq-bg",
               dotSizeClasses[size],
@@ -131,7 +141,9 @@ export function StaffAvatar({
           aria-valuemin={0}
           aria-valuemax={100}
           aria-valuenow={safeWorkload}
-          aria-label={`${name} workload ${safeWorkload}%`}
+          aria-label={language === "vi"
+            ? `Mức độ bận của ${name}: ${safeWorkload}%`
+            : `${name} workload ${safeWorkload}%`}
           className="h-1 w-full overflow-hidden rounded-full bg-nq-border/60"
         >
           <div

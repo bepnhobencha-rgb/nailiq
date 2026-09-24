@@ -237,6 +237,7 @@ export function NotificationDeliveryRescueCard({
             {hasConfigIssue ? (
               <Link
                 href={`/dashboard/${encodeURIComponent(slug)}/settings`}
+                prefetch={false}
                 className="inline-flex min-h-12 items-center justify-center rounded-full bg-nq-surface px-6 text-base font-medium text-nq-foreground ring-1 ring-inset ring-nq-border transition-colors hover:bg-nq-surface/90 focus-visible:outline-none focus-visible:ring-2 focus-visible:ring-nq-primary"
               >
                 {vi ? "Cài đặt gửi tin" : "Messaging settings"}

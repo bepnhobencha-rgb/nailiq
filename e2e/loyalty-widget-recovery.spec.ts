@@ -11,6 +11,7 @@ type LoadProbe = {
   attempts: number;
   errors: string[];
   settled: boolean;
+  mode: "fail" | "hold" | "pass";
   reject?: () => void;
 };
 type ProbeWindow = Window & { __loyaltyLoad?: LoadProbe };
@@ -28,7 +29,13 @@ function actionId(name: string) {
 
 async function injectReadFailure(page: Page, action: string, hold = false) {
   await page.addInitScript(({ id, hold }) => {
-    const state: LoadProbe = { attempts: 0, errors: [], settled: false };
+    const state: LoadProbe = { attempts: 0, errors: [], settled: false, mode: hold ? "hold" : "fail" };
+    const pending = new Set<() => void>();
+    state.reject = () => {
+      state.mode = "fail";
+      for (const reject of pending) reject();
+      pending.clear();
+    };
     (window as ProbeWindow).__loyaltyLoad = state;
     window.addEventListener("error", event => state.errors.push(event.message));
     window.addEventListener("unhandledrejection", event => state.errors.push(String(event.reason)));
@@ -37,12 +44,15 @@ async function injectReadFailure(page: Page, action: string, hold = false) {
       const request = new Request(input, init);
       if (request.headers.get("next-action") === id) {
         state.attempts += 1;
-        if (hold || state.attempts === 2) {
+        // Dashboard hydration/manual/poll refreshes can legitimately read again.
+        // Model an outage by phase, not by the global request ordinal, so a
+        // background read cannot accidentally become the successful retry.
+        if (state.mode === "hold") {
           return new Promise<Response>((_, reject) => {
-            state.reject = () => reject(new TypeError("QA loyalty read interrupted"));
+            pending.add(() => reject(new TypeError("QA loyalty read interrupted")));
           }).finally(() => { state.settled = true; });
         }
-        if (state.attempts === 1) throw new TypeError("QA loyalty read interrupted");
+        if (state.mode === "fail") throw new TypeError("QA loyalty read interrupted");
       }
       return originalFetch(input, init);
     };
@@ -50,11 +60,12 @@ async function injectReadFailure(page: Page, action: string, hold = false) {
 }
 
 async function signIn(page: Page, language: "en" | "vi") {
-  await page.context().addCookies([{ name: "nailiq-user-lang", value: language, url: "http://localhost:3000" }]);
-  await page.addInitScript(lang => {
+  const origin = new URL(test.info().project.use.baseURL ?? "http://localhost:3000").origin;
+  await page.context().addCookies([{ name: "nailiq-user-lang", value: language, url: origin }]);
+  await page.addInitScript(({ lang, origin }) => {
     // Teardown opens about:blank, where localStorage is intentionally unavailable.
-    if (location.origin === "http://localhost:3000") localStorage.setItem("nailiq-user-lang", lang);
-  }, language);
+    if (location.origin === origin) localStorage.setItem("nailiq-user-lang", lang);
+  }, { lang: language, origin });
   const digest = createHash("sha256").update(owner.email).digest("hex");
   await page.setExtraHTTPHeaders({ "x-forwarded-for": `2001:db8::${digest.slice(0, 4)}:${digest.slice(4, 8)}` });
   await page.goto("/register");
@@ -94,13 +105,19 @@ for (const { action, language } of [
     if (isMobile && language === "vi") await page.setViewportSize({ width: 320, height: 568 });
     await injectReadFailure(page, action);
     await signIn(page, language);
-    await expect.poll(() => page.evaluate(() => (window as ProbeWindow).__loyaltyLoad?.attempts)).toBe(1);
+    await expect.poll(() => page.evaluate(() => (window as ProbeWindow).__loyaltyLoad?.attempts ?? 0)).toBeGreaterThanOrEqual(1);
     const alert = page.getByRole("alert").filter({ hasText: language === "vi" ? "Chưa tải được thông tin tích điểm" : "Unable to load loyalty information" });
     const retry = page.getByRole("button", { name: language === "vi" ? "Thử tải lại tích điểm" : "Retry loyalty load" });
     await expect(alert).toBeVisible();
     await expect(page.getByText("No program configured.", { exact: false })).toHaveCount(0);
+    await expect(page.getByText("Chưa thiết lập chương trình.", { exact: false })).toHaveCount(0);
+    const beforeRetry = await page.evaluate(() => {
+      const state = (window as ProbeWindow).__loyaltyLoad!;
+      state.mode = "hold";
+      return state.attempts;
+    });
     await retry.click();
-    await expect.poll(() => page.evaluate(() => (window as ProbeWindow).__loyaltyLoad?.attempts)).toBe(2);
+    await expect.poll(() => page.evaluate(() => (window as ProbeWindow).__loyaltyLoad?.attempts ?? 0)).toBeGreaterThan(beforeRetry);
     await expect(retry).toBeDisabled();
     await expect(retry).toHaveAttribute("aria-busy", "true");
     await page.evaluate(() => (window as ProbeWindow).__loyaltyLoad!.reject!());
@@ -118,10 +135,15 @@ for (const { action, language } of [
     expect(retryBox!.height).toBeGreaterThanOrEqual(44);
     expect(retryBox!.x).toBeGreaterThanOrEqual(0);
     expect(retryBox!.x + retryBox!.width).toBeLessThanOrEqual(page.viewportSize()!.width);
+    const beforeRecovery = await page.evaluate(() => {
+      const state = (window as ProbeWindow).__loyaltyLoad!;
+      state.mode = "pass";
+      return state.attempts;
+    });
     await retry.click();
-    await expect(page.getByText("No program configured.", { exact: false })).toBeVisible();
+    await expect(page.getByText(language === "vi" ? "Chưa thiết lập chương trình." : "No program configured.", { exact: false })).toBeVisible();
     await expect(alert).toHaveCount(0);
-    expect(await page.evaluate(() => (window as ProbeWindow).__loyaltyLoad?.attempts)).toBe(3);
+    expect(await page.evaluate(() => (window as ProbeWindow).__loyaltyLoad?.attempts ?? 0)).toBeGreaterThan(beforeRecovery);
     expect(await page.evaluate(() => (window as ProbeWindow).__loyaltyLoad?.errors)).toEqual([]);
   });
 }
@@ -129,7 +151,7 @@ for (const { action, language } of [
 test("leaving the dashboard before a loyalty read rejects does not leak an unhandled rejection", async ({ page }) => {
   await injectReadFailure(page, "getLoyaltyProgram", true);
   await signIn(page, "en");
-  await expect.poll(() => page.evaluate(() => typeof (window as ProbeWindow).__loyaltyLoad?.reject)).toBe("function");
+  await expect.poll(() => page.evaluate(() => (window as ProbeWindow).__loyaltyLoad?.attempts ?? 0)).toBeGreaterThanOrEqual(1);
   await page.locator(`a[href="/dashboard/${slug}/clients"]`).filter({ visible: true }).first().click();
   await expect(page).toHaveURL(new RegExp(`/dashboard/${slug}/clients$`));
   await expect(page.getByTestId("client-profiles-search")).toBeVisible();

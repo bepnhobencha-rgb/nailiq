@@ -2,6 +2,7 @@
 
 import { useCallback, useEffect, useRef, useState, useTransition } from "react";
 import { createPortal } from "react-dom";
+import { useOverlayFocus } from "@/components/ui/useOverlayFocus";
 
 import { Badge, type BadgeVariant } from "@/components/ui/Badge";
 import { Button } from "@/components/ui/Button";
@@ -672,6 +673,7 @@ export function BookingDetailDrawer({
   const [noteErr, setNoteErr] = useState(false);
   const [noteSaving, startNoteSave] = useTransition();
   const [portalEl, setPortalEl] = useState<HTMLElement | null>(null);
+  const panelRef = useRef<HTMLDivElement>(null);
   // P0.8 — phone is masked by default; receptionist must explicitly
   // tap "Show number" to reveal. Resets whenever the drawer closes or
   // switches to a different booking, so an unrelated open never leaks
@@ -715,6 +717,7 @@ export function BookingDetailDrawer({
     setEditMode(false);
     onClose();
   }, [onClose]);
+  useOverlayFocus(open && portalEl !== null, panelRef, handleClose);
 
   /* eslint-disable react-hooks/set-state-in-effect -- ARCHITECTURE_LOCK: exit edit mode + reset phone reveal when drawer closes */
   useEffect(() => {
@@ -736,15 +739,6 @@ export function BookingDetailDrawer({
     setNoteOverride(undefined);
     setNoteErr(false);
   }, [deskEdit?.booking.id]);
-
-  useEffect(() => {
-    if (!open) return;
-    const esc = (e: KeyboardEvent) => {
-      if (e.key === "Escape") handleClose();
-    };
-    window.addEventListener("keydown", esc);
-    return () => window.removeEventListener("keydown", esc);
-  }, [open, handleClose]);
 
   // Edit visibility = booking is in an editable status AND viewer's role
   // allows it. `roleAllowsEditBooking` is the role-side gate (owner/senior
@@ -840,6 +834,8 @@ export function BookingDetailDrawer({
 
       <div
         data-testid="booking-detail-drawer"
+        ref={panelRef}
+        tabIndex={-1}
         role="dialog"
         aria-modal="true"
         aria-labelledby="nq-booking-detail-title"

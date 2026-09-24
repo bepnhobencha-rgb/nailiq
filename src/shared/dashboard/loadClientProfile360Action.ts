@@ -8,6 +8,7 @@ import { inferReturnCadenceDays } from "@/shared/booking/returnRhythm";
 import { getSalonDisplayName } from "@/shared/dashboard/salonClientName";
 import { isFrontDeskRole, canViewClientSpend } from "@/shared/lib/salonMemberRole";
 import { loadSalonVipProfileIds } from "@/shared/dashboard/salonVipStatus";
+import { serviceValueCents } from "@/shared/dashboard/serviceValueCents";
 
 // ---------------------------------------------------------------------------
 // Exported types — UI agent depends on EXACT field names below
@@ -26,6 +27,7 @@ export type C360Booking = {
 
 
 export type ClientProfile360 = {
+  salonTimezone: string;
   profile: {
     id: string | null;
     name: string | null;
@@ -40,6 +42,7 @@ export type ClientProfile360 = {
   };
   stats: {
     lifetimeSpentCents: number | null;
+    spendBasis?: "synced_payments" | "completed_service_value" | null;
     visitCount: number;
     avgTicketCents: number | null;
     firstVisitAt: string | null;
@@ -192,7 +195,7 @@ export async function loadClientProfile360(
     supabase
       .from("bookings")
       .select(
-        "id, start_time_utc, end_time_utc, price_cents, status, booking_channel, services!bookings_service_id_fkey ( name ), staff ( name )",
+        "id, start_time_utc, end_time_utc, price_cents, addon_price_cents, status, booking_channel, services!bookings_service_id_fkey ( name ), staff ( name )",
       )
       .eq("salon_id", salonId)
       .eq("client_phone", clientPhone)
@@ -296,6 +299,7 @@ export async function loadClientProfile360(
     start_time_utc: string;
     end_time_utc?: string | null;
     price_cents?: number | null;
+    addon_price_cents?: number | null;
     status: string;
     booking_channel?: string | null;
     services?: { name?: string | null } | Array<{ name?: string | null }> | null;
@@ -334,7 +338,9 @@ export async function loadClientProfile360(
       serviceName: svcName,
       staffName,
       priceCents:
-        canViewSpend && typeof b.price_cents === "number" ? b.price_cents : null,
+        canViewSpend && typeof b.price_cents === "number"
+          ? serviceValueCents({ price_cents: b.price_cents, addon_price_cents: b.addon_price_cents })
+          : null,
       status: b.status,
       channel: b.booking_channel ?? null,
     };
@@ -354,7 +360,7 @@ export async function loadClientProfile360(
     // Stats
     if (status === "completed") {
       completedCount += 1;
-      lifetimeSpentCents += typeof b.price_cents === "number" ? b.price_cents : 0;
+      lifetimeSpentCents += serviceValueCents({ price_cents: b.price_cents ?? null, addon_price_cents: b.addon_price_cents });
       const ts = b.start_time_utc;
       if (!firstVisitAt || ts < firstVisitAt) firstVisitAt = ts;
       if (!lastVisitAt || ts > lastVisitAt) lastVisitAt = ts;
@@ -386,6 +392,7 @@ export async function loadClientProfile360(
   // Prefer REAL money paid (synced from Square Payments) over the sum of booking
   // list-prices, which ignores tips, discounts, no-shows, walk-in upsells, etc.
   let spentCents = lifetimeSpentCents;
+  let spendBasis: ClientProfile360["stats"]["spendBasis"] = "completed_service_value";
   if (canViewSpend && profileRow?.id) {
     const { data: spendRow } = await supabase
       .from("salon_client_spend" as never)
@@ -394,7 +401,10 @@ export async function loadClientProfile360(
       .eq("client_profile_id", profileRow.id)
       .maybeSingle();
     const real = Number((spendRow as { total_spend_cents?: number } | null)?.total_spend_cents ?? 0);
-    if (real > 0) spentCents = real;
+    if (real > 0) {
+      spentCents = real;
+      spendBasis = "synced_payments";
+    }
   }
   const avgTicketCents =
     visitCount > 0 ? Math.round(spentCents / visitCount) : 0;
@@ -413,6 +423,7 @@ export async function loadClientProfile360(
 
   const stats: ClientProfile360["stats"] = {
     lifetimeSpentCents: canViewSpend ? spentCents : null,
+    spendBasis: canViewSpend ? spendBasis : null,
     visitCount,
     avgTicketCents: canViewSpend ? avgTicketCents : null,
     firstVisitAt,
@@ -770,6 +781,7 @@ export async function loadClientProfile360(
 
   // ── Assemble result ───────────────────────────────────────────────────────
   const data: ClientProfile360 = {
+    salonTimezone: ctx.salon.timezone,
     profile,
     stats,
     reliability,

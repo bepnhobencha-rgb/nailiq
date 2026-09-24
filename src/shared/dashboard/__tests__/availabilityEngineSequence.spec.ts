@@ -37,6 +37,61 @@ describe("segment-aware operational availability", () => {
     vi.useRealTimers();
   });
 
+  for (const scheduleModel of ["single", "segments_v1"] as const) {
+    it.each([
+      ["active now", "2026-08-21T18:00:00.000Z", "2026-08-21T19:00:00.000Z"],
+      ["at the exact planned end", "2026-08-21T18:00:00.000Z", "2026-08-21T18:27:00.000Z"],
+      ["past the planned end", "2026-08-21T18:00:00.000Z", "2026-08-21T18:20:00.000Z"],
+      ["started early beyond the forecast horizon", "2026-08-22T04:00:00.000Z", "2026-08-22T05:00:00.000Z"],
+    ])(`keeps ${scheduleModel} in-progress staff busy %s until completion`, async (_label, start, end) => {
+      const staff = query({ data: [{ id: "staff-a", name: "Ana", status: "active" }], error: null });
+      const bookings = query({
+        data: scheduleModel === "single" ? [{
+          id: "active-booking", staff_id: "staff-a", resource_id: "room-1",
+          client_name: "Synthetic guest", status: "in_progress", schedule_model: scheduleModel,
+          start_time_utc: start, end_time_utc: end, group_id: null, staff_request_note: null,
+        }] : [], error: null,
+      });
+      const segments = query({
+        data: scheduleModel === "segments_v1" ? [{
+          id: "active-segment", booking_id: "active-booking", staff_id: "staff-a",
+          resource_id: "room-1", prep_minutes: 0, customer_start_utc: start,
+          customer_end_utc: end, occupied_start_utc: start, occupied_end_utc: end,
+          reservation_status: "in_progress",
+          booking: { client_name: "Synthetic guest", group_id: null, schedule_model: scheduleModel },
+        }] : [], error: null,
+      });
+      const queueRows = query({ data: [], error: null });
+      let bookingReads = 0;
+      mocks.getDashboardWriteClient.mockResolvedValue({
+        salon: { id: "salon-a" },
+        supabase: { from: vi.fn((table: string) => table === "staff" ? staff : ++bookingReads === 1 ? bookings : queueRows) },
+      });
+      mocks.createServiceRoleClient.mockReturnValue({ from: vi.fn(() => segments) });
+
+      const result = await getStaffAvailability("salon-a", null);
+      expect(result.ok).toBe(true);
+      if (!result.ok) return;
+      expect(result.staff[0]).toMatchObject({
+        isAvailableNow: false,
+        currentBooking: { bookingId: "active-booking", resourceId: "room-1", scheduleModel },
+      });
+      // Query predicates must not discard an explicit active service before
+      // the mapper can inspect it, even when the stored planned start is future.
+      expect(bookings.lte).not.toHaveBeenCalledWith("start_time_utc", expect.anything());
+      expect(segments.lte).not.toHaveBeenCalledWith("occupied_start_utc", expect.anything());
+      expect(bookings.or).toHaveBeenCalledWith(
+        "status.eq.in_progress,and(start_time_utc.lte.2026-08-21T22:27:00.000Z,end_time_utc.gte.2026-08-21T18:27:00.000Z)",
+      );
+      expect(segments.or).toHaveBeenCalledWith(
+        "reservation_status.eq.in_progress,and(occupied_start_utc.lte.2026-08-21T22:27:00.000Z,occupied_end_utc.gte.2026-08-21T18:27:00.000Z)",
+      );
+      if (Date.parse(end) > Date.parse("2026-08-21T22:27:00.000Z")) {
+        expect(result.staff[0].estimatedReadyAt).toBeNull();
+      }
+    });
+  }
+
   it("attributes a later segment's prep occupancy to its exact staff/resource without parent double-counting", async () => {
     const staff = query({
       data: [
@@ -159,10 +214,10 @@ describe("segment-aware operational availability", () => {
     expect(segments.eq).toHaveBeenCalledWith("booking.salon_id", "salon-a");
     expect(segments.eq).toHaveBeenCalledWith("booking.schedule_model", "segments_v1");
     expect(bookings.or).toHaveBeenCalledWith(
-      "status.eq.in_progress,end_time_utc.gte.2026-08-21T18:27:00.000Z",
+      "status.eq.in_progress,and(start_time_utc.lte.2026-08-21T22:27:00.000Z,end_time_utc.gte.2026-08-21T18:27:00.000Z)",
     );
     expect(segments.or).toHaveBeenCalledWith(
-      "reservation_status.eq.in_progress,occupied_end_utc.gte.2026-08-21T18:27:00.000Z",
+      "reservation_status.eq.in_progress,and(occupied_start_utc.lte.2026-08-21T22:27:00.000Z,occupied_end_utc.gte.2026-08-21T18:27:00.000Z)",
     );
     expect(serviceRole.from).toHaveBeenCalledWith("booking_service_segments");
   });

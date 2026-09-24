@@ -7,6 +7,7 @@ export interface DateSwitcherProps {
   selectedOffset: -1 | 0 | 1 | null;
   /** Localized labels */
   labels: {
+    day?: string;
     yesterday: string;
     today: string;
     tomorrow: string;
@@ -29,7 +30,7 @@ export function DateSwitcher({ selectedOffset, labels, onChange }: DateSwitcherP
         "inline-flex rounded-full border border-nq-muted/35 bg-nq-surface p-0.5",
       )}
       role="tablist"
-      aria-label="Day"
+      aria-label={labels.day ?? "Day"}
     >
       {OFFSETS.map((offset) => {
         const active = selectedOffset === offset;

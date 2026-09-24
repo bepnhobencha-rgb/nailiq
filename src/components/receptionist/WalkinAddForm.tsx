@@ -135,6 +135,8 @@ export interface WalkinAddFormProps {
     readyNow: string;
     /** "~{n} min wait" — interpolate {n}. */
     waitMinutesShort: (n: number) => string;
+    waitUnknown: string;
+    serviceDuration: (minutes: number) => string;
     /** "Ready around {time}" — interpolate {time}. */
     readyAroundTime: string;
     /** Available-now action: bypasses the queue. */
@@ -1308,7 +1310,7 @@ export function WalkinAddForm({
                   {s.name}
                 </span>
                 <span className="mt-0.5 font-mono text-base text-nq-muted">
-                  {s.duration_minutes}m · {formatSvc(s, currency)}
+                  {labels.serviceDuration(s.duration_minutes)} · {formatSvc(s, currency)}
                 </span>
               </button>
             );
@@ -1349,7 +1351,7 @@ export function WalkinAddForm({
                       >
                         <span className="font-medium">{s.name}</span>
                         <span className="font-mono text-base text-nq-muted">
-                          {s.duration_minutes}m ·{" "}
+                          {labels.serviceDuration(s.duration_minutes)} ·{" "}
                           {formatSvc(s, currency)}
                         </span>
                       </button>
@@ -1857,13 +1859,16 @@ function AvailabilityCard({
 
   const isHeavy = recommended.overloaded;
   const isFree = recommended.isAvailableNow;
+  const waitUnknown = !isFree && !readyAtClock;
+  const waitDescription = isFree ? labels.readyNow : waitUnknown
+    ? labels.waitUnknown : labels.waitMinutesShort(recommended.waitMinutes);
 
   const recHeading = isAutoMatch
     ? labels.bestMatchRecommendation
         .replace("{name}", recommended.staffName)
         .replace(
           "{wait}",
-          isFree ? labels.readyNow : labels.waitMinutesShort(recommended.waitMinutes),
+          waitDescription,
         )
     : recommended.staffName;
 
@@ -1892,6 +1897,8 @@ function AvailabilityCard({
             <p className="text-[11px] text-nq-muted">
               {isFree
                 ? labels.readyNow
+                : waitUnknown
+                  ? labels.waitUnknown
                 : isHeavy
                   ? labels.heavyLoadDetail
                   : labels.waitMinutesShort(recommended.waitMinutes)}
@@ -1907,7 +1914,7 @@ function AvailabilityCard({
               {labels.queueAheadHint(recommended.queueAhead)}
             </p>
           ) : null}
-          {recommended.confidenceLevel === "low" && !isHeavy ? (
+          {recommended.confidenceLevel === "low" && !isHeavy && !waitUnknown ? (
             <p className="text-[11px] font-semibold text-amber-700">
               {labels.confidenceLow}
             </p>

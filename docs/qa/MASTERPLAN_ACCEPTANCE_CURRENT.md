@@ -1,6 +1,6 @@
 # NailIQ — Bảng nghiệm thu Masterplan
 
-Cập nhật bằng chứng Auth QA: 23/09/2026 (Vancouver); các mốc Production dưới
+Cập nhật bằng chứng Auth, Receptionist và Owner/Admin QA: 24/09/2026 (Vancouver); các mốc Production dưới
 đây vẫn là snapshot 22/09, không phải lần kiểm chứng Production mới.
 Đây là bảng theo dõi nghiệm thu hiện hành; không thay đổi
 phạm vi, chính sách hay điều kiện đạt trong `docs/MASTER_PLAN.md`.
@@ -11,6 +11,62 @@ nghĩa đã xác nhận có lỗi.
 
 ## 1. Mốc và cách đọc
 
+### Checkpoint Preview Ngày 5–6 — 24/09/2026
+
+- **Checkpoint mới hơn, chưa đạt CI:** PR đã Ready for review ở commit tài
+  liệu `04c7adf11e451e4ae0ac4bdfc64ac11dad76e141`. E2E run
+  `36024787391` ghi nhận WebKit `page-crash` ở 1/10 lần đặt hẹn; non-RC và
+  gate tổng hợp FAIL. Booking synthetic trả `success=true`, nhưng chưa xác
+  định nguyên nhân browser crash. Local macOS cùng assertion: 10/10 PASS,
+  retries=0; không thay thế kết quả Linux CI. Giữ chặn phát hành. Mốc CI xanh
+  `6c31974` bên dưới là lịch sử, không phải CI hiện hành của `04c7adf`.
+- PR [#1424](https://github.com/bepnhobencha-rgb/nailiq/pull/1424) OPEN/Draft,
+  head `6c31974ac4568e30fb083b459462fe9a1b9f62cb`. Đã commit/push và deploy
+  Preview theo phê duyệt; **chưa merge hoặc deploy Production**.
+- Preview `dpl_BT1f9uLZgdFWZt5ivgCNr1TboxX5` READY; browser `/api/version`
+  khớp head. Hosted computer-use Owner/Receptionist đã kiểm chứng giờ hồ sơ
+  theo salon, giá trị dịch vụ $55 của fixture, ẩn số tiền khỏi tiếp tân,
+  EN/VI, mobile 375×667 và chuyển về salon được phép khi truy cập chéo.
+  Đây là phạm vi kiểm thử cụ thể, không phải toàn bộ UI hoặc toàn bộ IDOR.
+- Hai salon/tài khoản synthetic của lượt hosted verification đã dọn, phiên đã
+  thu hồi; SMS/email/call/payment OFF. Fixture bàn giao iPhone mới được tạo sau
+  lượt đó vẫn chờ nghiệm thu/dọn, không được gộp vào receipt cleanup cũ; xem
+  [phiếu bàn giao](masterplan-day-6-admin-handoff-2026-09-24.md).
+  Production giữ deployment `dpl_FX3WJBMueRCword7mwJyyhafPNPc` theo lần
+  đối chiếu read-only cuối lượt hosted; không dùng để chứng nhận mọi luồng Live.
+- Chi tiết, CI cuối và giới hạn tại
+  [bằng chứng Preview](day5-day6-preview-verification-2026-09-24.md).
+  CI cuối cùng trên exact head: **22 SUCCESS, 2 SKIPPED, không còn pending
+  hoặc FAIL**; recovery 196 PASS. Giữ riêng cảnh báo stream-abort, không gọi
+  runtime hoàn toàn sạch và không tính skipped thành PASS.
+- Các câu “chưa commit/push/Preview” trong checkpoint local bên dưới là lịch
+  sử đã được checkpoint này thay thế. V1-21 người mới và V1-24 iPhone vật lý
+  vẫn NOT PROVEN; Ngày 6 chưa ký đóng toàn bộ.
+
+### Các checkpoint trước — giữ nguyên phạm vi lịch sử
+
+- [Batch review Ngày 5–6](day5-day6-review-batch-2026-09-24.md): full unit
+  6.658 PASS / 65 skipped ở cổng trước commit; chưa Preview/Production.
+  Chặn auto-deploy nhánh mới đến khi cấu hình QA riêng được xác minh.
+- Ngày 6: [Owner/Admin local QA](masterplan-day-6-owner-2026-09-24.md).
+  Sửa cảnh báo ngày mai, giá dịch vụ phụ trong Pulse/hồ sơ khách, chú thích
+  nguồn số tiền, EN/VI và prefetch link phụ. Bổ sung sửa tab ngày trước hydration,
+  KPI ngày/tên khách dài trên điện thoại. Lượt bổ sung sửa nút phân trang bị Coco
+  che, race tìm kiếm/phân trang và thông báo không có kết quả/thử lại khi lỗi.
+  Thêm tra cứu Loyalty read-only, khóa nút cộng/trừ theo server, xóa thẻ cũ
+  khi đổi số và phục hồi lỗi mạng. Sửa mất form khi Dashboard refresh/polling;
+  giữ số/con trỏ nhưng vẫn tải program/stats mới, không đổi khóa ghi điểm.
+  Matrix cuối 30/30 real-Auth Owner/Admin
+  UI/SSR PASS, không retry; 54/54 unit liên quan PASS (284 unit là lượt trước).
+  Computer Use 320px kiểm ba trang của 52 khách giả và thẻ tích điểm synthetic.
+  Chưa commit/push/Preview/Production; không chứng minh V1-24 iPhone vật lý.
+- Ngày 5: [Receptionist local QA](masterplan-day-5-receptionist-2026-09-24.md)
+  trên nhánh `qa/day5-receptionist-20260924`, base `f6bf087b9d6f4354c3742ee270ab6aaf78cc8d9d`.
+  208 unit tests, 6 UI journeys desktop/iPhone/iPad EN/VI với Auth receptionist
+  thật, 9 tenant/role và 6 race/retry PASS. Computer Use xác minh focus,
+  busy/free, tiếng Việt và giữ ngày sau refresh/reload. Chưa commit/push/Preview
+  hoặc deploy; không bằng chứng Production mới. Nghiệm thu tiếp tân mới thật
+  theo V1-21 chưa chạy; [phiếu nghiệm thu](day5-human-acceptance-sheet.md) để riêng.
 - Ngày 4: [gói Auth/Owner QA](day4-auth-session-closeout-2026-09-23.md)
   đã PASS trong phạm vi được ghi: branded magic-link vào Inbox iCloud,
   callback tạo phiên Owner, reload giữ phiên và cleanup đúng salon synthetic.
@@ -102,11 +158,11 @@ ngày 20/09. Nguồn viết tắt được giải thích ở mục 6.
 | V1-18 | Mất response lưu thẻ | R11/P1-02 Sandbox race/reconcile PASS | Không phát lại CreateCard khi unknown; kiểm tra candidate khi đường này thay đổi |
 | V1-19 | Recovery/exception | #1408 đã deploy; Owner QA Preview PASS | Rà soát exception hiện tại với Owner; số liệu 14/09 không coi là số hiện tại |
 | V1-20 | Không thu nhầm | PASS lịch sử; QA thiếu receipt không chargeable | Nghiệm thu thu tiền là phạm vi riêng, không suy từ lưu thẻ |
-| V1-21 | Năm việc tiếp tân | P1-03 automated journey PASS | Người mới làm đủ năm việc và ghi thời gian |
+| V1-21 | Năm việc tiếp tân | Local: 6 real-Auth UI journeys EN/VI và 15 tenant/race/retry PASS. PR #1424 có Preview; hosted receptionist kiểm chứng giờ hồ sơ, ẩn tiền theo quyền và route chéo salon. CI exact head: desktop 109 PASS/4 SKIP, mobile 103 PASS/10 SKIP; chưa Production | Người mới thật tạo hẹn/walk-in mỗi việc dưới 60 giây theo Giai đoạn 2, không hướng dẫn; pilot có ngưỡng walk-in dưới 30 giây riêng. Ghi đủ năm việc, không dùng thời gian robot thay người |
 | V1-22 | Queue/waitlist | P1-01/P1-03 synthetic UI PASS; #1406/#1407 đã deploy | Offer/claim đúng khách và terminal provider delivery có chứng cứ |
 | V1-23 | Thông báo/reminder | P1-01 delivery truth đã deploy; synthetic callback PASS | Provider QA terminal delivery chưa hoàn tất trong hồ sơ; acceptance 24h/3h và opt-out |
-| V1-24 | Admin một tay | Mobile QA một phần | iPhone vật lý: hôm nay/doanh thu/khách/lịch/cảnh báo |
-| V1-25 | EN/VI và thiết bị | P1-03 bốn device/language profiles PASS | Profiles không phải phần cứng thật; hoàn tất matrix vật lý theo phạm vi phát hành |
+| V1-24 | Admin một tay | 30/30 local real-Auth UI/SSR PASS; Computer Use 320px, 52 khách/3 trang, Loyalty read-only. Hosted Owner Preview kiểm chứng năm luồng trong report, rồi kiểm lại timezone fix ở exact head `6c31974`; chưa Production | Năm việc trên iPhone vật lý và chủ mới chưa proven; fixture/link tạm đã bàn giao, chưa có kết quả người dùng |
+| V1-25 | EN/VI và thiết bị | Local sáu device/language profiles PASS (Chromium desktop, WebKit iPhone/iPad × EN/VI). Hosted Preview đã kiểm EN/VI và viewport 375×667 trong phạm vi hồ sơ khách; CI exact head mobile/desktop PASS. Còn copy/title nhỏ đã ghi nhận; chưa Production | Profiles không phải phần cứng thật; hosted checks không thay toàn bộ ma trận thiết bị. Hoàn tất matrix vật lý theo phạm vi phát hành |
 | V1-26 | Incident và recovery | P1-06 drill/restore có bằng chứng; #1413 đã merge/deploy; CI và post-deploy verification PASS | Ghi người trực và thực hiện rehearsal vận hành trong pilot; rollout kỹ thuật không thay thế chứng cứ con người |
 | V1-27 | Restore/offboarding | P1-06 PostgreSQL rehearsal lịch sử PASS | Gắn thời gian phục hồi, người phụ trách và recovery acceptance vào biên bản |
 | V1-28 | Trial/giá/thanh toán | #1411 đã deploy; QA expiry/manual billing PASS | Chốt khác biệt self-pay Masterplan và activation thủ công V1; Preview Auth hạn chế còn được ghi nhận |

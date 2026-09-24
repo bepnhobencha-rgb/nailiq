@@ -4,6 +4,7 @@
 import { PHONE_INPUT_PLACEHOLDER_NANP } from "@/shared/lib/phoneFormat";
 import { REGISTER_INVALID_PHONE_HINT_EN } from "@/shared/register/phone";
 import { formatPublicMonthlyPrice } from "@/shared/subscriptions/pricingCatalog";
+import { waitlistDurationParts } from "@/shared/lib/waitlistPresentation";
 
 export type UserMessages = {
   brandName: string;
@@ -1265,6 +1266,7 @@ export type UserMessages = {
       server_error: string;
     };
     dateSwitcher: {
+      day: string;
       yesterday: string;
       today: string;
       tomorrow: string;
@@ -1534,6 +1536,8 @@ export type UserMessages = {
       sourceFallback: string;
       /** Hero-suffix below the wait number on the dispatch card. */
       waitHeroSuffix: string;
+      minuteUnit: string;
+      durationMinutes: (minutes: number) => string;
       /** Aria label for the gold VIP crown badge. */
       vipAria: string;
       /** "Ready ~{time}" template — interpolate {time}. */
@@ -1655,6 +1659,8 @@ export type UserMessages = {
         bestMatchRecommendation: string;
         readyNow: string;
         waitMinutesShort: (n: number) => string;
+        waitUnknown: string;
+        serviceDuration: (minutes: number) => string;
         readyAroundTime: string;
         assignImmediately: string;
         waitForStaff: string;
@@ -2131,6 +2137,8 @@ export type UserMessages = {
       searchPlaceholder: string;
       loading: string;
       empty: string;
+      noSearchResults: string;
+      retry: string;
       unknownName: string;
       vipBadge: string;
       /** "{visits} visit(s) · last {lastVisit}" — collapsed-row summary. */
@@ -4009,6 +4017,7 @@ export const userEn: UserMessages = {
       server_error: "Something went wrong. Try again shortly.",
     },
     dateSwitcher: {
+      day: "Day",
       yesterday: "Yesterday",
       today: "Today",
       tomorrow: "Tomorrow",
@@ -4302,6 +4311,8 @@ export const userEn: UserMessages = {
       partySizeLabel: (n: number) => `Party of ${n}`,
       sourceFallback: "Walk-in",
       waitHeroSuffix: "waiting",
+      minuteUnit: "min",
+      durationMinutes: (minutes: number) => `${minutes}m`,
       vipAria: "VIP customer",
       readyAroundShort: "Ready ~{time}",
       requestedByClientLine: "Customer requested this staff",
@@ -4408,6 +4419,8 @@ export const userEn: UserMessages = {
         bestMatchRecommendation: "Best Match: {name} — {wait}",
         readyNow: "Ready now",
         waitMinutesShort: (n: number) => `~${n} min wait`,
+        waitUnknown: "Busy — ready time not yet confirmed",
+        serviceDuration: (minutes: number) => `${minutes}m`,
         readyAroundTime: "Ready around {time}",
         assignImmediately: "Assign immediately",
         waitForStaff: "Wait for {name}",
@@ -4484,7 +4497,7 @@ export const userEn: UserMessages = {
         approvalLocked: "Approval unlocks only after an executable plan is ready.",
       },
       groupRequest: (partySize, serviceCount) =>
-        `${partySize} guests · ${serviceCount} services`,
+        `${partySize} guest${partySize === 1 ? "" : "s"} · ${serviceCount} service${serviceCount === 1 ? "" : "s"}`,
       sequenceRequest: (serviceCount) =>
         `${serviceCount} service${serviceCount === 1 ? "" : "s"} in sequence`,
       callToArrange: "Call to arrange",
@@ -4510,8 +4523,16 @@ export const userEn: UserMessages = {
         `Opened the spot for ${name}. Notification delivery is still being verified.`,
       deliveryFailedToast: (name) =>
         `Opened the spot for ${name}, but no notification was delivered.`,
-      waitingMinutes: (minutes) =>
-        minutes === 0 ? "Waiting now" : `Waiting ${minutes} min`,
+      waitingMinutes: (minutes) => {
+        const parts = waitlistDurationParts(minutes);
+        if (!parts) return "—";
+        const duration = [
+          parts.days ? `${parts.days} day${parts.days === 1 ? "" : "s"}` : null,
+          parts.hours ? `${parts.hours} hr` : null,
+          parts.minutes ? `${parts.minutes} min` : null,
+        ].filter(Boolean).join(" ");
+        return duration ? `Waiting ${duration}` : "Waiting now";
+      },
       claimed: "✅ Claimed",
       createBooking: "Create booking",
       empty: "No one on the waitlist",
@@ -4878,6 +4899,8 @@ export const userEn: UserMessages = {
       searchPlaceholder: "Search by name or phone number…",
       loading: "Loading clients…",
       empty: "No clients yet.",
+      noSearchResults: "No matching clients. Try a different name or phone number.",
+      retry: "Try again",
       unknownName: "(unnamed)",
       vipBadge: "VIP",
       summaryLine: (visits, lastVisit) =>

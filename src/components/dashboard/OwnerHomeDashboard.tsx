@@ -423,6 +423,11 @@ export function OwnerHomeDashboard({
             large
           />
         </div>
+        <p className="mt-2 text-xs text-nq-muted">
+          {language === "vi"
+            ? "Giá trị dịch vụ đã hoàn tất, không phải xác nhận tiền đã thu."
+            : "Completed service value, not confirmation of collected payments."}
+        </p>
         {data.todayNoShows > 0 ? (
           <p className="mt-2 text-[12px] text-nq-error/80">
             ⚠ {th.noShows}: {data.todayNoShows}

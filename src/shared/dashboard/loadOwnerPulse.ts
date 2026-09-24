@@ -8,6 +8,7 @@ import { trackAnthropicMessage } from "@/shared/ai/usageLedger";
 
 import { getDashboardWriteClient } from "@/shared/dashboard/setupActions";
 import { waitlistAgeMinutes } from "@/shared/dashboard/waitlistAttention";
+import { serviceValueCents } from "@/shared/dashboard/serviceValueCents";
 import { isReleaseFeatureEnabled } from "@/shared/features/featureRegistry";
 import {
   salonToday,
@@ -102,6 +103,7 @@ export type LoadOwnerPulseResult =
 type BookingLite = {
   status: string;
   price_cents: number | null;
+  addon_price_cents: number | null;
   start_time_utc: string | null;
   end_time_utc: string | null;
   staff_id: string | null;
@@ -168,7 +170,7 @@ export async function loadOwnerPulse(
       sb
         .from("bookings")
         .select(
-          "status, price_cents, start_time_utc, end_time_utc, staff_id, resource_id, no_show_risk_score, booking_channel, source",
+          "status, price_cents, addon_price_cents, start_time_utc, end_time_utc, staff_id, resource_id, no_show_risk_score, booking_channel, source",
         )
         .eq("salon_id", salonId)
         .gte("start_time_utc", today.startUtc)
@@ -182,7 +184,7 @@ export async function loadOwnerPulse(
         .neq("status", "cancelled"),
       sb
         .from("bookings")
-        .select("price_cents")
+        .select("price_cents, addon_price_cents")
         .eq("salon_id", salonId)
         .eq("status", "completed")
         .gte("start_time_utc", lastWeek.startUtc)
@@ -226,7 +228,7 @@ export async function loadOwnerPulse(
       switch (b.status) {
         case "completed":
           completedToday += 1;
-          revenueTodayCents += b.price_cents ?? 0;
+          revenueTodayCents += serviceValueCents(b);
           break;
         case "no_show":
           noShowToday += 1;
@@ -249,8 +251,8 @@ export async function loadOwnerPulse(
       }
     }
 
-    const benchRevenue = ((benchRes.data ?? []) as { price_cents: number | null }[]).reduce(
-      (sum, r) => sum + (r.price_cents ?? 0),
+    const benchRevenue = ((benchRes.data ?? []) as { price_cents: number | null; addon_price_cents: number | null }[]).reduce(
+      (sum, r) => sum + serviceValueCents(r),
       0,
     );
 
