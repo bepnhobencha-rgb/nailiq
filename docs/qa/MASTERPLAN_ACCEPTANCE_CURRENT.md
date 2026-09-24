@@ -11,6 +11,22 @@ nghĩa đã xác nhận có lỗi.
 
 ## 1. Mốc và cách đọc
 
+### Waitlist “Mời lại” — server pipeline local, 24/09/2026
+
+- Worktree cô lập từ merge SHA `15caa385fcd6357b1ff3b8ed02ef432d73c17296`.
+  Các trạng thái PR #1424 trong checkpoint cũ bên dưới là lịch sử, không phải
+  trạng thái hiện hành của PR. Lượt này không kiểm chứng lại Production.
+- Bổ sung 40 tests đi qua action/promotion/delivery/projection thật, nhưng Auth,
+  database và provider dùng mock; không gọi mạng trong suite mới.
+- Fault injection phát hiện phản hồi promotion lệch salon/entry chưa bị chặn
+  ngay tại ranh giới yêu cầu. Đã thêm guard local; không có bằng chứng sự cố
+  salon thật. Không đổi SQL, policy, UI hay cơ chế retry.
+- 314 tests liên quan PASS; full unit 6.717 PASS / 65 skipped sau khi sửa môi
+  trường chạy test; lint và typecheck PASS. Không tính skipped là PASS.
+- Chi tiết, build gate và giới hạn tại [báo cáo server pipeline](waitlist-invite-server-pipeline-2026-09-24.md).
+  Đây không phải hosted QA, provider terminal delivery hay đóng P1-01/V1-22/V1-23.
+  Chưa commit/push/Preview/Production bản guard mới.
+
 ### Checkpoint Preview Ngày 5–6 — 24/09/2026
 
 - **Checkpoint mới hơn, chưa đạt CI:** PR đã Ready for review ở commit tài

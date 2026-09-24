@@ -2,6 +2,7 @@
   "git": {
     "deploymentEnabled": {
       "main": false,
+      "fix/waitlist-invite-identity-20260924": false,
       "qa/day5-receptionist-20260924": false,
       "fix/square-card-delivery-truth-20260911": false,
       "fix/card-capture-pause-bridge-20260911": false,
