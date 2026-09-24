@@ -67,7 +67,9 @@ git diff --check
 5. Nếu branded Inbox vẫn thất bại, ghi FAIL và nguyên nhân chưa được chứng
    minh; không gửi lặp, không đổi DNS/Production hoặc hạ điều kiện nghiệm thu.
 
-Trạng thái: **PR/QA PREVIEW, nghiệm thu email BLOCKED; Ngày 4 chưa đóng toàn bộ.**
+Trạng thái mới nhất: **ĐÓNG gói nghiệm thu Auth/Owner QA Ngày 4 theo mục 7.**
+Các điểm chặn trong mục 6 là lịch sử trước khi được gỡ. Đây không phải
+chứng nhận toàn bộ Master Plan hoặc cho phép phát hành Production.
 
 ## 5. Rollback
 
@@ -115,3 +117,66 @@ khác; đã yêu cầu quyền hẹp để tìm đúng thư NailIQ. Không đọ
 Chưa dọn salon synthetic vì điều kiện nghiệm thu cuối chưa đạt; giữ nguyên
 Auth account và fixture để tiếp tục. Không gửi thêm thư, không tạo booking,
 không merge hoặc deploy Production. **Không tuyên bố Day 4 đạt 100%.**
+
+## 7. Nghiệm thu cuối sau phê duyệt gửi lại đúng một lần
+
+Thời gian kiểm chứng: 24/09/2026 UTC (chiều 23/09 tại Vancouver).
+
+### Phạm vi và bản chạy
+
+- Preview READY `dpl_33PoY7DyGD4DmicYdrZzQ5CDrRwf`, SHA
+  `f58ae9f6b484f799adee11cda4b7a27822247e0c` (code hotfix vẫn là
+  `783254168227846ca74e423390d9a20e53eaccdf`, thay đổi sau đó chỉ tài liệu).
+- CI tại SHA này: 22 SUCCESS, 2 SKIPPED; không pending hoặc failure.
+- Ngoại lệ firewall đúng một hostname QA được publish theo phê duyệt riêng:
+  active version 11, `2026-09-24T00:34:55.386Z`. Readback so sánh toàn bộ
+  rule xác nhận không thay rule khác, payment-reconciliation fence, CRS,
+  IP/bypass hoặc Attack Mode. Không tắt firewall hay auth bảo vệ Preview.
+
+### Email và phiên đăng nhập — PASS trong lần kiểm chứng này
+
+- Sau phê duyệt gửi lại, click đúng một lần; giữ nguyên fixed idempotency key,
+  project, recipient, callback và deadline của guard. Không gửi lần thứ hai.
+- Auth `/otp` trả 200 lúc `00:57:49Z`; signed Hook trả 200, runtime ghi
+  `auth_email_hook_completed`, action `magiclink`, `deliveries: 1` lúc
+  `00:57:49.429Z`. UI hiển thị Check your inbox.
+- Cờ branded magic-link được trả OFF ngay sau phản hồi; digest giá trị `0`
+  đã readback. Cờ email QA cũ cũng OFF; Hook giữ ENABLED để chặn SMTP fallback.
+- Mail trên Mac: thư từ NailIQ, subject `Your NailIQ sign-in link`, lúc
+  5:57 PM nằm trong **Inbox — iCloud**, không phải Junk. Chỉ mở đúng thư này.
+- Mail mở link vào Safari và bị chặn ở Vercel Preview login; link một lần
+  đã đổi thành callback code nên mở lại link báo hết hiệu lực. Không gửi lại,
+  không tắt Vercel auth: chuyển callback còn chờ vào đúng phiên Chrome QA
+  ban đầu để hoàn tất PKCE. Không công bố URL/token/OTP trong báo cáo.
+- QA Auth session mới được tạo `2026-09-24T01:05:10.818915Z`; audit ghi login
+  owner `01:05:15.157147Z`. UI vào Coco Setup của đúng synthetic salon.
+- Reload giữ phiên và đúng salon, hiển thị Not live yet và 2/8 bước đã lưu.
+  Không tạo booking, không bật thanh toán, không gửi thông báo salon.
+
+### Cleanup — PASS
+
+- Lần cleanup đầu rollback vì phát hiện một `auth_events` mới do login vừa
+  thành công; readback xác nhận salon, 10 services, 1 staff vẫn nguyên vẹn.
+- Rà soát sự kiện đó: đúng user, đúng salon, type login, role owner, timestamp
+  trùng lần nghiệm thu. Pin chính xác event và giữ nguyên lịch sử, không xóa
+  hay sửa audit; các kiểm tra dependencies/schema/identity khác không đổi.
+- Transaction cleanup chỉ xóa synthetic salon đã duyệt và 12 seeded children.
+- Post-commit: salon/member/service/staff đều 0; Auth account còn 1;
+  system audit còn 24; auth login event được giữ. Không xóa tài khoản Auth,
+  session, rate limit hoặc bất kỳ dữ liệu salon khác.
+
+### Kết luận và giới hạn
+
+- **PASS / ĐÓNG gói Auth/Owner QA Ngày 4**: hotfix, CI/Preview, branded email
+  đến Inbox, phiên Owner qua callback/reload và cleanup đã có bằng chứng.
+- **Không phải PASS cho trải nghiệm mở email khác trình duyệt tự động**:
+  rehearsal cần đưa callback về Chrome; không bỏ PKCE hoặc bảo vệ Preview.
+- Inbox placement chỉ được chứng minh cho đúng một email magic-link lần này.
+  Không xóa kết quả signup từng vào Junk và không bảo đảm mọi email tương lai.
+- Provider message ID và báo cáo chống trùng ở Resend chưa được đọc độc lập;
+  bằng chứng hiện có là một lần submit, một Hook deliveries=1, fixed key và
+  thư thực nhận. Không gọi gửi thêm để thử chống trùng.
+- Mobile trực tiếp trên SHA này chưa chứng minh; CI mobile PASS là lớp khác.
+- PR #1422 vẫn Draft; chưa merge, chưa deploy ứng dụng Production, chưa đổi
+  Supabase Production. Ngoại lệ hostname QA nằm trong firewall project chung
+  như đã mô tả, không tuyên bố rằng không có thay đổi cấu hình bên ngoài.
