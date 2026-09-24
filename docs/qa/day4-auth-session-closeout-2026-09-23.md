@@ -28,7 +28,7 @@ Preview trước tại SHA `34bcafa4d4a66654c372bdfef77cee90a1805a91`:
 | Default an toàn, không booking/payment/outbound | PASS QA |
 | Reload giữ salon/membership/trial | PASS QA |
 | Coco Setup và form địa chỉ ở mobile 390×844 | Không tràn ngang; có copy EN/VI chưa đồng nhất |
-| Cleanup salon synthetic | Chờ duyệt; Auth account sẽ được giữ |
+| Cleanup salon synthetic | Đã được duyệt sau nghiệm thu; chưa thực hiện vì nghiệm thu email đang bị chặn; Auth account sẽ được giữ |
 
 Không dùng kết quả email mặc định để thay kết quả Inbox của template NailIQ.
 Không dùng thành công QA để tuyên bố Production hoặc pilot đã đạt.
@@ -67,7 +67,7 @@ git diff --check
 5. Nếu branded Inbox vẫn thất bại, ghi FAIL và nguyên nhân chưa được chứng
    minh; không gửi lặp, không đổi DNS/Production hoặc hạ điều kiện nghiệm thu.
 
-Trạng thái: **LOCAL CANDIDATE, chưa publish; Ngày 4 chưa đóng toàn bộ.**
+Trạng thái: **PR/QA PREVIEW, nghiệm thu email BLOCKED; Ngày 4 chưa đóng toàn bộ.**
 
 ## 5. Rollback
 
@@ -75,3 +75,43 @@ Trạng thái: **LOCAL CANDIDATE, chưa publish; Ngày 4 chưa đóng toàn bộ
   không có migration hay yêu cầu rollback database.
 - QA send rehearsal độc lập với ứng dụng: trả flag gửi về OFF, giữ signed
   guard chặn fallback. Không thay sender/auth Production.
+
+## 6. Thực hiện gói QA đã duyệt — 24/09/2026 UTC
+
+- Draft PR: https://github.com/bepnhobencha-rgb/nailiq/pull/1422
+- Code SHA: `783254168227846ca74e423390d9a20e53eaccdf`.
+- Preview READY: `dpl_G6ZfufxBYyrgdQGUR984rRxADoiw`, đúng code SHA trên.
+- Cấu hình Supabase QA và các kill switch chỉ scope vào nhánh Preview
+  `fix/day4-auth-session-expired-20260923`; không sửa Production.
+- GitHub/Vercel checks trước 00:27 UTC: 22 SUCCESS, 2 SKIPPED, không có
+  FAILURE hoặc IN_PROGRESS. SKIPPED không được tính là kiểm thử PASS.
+- Hosted desktop UI: thông báo `link_session_expired` đúng EN và VI;
+  không tự gửi lại, không yêu cầu đăng ký lại, không tuyên bố đã xác minh email.
+- Thử override viewport mới không làm thay đổi viewport của tab mục tiêu
+  (đọc được 1728px); đã reset. Không tính lần này là hosted mobile PASS.
+- Guard magic-link QA riêng: 34/34 local tests PASS; deployed function v11,
+  chữ ký được kiểm tra, pin exact project/recipient/callback/action, cửa sổ
+  hai giờ và idempotency key cố định. Không chứa guard này trong application PR.
+- Chỉ click gửi một lần. UI trả `authRequestUnconfirmed`; không replay.
+  Hai cờ gửi QA đều đã xác nhận OFF qua digest giá trị `0`; Hook vẫn ENABLED
+  để tránh fallback sang SMTP mặc định.
+- Trong cửa sổ 00:21–00:24 UTC không tìm thấy Auth request tương ứng hoặc
+  function/runtime receipt. Đây không phải bằng chứng thư đã gửi/đã đến Inbox.
+
+### Điểm chặn xác minh được
+
+Rule Vercel `Card receipt release - fence stale deployment writers 20260911`
+đang DENY phương thức khác GET/HEAD/OPTIONS đối với host ngoài allowlist.
+Alias Preview mới không nằm trong 17 host ngoại lệ. Điều này giải thích việc
+trang GET mở được nhưng server action bị chặn trước khi tới ứng dụng.
+Nhánh rule riêng bảo vệ `/api/cron/payment-reconciliation` vẫn phải giữ nguyên.
+
+Chưa sửa hoặc publish firewall. Cần phê duyệt ngoại lệ đúng một hostname QA;
+không tắt rule, không dùng wildcard, không chuyển request sang Production.
+Theo hướng dẫn firewall, chuẩn bị diff rồi chủ tài khoản Publish.
+
+Việc xem Mail cũng bị công cụ chặn vì ảnh toàn màn hình có thể lộ thư riêng tư
+khác; đã yêu cầu quyền hẹp để tìm đúng thư NailIQ. Không đọc hoặc xuất thư khác.
+Chưa dọn salon synthetic vì điều kiện nghiệm thu cuối chưa đạt; giữ nguyên
+Auth account và fixture để tiếp tục. Không gửi thêm thư, không tạo booking,
+không merge hoặc deploy Production. **Không tuyên bố Day 4 đạt 100%.**
