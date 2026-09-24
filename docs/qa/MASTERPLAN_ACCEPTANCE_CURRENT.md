@@ -1,6 +1,8 @@
 # NailIQ — Bảng nghiệm thu Masterplan
 
-Cập nhật: 22/09/2026. Đây là bảng theo dõi nghiệm thu hiện hành; không thay đổi
+Cập nhật bằng chứng Auth QA: 23/09/2026 (Vancouver); các mốc Production dưới
+đây vẫn là snapshot 22/09, không phải lần kiểm chứng Production mới.
+Đây là bảng theo dõi nghiệm thu hiện hành; không thay đổi
 phạm vi, chính sách hay điều kiện đạt trong `docs/MASTER_PLAN.md`.
 
 **Kết luận: chưa đủ bằng chứng nghiệm thu toàn bộ Masterplan.** Không quy đổi
@@ -9,6 +11,15 @@ nghĩa đã xác nhận có lỗi.
 
 ## 1. Mốc và cách đọc
 
+- Ngày 4: [gói Auth/Owner QA](day4-auth-session-closeout-2026-09-23.md)
+  đã PASS trong phạm vi được ghi: branded magic-link vào Inbox iCloud,
+  callback tạo phiên Owner, reload giữ phiên và cleanup đúng salon synthetic.
+  Hotfix thuộc Draft PR #1422, chưa merge/deploy Production. Preview SHA
+  `f58ae9f6b484f799adee11cda4b7a27822247e0c`: 22 checks SUCCESS, 2 SKIPPED.
+  Lần mở thư bằng Safari cần chuyển callback về phiên Chrome ban đầu; không
+  tính là trải nghiệm tự động xuyên trình duyệt. Signup từng vào Junk vẫn
+  được giữ là FAIL mẫu lịch sử, không thay bằng kết quả magic-link mới.
+  Kết quả này không đóng P1-01 thông báo booking/waitlist hoặc toàn Masterplan.
 - `origin/main`: `7e19ae1316e493925aafec0f32cf1acb1e68599d`, đã fetch ngày 22/09.
   Đây là merge SHA của PR #1420; không được suy từ `main` rằng mọi acceptance
   bên dưới đã được kiểm lại trên Production.
@@ -153,6 +164,7 @@ thật vào báo cáo QA. Người lớn tuổi và tiếp tân ít dùng công 
 - [P0-03 tenant/role + quota/WAF runtime](p0-03-tenant-role-quota-waf-runtime-2026-09-21.md).
 - [Masterplan Ngày 2 — đăng ký salon mới](masterplan-day-2-registration-2026-09-22.md).
 - [Masterplan Ngày 3 — Google signup](masterplan-day-3-google-signup-2026-09-22.md).
+- [Ngày 4 — Auth/Owner QA closeout](day4-auth-session-closeout-2026-09-23.md).
 - Nguồn 30 ID: bản local lịch sử
   `/Users/huytran/nailiq-v1-acceptance-20260911/docs/qa/V1_ACCEPTANCE_2026-09-11.md`;
   không coi file local này là tài liệu đã merge.

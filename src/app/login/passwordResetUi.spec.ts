@@ -70,4 +70,29 @@ describe("password reset user-facing states", () => {
     expect(superadmin.match(/max[Ll]ength="72"/g)).toHaveLength(2);
     expect(superadmin).toContain("Mật khẩu mới");
   });
+
+  it.each(["en", "vi"] as const)("renders safe expired-session guidance in %s", (language) => {
+    mocks.language = language;
+    const html = renderToStaticMarkup(
+      createElement(LoginPageClient, {
+        demoMode: false,
+        smsEnabled: false,
+        emailEnabled: true,
+        authError: "link_session_expired",
+      }),
+    );
+    expect(html).toContain('role="alert"');
+    expect(html).toContain(language === "en"
+      ? "This sign-in session has expired or is no longer available."
+      : "Phiên đăng nhập từ liên kết này đã hết hạn hoặc không còn khả dụng.");
+    expect(html).toContain(language === "en"
+      ? "use the same sign-in method you used before"
+      : "dùng cách đăng nhập trước đó");
+    expect(html).toContain(language === "en"
+      ? "You do not need to sign up again."
+      : "Bạn không cần đăng ký lại.");
+    expect(html).toContain('type="password"');
+    expect(html).not.toContain("Your email is confirmed");
+    expect(html).not.toContain("Email đã được xác nhận");
+  });
 });

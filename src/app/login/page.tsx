@@ -33,9 +33,11 @@ export default async function LoginPage({
       authError={
         error === "pkce_restart"
           ? "pkce_restart"
-          : error === "session"
-            ? "session"
-            : null
+          : error === "link_session_expired"
+            ? "link_session_expired"
+            : error === "session"
+              ? "session"
+              : null
       }
     />
   );

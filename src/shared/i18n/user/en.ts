@@ -451,6 +451,7 @@ export type UserMessages = {
     /** Banner shown when redirected with ?notice=confirm-email (email not yet confirmed). */
     confirmEmailNotice: string;
     pkceRestart: string;
+    linkSessionExpired: string;
     sessionError: string;
     /** Forgot password link on /login form. */
     forgotPasswordLink: string;
@@ -3272,6 +3273,8 @@ export const userEn: UserMessages = {
       "Please confirm your email before continuing. Check your inbox for the confirmation link we sent you.",
     pkceRestart:
       "This sign-in link was opened in a different browser or has expired. Start sign-in again in this browser.",
+    linkSessionExpired:
+      "This sign-in session has expired or is no longer available. Sign in with your email and password, or use the same sign-in method you used before. You do not need to sign up again.",
     sessionError: "We couldn't complete sign-in. Please try again.",
     forgotPasswordLink: "Forgot password?",
     verifyTitle: "Enter OTP",

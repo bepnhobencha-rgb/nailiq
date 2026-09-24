@@ -31,7 +31,7 @@ type Props = {
   /** Shown after a recovery capability commits and is consumed. */
   showPasswordResetNotice?: boolean;
   /** Safe callback error rendered as an actionable login banner. */
-  authError?: "pkce_restart" | "session" | null;
+  authError?: "pkce_restart" | "link_session_expired" | "session" | null;
 };
 
 export function LoginPageClient({
@@ -80,7 +80,9 @@ export function LoginPageClient({
     >
       {authError === "pkce_restart"
         ? t.login.pkceRestart
-        : t.login.sessionError}
+        : authError === "link_session_expired"
+          ? t.login.linkSessionExpired
+          : t.login.sessionError}
     </div>
   ) : null;
 
