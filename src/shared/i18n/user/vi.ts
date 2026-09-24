@@ -1891,6 +1891,24 @@ export const userVi: UserMessages = {
           "NailIQ đang canh đúng chỗ phù hợp và sẽ tự mời khách qua luồng giữ chỗ an toàn.",
         customerResponsePending:
           "Chỗ cụ thể đã được mời. NailIQ đang chờ khách phản hồi và theo dõi từng kênh gửi.",
+        deliveryGuidance: {
+          delivered: {
+            title: "Đang chờ khách phản hồi",
+            description: "Đã xác nhận giao thông báo qua ít nhất một kênh. Đang chờ khách trả lời; chưa phải lịch hẹn đã đặt.",
+          },
+          blocked: {
+            title: "Cần kiểm tra thông báo",
+            description: "Cả hai kênh đều gửi thất bại hoặc bị chặn. Mở chi tiết khách để kiểm tra thông tin liên hệ và trạng thái từng kênh. Tôn trọng lựa chọn từ chối nhận tin; không gửi lại khi chưa kiểm tra.",
+          },
+          pending: {
+            title: "Thông báo đang được gửi",
+            description: "Ít nhất một kênh vẫn đang gửi. Chưa xác nhận giao thông báo. Kiểm tra trạng thái từng kênh trước khi gửi lại.",
+          },
+          unverified: {
+            title: "Chưa xác nhận giao thông báo",
+            description: "Đơn vị gửi đã nhận yêu cầu hoặc thiếu dữ liệu chưa có nghĩa là thông báo đã được giao. Kiểm tra trạng thái từng kênh trước khi gửi lại.",
+          },
+        },
         exactPlanRequired:
           "NailIQ phải chứng minh đủ thợ, tài nguyên, thời gian và đúng chính sách trước khi cho phép duyệt.",
         bookingCommitPending:

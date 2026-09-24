@@ -1720,6 +1720,10 @@ export type UserMessages = {
         humanException: string;
         watchingForExactSlot: string;
         customerResponsePending: string;
+        deliveryGuidance: Record<"delivered" | "blocked" | "pending" | "unverified", {
+          title: string;
+          description: string;
+        }>;
         exactPlanRequired: string;
         bookingCommitPending: string;
         unsafeStateCombination: string;
@@ -4450,6 +4454,24 @@ export const userEn: UserMessages = {
           "NailIQ is watching for a matching opening and will invite the customer through the protected offer flow.",
         customerResponsePending:
           "The exact offer is open. NailIQ is waiting for the customer and tracking delivery by channel.",
+        deliveryGuidance: {
+          delivered: {
+            title: "Waiting for customer response",
+            description: "Delivery is confirmed on at least one channel. Waiting for the customer's reply; this is not yet a booking.",
+          },
+          blocked: {
+            title: "Notification needs attention",
+            description: "Both channels failed or were blocked. Open customer details and review contact information and channel status. Respect opt-outs; do not resend blindly.",
+          },
+          pending: {
+            title: "Notification in progress",
+            description: "At least one channel is still sending. Delivery is not confirmed. Check the channel statuses before sending again.",
+          },
+          unverified: {
+            title: "Delivery not confirmed",
+            description: "Provider acceptance or missing delivery data does not confirm delivery. Review channel statuses before sending again.",
+          },
+        },
         exactPlanRequired:
           "NailIQ must prove staff, resource, timing and policy fit before approval becomes available.",
         bookingCommitPending:
