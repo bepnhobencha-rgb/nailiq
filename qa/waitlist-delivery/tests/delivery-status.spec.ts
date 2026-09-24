@@ -8,6 +8,10 @@ const copy = {
     suppressed: "Email · Customer opted out",
     unknown: "SMS · Not verified",
     sending: "Email · Sending",
+    responseTitle: "Waiting for customer response",
+    blockedTitle: "Notification needs attention",
+    pendingTitle: "Notification in progress",
+    unverifiedTitle: "Delivery not confirmed",
   },
   vi: {
     accepted: "SMS · Provider đã nhận",
@@ -16,6 +20,10 @@ const copy = {
     suppressed: "Email · Khách đã từ chối",
     unknown: "SMS · Chưa xác minh",
     sending: "Email · Đang gửi",
+    responseTitle: "Đang chờ khách phản hồi",
+    blockedTitle: "Cần kiểm tra thông báo",
+    pendingTitle: "Thông báo đang được gửi",
+    unverifiedTitle: "Chưa xác nhận giao thông báo",
   },
 } as const;
 
@@ -36,16 +44,18 @@ for (const language of ["en", "vi"] as const) {
 
     await page.goto(`/?lang=${language}`, { waitUntil: "networkidle" });
     const labels = copy[language];
-    for (const label of Object.values(labels)) {
-      await expect(page.getByText(label, { exact: true })).toBeVisible();
+    const acceptedRow = page.getByTestId("waitlist-delivery-delivery-accepted");
+    const failedRow = page.getByTestId("waitlist-delivery-delivery-failed");
+    const unknownRow = page.getByTestId("waitlist-delivery-delivery-unknown");
+    const accepted = acceptedRow.getByText(labels.accepted, { exact: true }).locator("..");
+    const delivered = acceptedRow.getByText(labels.delivered, { exact: true }).locator("..");
+    const failed = failedRow.getByText(labels.failed, { exact: true }).locator("..");
+    const suppressed = failedRow.getByText(labels.suppressed, { exact: true }).locator("..");
+    const unknown = unknownRow.getByText(labels.unknown, { exact: true }).locator("..");
+    const sending = unknownRow.getByText(labels.sending, { exact: true }).locator("..");
+    for (const badge of [accepted, delivered, failed, suppressed, unknown, sending]) {
+      await expect(badge).toBeVisible();
     }
-
-    const accepted = page.getByText(labels.accepted, { exact: true }).locator("..");
-    const delivered = page.getByText(labels.delivered, { exact: true }).locator("..");
-    const failed = page.getByText(labels.failed, { exact: true }).locator("..");
-    const suppressed = page.getByText(labels.suppressed, { exact: true }).locator("..");
-    const unknown = page.getByText(labels.unknown, { exact: true }).locator("..");
-    const sending = page.getByText(labels.sending, { exact: true }).locator("..");
     await expect(accepted).not.toHaveClass(/text-nq-success/);
     await expect(delivered).toHaveClass(/text-nq-success/);
     await expect(failed).toHaveClass(/text-nq-error/);
@@ -59,6 +69,56 @@ for (const language of ["en", "vi"] as const) {
     await expect(page.getByTestId("waitlist-delivery-delivery-unknown")).not.toContainText(
       language === "vi" ? "Đã giao" : "Delivered",
     );
+
+    // Delivery guidance must not change the operational permission classifier.
+    for (const [id, guidance, title] of [
+      ["accepted", "delivered", labels.responseTitle],
+      ["failed", "blocked", labels.blockedTitle],
+      ["unknown", "pending", labels.pendingTitle],
+      ["accepted-only", "unverified", labels.unverifiedTitle],
+      ["partial", "delivered", labels.responseTitle],
+      ["missing", "unverified", labels.unverifiedTitle],
+    ] as const) {
+      const row = page.getByTestId(`waitlist-autonomy-delivery-${id}`);
+      await expect(row).toHaveAttribute("data-delivery-guidance", guidance);
+      await expect(row).toHaveAttribute("data-autonomy-lane", "auto_safe");
+      await expect(row.getByText(title, { exact: true })).toBeVisible();
+      await expect(page.getByTestId(`waitlist-invite-delivery-${id}`)).toBeEnabled();
+      if (guidance !== "delivered") {
+        await expect(row).not.toHaveClass(/bg-nq-success/);
+        await expect(row).not.toContainText(labels.responseTitle);
+        await expect(row).not.toContainText(language === "vi" ? "NailIQ tự xử lý" : "NailIQ autopilot");
+      }
+    }
+    await expect(page.getByTestId("waitlist-autonomy-delivery-failed")).toContainText(
+      language === "vi" ? "Tôn trọng lựa chọn từ chối nhận tin" : "Respect opt-outs",
+    );
+    await expect(page.getByTestId("waitlist-delivery-delivery-partial")).toContainText(
+      language === "vi" ? "Email · Gửi thất bại" : "Email · Failed",
+    );
+    for (const [id, lane] of [
+      ["waiting", "auto_safe"], ["group", "approval_required"], ["claimed", "human_exception"],
+    ]) {
+      const row = page.getByTestId(`waitlist-autonomy-delivery-${id}`);
+      await expect(row).toHaveAttribute("data-autonomy-lane", lane);
+      await expect(row).not.toHaveAttribute("data-delivery-guidance");
+    }
+    await expect(page.getByTestId("waitlist-invite-delivery-group")).toHaveCount(0);
+    await expect(page.getByTestId("waitlist-arrange-delivery-group")).toBeVisible();
+    await expect(page.getByTestId("waitlist-create-delivery-claimed")).toBeVisible();
+
+    // Read-only customer details: no send, call, or booking click.
+    await expect(page.getByTestId("waitlist-customer-details")).toHaveCount(0);
+    await expect(page.getByText("qa@example.test", { exact: true })).toHaveCount(0);
+    const nameButton = page.getByRole("button", { name: /QA Failed/ });
+    await nameButton.focus();
+    await page.keyboard.press("Enter");
+    const details = page.getByTestId("waitlist-customer-details");
+    await expect(details).toBeVisible();
+    await expect(details).toContainText("qa@example.test");
+    await page.keyboard.press("Escape");
+    await expect(details).toHaveCount(0);
+    await expect(nameButton).toBeFocused();
     expect(await page.evaluate(() => document.documentElement.scrollWidth > window.innerWidth)).toBe(false);
     expect(errors).toEqual([]);
     const screenshotPath = testInfo.outputPath(`waitlist-delivery-${language}.png`);

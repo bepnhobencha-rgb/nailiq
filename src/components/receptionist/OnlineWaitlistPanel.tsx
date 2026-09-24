@@ -11,6 +11,7 @@ import { inviteWaitlistEntry } from "@/shared/dashboard/receptionistActions";
 import type { ReceptionistCenterData } from "@/shared/dashboard/loadReceptionistCenterData";
 import { waitlistAgeMinutes } from "@/shared/dashboard/waitlistAttention";
 import { classifyCapacityRescueAutonomy } from "@/shared/booking/capacityRescueAutonomy";
+import { getWaitlistDeliveryGuidance } from "@/shared/noshow/waitlistDeliveryGuidance";
 import { Badge, type BadgeVariant } from "@/components/ui/Badge";
 import { Drawer } from "@/components/ui/Drawer";
 import type {
@@ -250,12 +251,27 @@ export function OnlineWaitlistPanel({
               status,
             });
             const autonomyCopy = t.autonomy;
-            const autonomyLabel = autonomy.lane === "auto_safe"
+            // Delivery guidance is presentation, not permission to dispatch.
+            // Keep the operational classifier and action eligibility unchanged.
+            const deliveryGuidance = autonomy.reason === "customer_response_pending"
+              ? getWaitlistDeliveryGuidance(delivery)
+              : null;
+            const guidanceCopy = deliveryGuidance
+              ? autonomyCopy.deliveryGuidance[deliveryGuidance]
+              : null;
+            const guidanceTone = deliveryGuidance
+              ? deliveryGuidance === "delivered"
+                ? "success"
+                : deliveryGuidance === "blocked" ? "warning" : "neutral"
+              : autonomy.lane === "auto_safe"
+                ? "success"
+                : autonomy.lane === "approval_required" ? "warning" : "neutral";
+            const autonomyLabel = guidanceCopy?.title ?? (autonomy.lane === "auto_safe"
               ? autonomyCopy.autoSafe
               : autonomy.lane === "approval_required"
                 ? autonomyCopy.approvalRequired
-                : autonomyCopy.humanException;
-            const autonomyDescription = autonomy.reason === "watching_for_exact_slot"
+                : autonomyCopy.humanException);
+            const autonomyDescription = guidanceCopy?.description ?? (autonomy.reason === "watching_for_exact_slot"
               ? autonomyCopy.watchingForExactSlot
               : autonomy.reason === "customer_response_pending"
                 ? autonomyCopy.customerResponsePending
@@ -263,7 +279,7 @@ export function OnlineWaitlistPanel({
                   ? autonomyCopy.exactPlanRequired
                   : autonomy.reason === "booking_commit_pending"
                     ? autonomyCopy.bookingCommitPending
-                    : autonomyCopy.unsafeStateCombination;
+                    : autonomyCopy.unsafeStateCombination);
             const requiresStaffReview =
               !isClaimed && autonomy.lane !== "auto_safe";
             const name = displayCustomerName(entry.clientName, removedGuest);
@@ -341,20 +357,21 @@ export function OnlineWaitlistPanel({
                     <div
                       data-testid={`waitlist-autonomy-${entry.id}`}
                       data-autonomy-lane={autonomy.lane}
+                      data-delivery-guidance={deliveryGuidance ?? undefined}
                       className={cn(
                         "mt-2 rounded-lg border px-2.5 py-2",
-                        autonomy.lane === "auto_safe"
+                        guidanceTone === "success"
                           ? "border-nq-success/30 bg-nq-success/5"
-                          : autonomy.lane === "approval_required"
+                          : guidanceTone === "warning"
                             ? "border-nq-warning/30 bg-nq-warning/5"
                             : "border-nq-border/50 bg-nq-surface",
                       )}
                     >
                       <p className={cn(
                         "text-xs font-semibold",
-                        autonomy.lane === "auto_safe"
+                        guidanceTone === "success"
                           ? "text-nq-success"
-                          : autonomy.lane === "approval_required"
+                          : guidanceTone === "warning"
                             ? "text-nq-warning"
                             : "text-nq-foreground",
                       )}>

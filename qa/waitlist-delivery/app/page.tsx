@@ -6,6 +6,7 @@ import { useSearchParams } from "next/navigation";
 import { OnlineWaitlistPanel } from "@/components/receptionist/OnlineWaitlistPanel";
 import type { ReceptionistCenterData } from "@/shared/dashboard/loadReceptionistCenterData";
 import { UserLanguageProvider } from "@/shared/lib/UserLanguageContext";
+import { emptyWaitlistDeliveryTruth } from "@/shared/noshow/waitlistDeliveryTruth";
 
 type WaitlistEntry = ReceptionistCenterData["onlineWaitlist"][number];
 
@@ -57,6 +58,55 @@ const entries: WaitlistEntry[] = [
       sms: { status: "unknown", reason: "outcome_unknown", updatedAt: "2026-09-14T15:05:00.000Z" },
       email: { status: "sending", reason: null, updatedAt: "2026-09-14T15:06:00.000Z" },
     },
+  },
+  {
+    ...baseEntry,
+    id: "delivery-accepted-only",
+    clientName: "QA Not Confirmed",
+    delivery: {
+      offerEpoch: 1,
+      sms: { status: "sent", reason: null, updatedAt: null },
+      email: { status: "accepted", reason: null, updatedAt: null },
+    },
+  },
+  {
+    ...baseEntry,
+    id: "delivery-partial",
+    clientName: "QA Partial",
+    delivery: {
+      offerEpoch: 1,
+      sms: { status: "delivered", reason: null, updatedAt: null },
+      email: { status: "failed", reason: "provider_rejected", updatedAt: null },
+    },
+  },
+  {
+    ...baseEntry,
+    id: "delivery-missing",
+    clientName: "QA Missing",
+    delivery: emptyWaitlistDeliveryTruth(),
+  },
+  {
+    ...baseEntry,
+    id: "delivery-waiting",
+    clientName: "QA Waiting",
+    status: "waiting",
+    delivery: emptyWaitlistDeliveryTruth(),
+  },
+  {
+    ...baseEntry,
+    id: "delivery-group",
+    clientName: "QA Group",
+    status: "review_required",
+    requestKind: "group",
+    partySize: 2,
+    delivery: emptyWaitlistDeliveryTruth(),
+  },
+  {
+    ...baseEntry,
+    id: "delivery-claimed",
+    clientName: "QA Claimed",
+    status: "claimed",
+    delivery: emptyWaitlistDeliveryTruth(),
   },
 ];
 
