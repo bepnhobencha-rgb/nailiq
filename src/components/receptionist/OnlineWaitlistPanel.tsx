@@ -1,6 +1,7 @@
 "use client";
 
 import { useEffect, useRef, useState } from "react";
+import { createPortal } from "react-dom";
 import { useRouter } from "next/navigation";
 
 import { cn } from "@/shared/lib/cn";
@@ -466,22 +467,25 @@ export function OnlineWaitlistPanel({
         </ul>
       )}
 
-      {toast ? (
+      {/* Escape the queue's scroll/transform containers so feedback remains
+          visible without moving focus or changing the receptionist's scroll. */}
+      {toast ? createPortal(
         <output
           data-testid="waitlist-toast"
           aria-live="polite"
           className={cn(
-            "mt-2 block rounded-lg border px-3 py-2 text-xs font-medium",
+            "pointer-events-none fixed left-4 right-4 top-[calc(env(safe-area-inset-top)+1rem)] z-[70] block rounded-lg border bg-nq-surface px-4 py-3 text-sm font-medium shadow-nq-card sm:left-auto sm:max-w-sm",
             toast.kind === "success" &&
-              "border-emerald-500/40 bg-emerald-500/10 text-emerald-400",
+              "border-nq-success/40 text-nq-success",
             toast.kind === "info" &&
-              "border-nq-primary/40 bg-nq-primary/10 text-nq-primary",
+              "border-nq-primary/40 text-nq-primary",
             toast.kind === "error" &&
-              "border-nq-error/60 bg-nq-error/15 text-nq-foreground",
+              "border-nq-error/60 text-nq-foreground",
           )}
         >
           {toast.text}
-        </output>
+        </output>,
+        document.body,
       ) : null}
 
       <Drawer

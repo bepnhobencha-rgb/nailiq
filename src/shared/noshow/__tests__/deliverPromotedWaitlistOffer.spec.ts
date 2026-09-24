@@ -301,4 +301,45 @@ describe("durable promoted waitlist offer delivery", () => {
     expect(mocks.sms).not.toHaveBeenCalled();
     expect(mocks.email).not.toHaveBeenCalled();
   });
+
+  it.each([null, "", "   "])("does not claim or send either channel without a recipient (%s)", async (recipient) => {
+    mocks.rpc.mockImplementation(async (name: string, args: Record<string, unknown>) => {
+      if (name === "load_waitlist_offer_delivery_material") {
+        return { data: loadedMaterial(String(args.p_channel) as "sms" | "email", { recipient }), error: null };
+      }
+      throw new Error(`unexpected RPC after missing contact: ${name}`);
+    });
+    await deliverPromotedWaitlistOffer(input);
+    expect(mocks.rpc).toHaveBeenCalledTimes(2);
+    expect(mocks.sms).not.toHaveBeenCalled();
+    expect(mocks.email).not.toHaveBeenCalled();
+  });
+
+  it("retains email opt-out as suppressed with no provider receipt across retry", async () => {
+    mocks.suppressed.mockResolvedValue(true);
+    await deliverPromotedWaitlistOffer(input);
+    await deliverPromotedWaitlistOffer(input);
+    expect(mocks.email).not.toHaveBeenCalled();
+    expect(mocks.sms).toHaveBeenCalledTimes(1);
+    const emailCompletions = mocks.rpc.mock.calls.filter(([name, args]) =>
+      name === "complete_waitlist_offer_delivery" &&
+      args.p_outbox_id === "77777777-7777-4777-8777-777777777777");
+    expect(emailCompletions).toHaveLength(1);
+    expect(emailCompletions[0]?.[1]).toMatchObject({
+      p_status: "suppressed", p_provider_receipt: null, p_error_code: "recipient_suppressed",
+    });
+  });
+
+  it.each(["in_flight", "outcome_unknown", "terminal"])("never sends without a fresh lease (%s)", async (code) => {
+    const baseline = mocks.rpc.getMockImplementation()!;
+    mocks.rpc.mockImplementation(async (name: string, args: Record<string, unknown>) =>
+      name === "claim_waitlist_offer_delivery"
+        ? { data: { ok: false, code }, error: null }
+        : baseline(name, args));
+    await deliverPromotedWaitlistOffer(input);
+    expect(mocks.sms).not.toHaveBeenCalled();
+    expect(mocks.email).not.toHaveBeenCalled();
+    expect(mocks.rpc.mock.calls.filter(([name]) => name === "claim_waitlist_offer_delivery")).toHaveLength(2);
+    expect(mocks.rpc.mock.calls.some(([name]) => name === "complete_waitlist_offer_delivery")).toBe(false);
+  });
 });
