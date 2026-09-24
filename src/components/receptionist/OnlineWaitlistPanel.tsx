@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 
 import { cn } from "@/shared/lib/cn";
 import { displayCustomerName } from "@/shared/lib/customerDisplayName";
+import { formatWaitlistDate } from "@/shared/lib/waitlistPresentation";
 import { useUserLanguage } from "@/shared/lib/useUserLanguage";
 import { getUserMessages } from "@/shared/i18n/user";
 import { inviteWaitlistEntry } from "@/shared/dashboard/receptionistActions";
@@ -294,9 +295,10 @@ export function OnlineWaitlistPanel({
               : entry.requestKind === "sequence"
                 ? t.sequenceRequest(entry.serviceCount)
                 : entry.serviceName;
+            const bookingDateLabel = formatWaitlistDate(entry.bookingDate, language);
             const subline = entry.preferredSlotLabel?.trim()
-              ? `${requestSummary} · ${entry.bookingDate} · ${entry.preferredSlotLabel}`
-              : `${requestSummary} · ${entry.bookingDate}`;
+              ? `${requestSummary} · ${bookingDateLabel} · ${entry.preferredSlotLabel}`
+              : `${requestSummary} · ${bookingDateLabel}`;
             return (
               <li
                 key={entry.id}
@@ -324,7 +326,12 @@ export function OnlineWaitlistPanel({
                     <div className="flex items-center justify-between gap-2">
                       <button
                         type="button"
-                        onClick={() => setSelectedEntry(entry)}
+                        onClick={(event) => {
+                          // Safari does not focus tapped buttons. Give Drawer an
+                          // explicit trigger to restore after either close path.
+                          event.currentTarget.focus({ preventScroll: true });
+                          setSelectedEntry(entry);
+                        }}
                         aria-label={t.openCustomerDetails(name)}
                         className="min-h-11 min-w-0 truncate rounded-md text-left text-sm font-medium text-nq-foreground underline decoration-nq-border underline-offset-4 outline-none focus-visible:ring-2 focus-visible:ring-nq-primary"
                       >
@@ -525,7 +532,7 @@ export function OnlineWaitlistPanel({
               </div>
               <div>
                 <dt className="text-xs font-medium text-nq-muted">{t.dateLabel}</dt>
-                <dd className="mt-1 text-nq-foreground">{selectedEntry.bookingDate}</dd>
+                <dd className="mt-1 text-nq-foreground">{formatWaitlistDate(selectedEntry.bookingDate, language)}</dd>
               </div>
               <div>
                 <dt className="text-xs font-medium text-nq-muted">{t.timeLabel}</dt>

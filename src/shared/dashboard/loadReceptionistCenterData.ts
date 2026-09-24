@@ -4,6 +4,7 @@ import type { Database } from "@/lib/database.types";
 import { createServiceRoleClient } from "@/shared/lib/supabase/serviceRole";
 import { loadSalonVipPhones } from "@/shared/dashboard/salonVipStatus";
 import { sortQueueByPriority } from "@/shared/dashboard/receptionistQueuePriority";
+import { RECEPTIONIST_BASIC_MODE_CONFIG } from "@/shared/dashboard/receptionistBasicModeConfig";
 
 export { sortQueueByPriority } from "@/shared/dashboard/receptionistQueuePriority";
 import { parseCurrency } from "@/shared/lib/currencyFormat";
@@ -1952,7 +1953,8 @@ export async function loadReceptionistCenterData(
   };
 }
 
-const COMING_UP_WINDOW_MINUTES = 60;
+// Keep the server count aligned with the 30-minute KPI and action-card labels.
+const COMING_UP_WINDOW_MINUTES = RECEPTIONIST_BASIC_MODE_CONFIG.upcomingWindowMinutes;
 const POPULAR_SERVICE_MAX = 3;
 const POPULAR_SERVICE_MIN_BOOKINGS = 2;
 
@@ -1990,7 +1992,7 @@ function computePopularServiceIds(
  * without a Supabase client. Time arithmetic uses `Date.now()` once per call
  * for snapshot-stability across all tiles.
  */
-function computeKpiSnapshot(args: {
+export function computeKpiSnapshot(args: {
   walkinQueue: ReceptionistCenterData["walkinQueue"];
   bookingsForDay: ReceptionistCenterData["bookingsForDay"];
   staff: ReceptionistCenterData["staff"];

@@ -1,4 +1,5 @@
 "use server";
+import { serviceValueCents } from "@/shared/dashboard/serviceValueCents";
 
 import { resolveSalonForDashboard } from "@/shared/dashboard/salonOwnerActions";
 import { isOwnerOrAdmin } from "@/shared/lib/salonMemberRole";
@@ -266,16 +267,7 @@ export async function loadOwnerHomeDashboard(
 
   function revCents(b: BookingRow): number {
     if (b.status !== "completed") return 0;
-    const main =
-      b.price_cents != null && Number.isFinite(Number(b.price_cents))
-        ? Number(b.price_cents)
-        : 0;
-    const addon =
-      b.addon_price_cents != null &&
-      Number.isFinite(Number(b.addon_price_cents))
-        ? Number(b.addon_price_cents)
-        : 0;
-    return main + addon;
+    return serviceValueCents(b);
   }
 
   function inRange(t: string, start: string, end: string): boolean {

@@ -133,7 +133,6 @@ export function SalonOwnerDashboardMain({
             onManualRefresh={onManualRefresh}
             manualRefreshing={manualRefreshing}
           />
-          <LoyaltyDashboardWidget slug={slug} language={language} />
         </>
       ) : (
         /* homeData unavailable (permissions or server error) — render a clean
@@ -174,9 +173,10 @@ export function SalonOwnerDashboardMain({
               </button>
             </div>
           </div>
-          <LoyaltyDashboardWidget slug={slug} language={language} />
         </>
       )}
+      {/* Keep lookup state through polling/manual refresh, but never across salons. */}
+      <LoyaltyDashboardWidget key={slug} slug={slug} language={language} refreshToken={lastUpdatedAt} />
     </MobileStack>
   );
 }

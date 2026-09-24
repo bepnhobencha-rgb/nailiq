@@ -286,7 +286,12 @@ export default function VerticalDayView({
   const addLabel = language === "vi" ? "Tạo" : "Create";
 
   const runCreateAction = useCallback((action: () => void) => {
-    if (createMenuRef.current) createMenuRef.current.open = false;
+    if (createMenuRef.current) {
+      createMenuRef.current.open = false;
+      // The chosen menu item is hidden after closing. Restore to the visible
+      // launcher when the following form closes, including Safari tap paths.
+      createMenuRef.current.querySelector("summary")?.focus({ preventScroll: true });
+    }
     action();
   }, []);
 
@@ -633,13 +638,17 @@ function BookingCard({
               : "border-white/[0.07]",
       )}
       whileTap={{ scale: 0.98 }}
-      onClick={onPress}
+      onClick={(event) => {
+        event.currentTarget.querySelector("button")?.focus({ preventScroll: true });
+        onPress();
+      }}
     >
       <button
         type="button"
         className="flex min-h-11 w-full items-start gap-2.5 text-left"
         onClick={(event) => {
           event.stopPropagation();
+          event.currentTarget.focus({ preventScroll: true });
           onPress();
         }}
       >

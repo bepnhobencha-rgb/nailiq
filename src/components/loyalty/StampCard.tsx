@@ -9,6 +9,8 @@ type StampCardProps = {
   programName?: string;
   rewardLabel?: string;
   compact?: boolean;
+  /** Localized count unit; existing customer surfaces keep their default. */
+  stampsLabel?: string;
 };
 
 export function StampCard({
@@ -18,6 +20,7 @@ export function StampCard({
   programName = "Loyalty Rewards",
   rewardLabel,
   compact = false,
+  stampsLabel = "stamps",
 }: StampCardProps) {
   const filled = Math.min(current, required);
   const stamps = Array.from({ length: required }, (_, i) => i < filled);
@@ -38,7 +41,7 @@ export function StampCard({
           {programName}
         </span>
         <span className={cn("font-medium", compact ? "text-[10px]" : "text-xs")} style={{ color }}>
-          {filled}/{required} stamps
+          {filled}/{required} {stampsLabel}
         </span>
       </div>
 

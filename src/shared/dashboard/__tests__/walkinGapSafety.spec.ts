@@ -59,6 +59,34 @@ function candidate(
 }
 
 describe("walk-in gap safety", () => {
+  it.each([
+    ["future active service with unknown ETA", "2026-09-03T22:03:00.000Z", "2026-09-03T22:58:00.000Z", null, null],
+    ["future active service with known ETA", "2026-09-03T18:03:00.000Z", "2026-09-03T18:58:00.000Z", "2026-09-03T18:58:00.000Z", "2026-09-03T18:58:00.000Z"],
+    ["overrun with projected ETA", "2026-09-03T16:03:00.000Z", "2026-09-03T16:58:00.000Z", "2026-09-03T17:08:00.000Z", "2026-09-03T17:08:00.000Z"],
+    ["exact planned end without completion", "2026-09-03T16:03:00.000Z", NOW, NOW, null],
+    ["overrun with stale ETA", "2026-09-03T16:03:00.000Z", "2026-09-03T16:58:00.000Z", "2026-09-03T16:58:00.000Z", null],
+  ])("never promotes %s to ready now", (_label, start, end, ready, expectedReady) => {
+    const active = reservation("Tech 01", start!, end!, { status: "in_progress" });
+    const tech = candidate("Tech 01", [active], {
+      isAvailableNow: false,
+      estimatedReadyAt: ready,
+      currentBooking: {
+        ...active,
+        endsAt: ready ?? end!,
+      },
+    });
+
+    const projected = projectWalkinGapSafety(tech, NOW, { duration_minutes: 30 });
+
+    expect(projected.isAvailableNow).toBe(false);
+    expect(projected.estimatedReadyAt).toBe(expectedReady);
+    expect(projected.currentBooking).toEqual(tech.currentBooking);
+    const selected = selectWalkinGapSafeRecommendation(
+      [tech, candidate("Tech 02")], NOW, { duration_minutes: 30 }, "",
+    );
+    expect(selected?.staffId).toBe("Tech 02");
+  });
+
   it("does not call a technician ready now when service plus buffer overlaps the next appointment", () => {
     const tech = candidate("Tech 01", [
       reservation(
@@ -173,6 +201,7 @@ describe("walk-in gap safety", () => {
       ],
       {
         isAvailableNow: false,
+        estimatedReadyAt: "2026-09-03T17:30:00.000Z",
       },
     );
 

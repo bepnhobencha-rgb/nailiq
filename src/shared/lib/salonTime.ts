@@ -98,12 +98,14 @@ function firstInstantOfSalonCalendarDayUtc(ymd: string, timeZone: string): numbe
 
 /**
  * Format UTC ISO string in salon's timezone.
- * Returns localized time string per format spec.
+ * Optional date locale translates calendar labels without changing the
+ * established AM/PM clock contract or the salon timezone.
  */
 export function formatInSalonTz(
   utcIso: string,
   timezone: string,
   format: "time" | "date" | "datetime" | "shortTime",
+  dateLocale: "en-US" | "vi-VN" = "en-US",
 ): string {
   // Blank/empty input is the SSR-placeholder case: client components render
   // with an empty time string (e.g. `nowIso`/`lastSyncedIso` seeded as "" to
@@ -144,7 +146,7 @@ export function formatInSalonTz(
     return `${hour}:${minute}${suffix}`;
   }
 
-  const dateStr = new Intl.DateTimeFormat("en-US", {
+  const dateStr = new Intl.DateTimeFormat(dateLocale, {
     timeZone: timezone,
     weekday: "short",
     month: "short",

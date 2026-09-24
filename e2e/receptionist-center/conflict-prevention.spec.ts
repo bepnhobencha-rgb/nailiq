@@ -1,6 +1,7 @@
 import { test, expect } from "@playwright/test";
 
-import { cleanupTestSalon } from "../helpers/db";
+import { cleanupTestSalon, cleanupTestUser, seedTestSalonMember } from "../helpers/db";
+import { loginReceptionist } from "./realReceptionist";
 import {
   cleanReceptionistData,
   clickAssignSlotAtUtc,
@@ -15,24 +16,28 @@ import {
 } from "./helpers";
 
 let fx: ReceptionistCenterFixture;
+let receptionist: Awaited<ReturnType<typeof seedTestSalonMember>>;
 
 test.beforeAll(async ({}, testInfo) => {
   fx = await seedReceptionistCenterFixture(rcSlug(testInfo.project.name));
+  receptionist = await seedTestSalonMember(fx.salonId, "receptionist");
 });
 
-test.beforeEach(async () => {
+test.beforeEach(async ({ page }) => {
   await cleanReceptionistData(fx.salonId);
+  await loginReceptionist(page, receptionist);
 });
 
 test.afterAll(async ({}, testInfo) => {
-  await cleanupTestSalon(rcSlug(testInfo.project.name));
+  try { if (receptionist) await cleanupTestUser(receptionist.userId); }
+  finally { await cleanupTestSalon(rcSlug(testInfo.project.name)); }
 });
 
 test.describe("Assign conflict prevention", () => {
   test("case 12: conflict slot shows desk message and keeps walk-in in queue", async ({
     page,
   }) => {
-    await gotoReceptionistCenter(page, fx.slug);
+    await gotoReceptionistCenter(page, fx.slug, { useDemoCookie: false });
     const marker = testClientNameMarker();
 
     await fillWalkinGuestContact(page, marker);

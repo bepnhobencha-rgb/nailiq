@@ -93,6 +93,7 @@ import type {
   ReceptionistCenterData,
 } from "@/shared/dashboard/loadReceptionistCenterData";
 import { loadReceptionistCenterDataAction } from "@/shared/dashboard/loadReceptionistCenterDataAction";
+import { applyReceptionistDaySnapshot, receptionistDateOffset } from "@/shared/dashboard/receptionistDaySnapshot";
 import {
   addWalkinAndAssign,
   addWalkinToQueue,
@@ -721,7 +722,9 @@ function ReceptionistCenterInner({
     }
   }, [initialOk]);
 
-  const [dateOffset, setDateOffset] = useState<-1 | 0 | 1 | null>(0);
+  const [dateOffset, setDateOffset] = useState<-1 | 0 | 1 | null>(() =>
+    receptionistDateOffset(initialOk.selectedDate, initialOk.salon.timezone, initialOk.observedAtIso),
+  );
   const { receptionistInterface, setReceptionistInterface } =
     useReceptionistInterface();
   // Shell V2 deliberately reuses the stable Classic timeline. The stored
@@ -805,7 +808,9 @@ function ReceptionistCenterInner({
         else url.searchParams.set(key, value);
       }
       window.history.replaceState(
-        window.history.state,
+        // Let Next synchronize its canonical URL; passing its __NA state skips
+        // that synchronization and a later refresh can restore the old day URL.
+        null,
         "",
         `${url.pathname}${url.search}${url.hash}`,
       );
@@ -864,18 +869,8 @@ function ReceptionistCenterInner({
   );
 
   useEffect(() => {
-    const tz = data.salon.timezone;
-    const today = salonDateOffset(tz, 0, nowIso || undefined);
     /* eslint-disable react-hooks/set-state-in-effect -- reactive reconciliation of dateOffset against (selectedDate, today) */
-    if (data.selectedDate === today) {
-      setDateOffset(0);
-    } else {
-      const yesterday = salonDateOffset(tz, -1, nowIso || undefined);
-      const tomorrow = salonDateOffset(tz, 1, nowIso || undefined);
-      if (data.selectedDate === yesterday) setDateOffset(-1);
-      else if (data.selectedDate === tomorrow) setDateOffset(1);
-      else setDateOffset(null);
-    }
+    setDateOffset(receptionistDateOffset(data.selectedDate, data.salon.timezone, nowIso));
     /* eslint-enable react-hooks/set-state-in-effect */
   }, [data.salon.timezone, data.selectedDate, nowIso]);
 
@@ -1382,7 +1377,7 @@ function ReceptionistCenterInner({
       cleanUrl.searchParams.delete("recover");
       cleanUrl.searchParams.delete("recoveryKind");
       window.history.replaceState(
-        window.history.state,
+        null,
         "",
         `${cleanUrl.pathname}${cleanUrl.search}${cleanUrl.hash}`,
       );
@@ -1695,10 +1690,15 @@ function ReceptionistCenterInner({
           ? loadTurnIqHandoffQueueAction({ slug })
           : Promise.resolve(null),
       ]);
+      // Realtime or mutation reloads can finish after a date switch. Check
+      // inside the state updater too: viewedYmdRef is synced by an effect and
+      // can briefly lag a newer queued navigation update in React.
       if (res.ok) {
-        setData(res.data);
+        setData((current) => applyReceptionistDaySnapshot(current, res.data, ymd));
+        if (viewedYmdRef.current !== ymd) return;
         markSynced();
       } else {
+        if (viewedYmdRef.current !== ymd) return;
         setShakeMessage(loadErrorCopy(messages.receptionist, res.error));
       }
       if (turnIqResult?.ok) {
@@ -1743,10 +1743,12 @@ function ReceptionistCenterInner({
       // the opaque TypeError "Load failed". Realtime can invoke this callback
       // several times in one tick, so an uncaught rejection creates duplicate
       // alerts and can destabilize the board. Preserve the last good snapshot.
-      setConnectionState("offline");
-      setShakeMessage(
-        loadErrorCopy(messages.receptionist, "server_error"),
-      );
+      if (viewedYmdRef.current === ymd) {
+        setConnectionState("offline");
+        setShakeMessage(
+          loadErrorCopy(messages.receptionist, "server_error"),
+        );
+      }
       ErrorReporter.captureException(error, {
         tags: {
           "nailiq.surface": "receptionist_center",
@@ -2226,7 +2228,8 @@ function ReceptionistCenterInner({
       phoneMasked = maskPhoneDigits(b.client_phone);
     }
 
-    const dateStr = formatInSalonTz(b.start_time_utc, timezone, "date");
+    const dateLocale = language === "vi" ? "vi-VN" : "en-US";
+    const dateStr = formatInSalonTz(b.start_time_utc, timezone, "date", dateLocale);
     const t0 = formatInSalonTz(b.start_time_utc, timezone, "time");
     const timeSep = messages.receptionist.drawer.scheduleTimeRangeSep;
     const mainDurMin = Math.max(
@@ -2381,7 +2384,7 @@ function ReceptionistCenterInner({
 
     // "Khi nào book" — when the booking was created, in salon tz.
     const bookedAtLine = b.created_at
-      ? formatInSalonTz(b.created_at, timezone, "datetime")
+      ? formatInSalonTz(b.created_at, timezone, "datetime", dateLocale)
       : null;
 
     return {
@@ -4226,7 +4229,8 @@ function ReceptionistCenterInner({
                   size="sm"
                   data-testid="header-add-appointment"
                   className="hidden min-h-11 text-base md:inline-flex"
-                  onClick={() => {
+                  onClick={(event) => {
+                    event.currentTarget.focus({ preventScroll: true });
                     // Open a blank form on the currently-viewed date so a
                     // receptionist booking ahead (viewing tomorrow) doesn't
                     // land on today's date by default.
@@ -5372,6 +5376,8 @@ function ReceptionistCenterInner({
                   partySizeLabel: rcMessages.queue.partySizeLabel,
                   sourceFallback: rcMessages.queue.sourceFallback,
                   waitHeroSuffix: rcMessages.queue.waitHeroSuffix,
+                  minuteUnit: rcMessages.queue.minuteUnit,
+                  durationMinutes: rcMessages.queue.durationMinutes,
                   vipAria: rcMessages.queue.vipAria,
                   readyAroundShort: rcMessages.queue.readyAroundShort,
                   requestedByClientLine: rcMessages.queue.requestedByClientLine,

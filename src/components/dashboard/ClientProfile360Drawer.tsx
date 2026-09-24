@@ -799,6 +799,7 @@ export function ClientProfile360Drawer({
     <Drawer
       isOpen={isOpen}
       onClose={handleClose}
+      closeButtonLabel={m.actionClose}
       variant="right"
       size="lg"
       title={drawerTitle}
@@ -862,7 +863,7 @@ export function ClientProfile360Drawer({
                 </div>
                 <div className="min-w-0 flex-1">
                   <div className="flex flex-wrap items-center gap-2">
-                    <h3 className="text-lg font-bold text-nq-foreground">
+                    <h3 className="min-w-0 max-w-full break-words text-lg font-bold text-nq-foreground">
                       {data.profile.name?.trim() || "(chưa có tên)"}
                     </h3>
                     {data.profile.isVip ? (
@@ -883,12 +884,19 @@ export function ClientProfile360Drawer({
               </div>
 
               {/* KPI strip */}
-              <dl className={cn("grid gap-2 rounded-2xl border border-nq-border/40 bg-nq-surface/50 px-3 py-3", data.stats.lifetimeSpentCents === null ? "grid-cols-2" : "grid-cols-4")}>
+              <dl data-testid="client-360-kpis" className={cn("grid grid-cols-2 gap-2 rounded-2xl border border-nq-border/40 bg-nq-surface/50 px-3 py-3", data.stats.lifetimeSpentCents !== null && "sm:grid-cols-4")}>
                 {data.stats.lifetimeSpentCents !== null ? <KpiCell label={m.lifetimeSpent} value={formatCentsCompact(data.stats.lifetimeSpentCents)} /> : null}
                 <KpiCell label={m.visits} value={String(data.stats.visitCount)} />
                 {data.stats.avgTicketCents !== null ? <KpiCell label={m.avgTicket} value={formatCentsCompact(data.stats.avgTicketCents)} /> : null}
                 <KpiCell label={m.lastVisit} value={formatDate(data.stats.lastVisitAt, lang)} />
               </dl>
+              {data.stats.lifetimeSpentCents !== null && data.stats.spendBasis ? (
+                <p className="text-xs text-nq-muted">
+                  {data.stats.spendBasis === "synced_payments"
+                    ? (lang === "vi" ? "Chi tiêu theo dữ liệu thanh toán đã đồng bộ." : "Spend from synced payment records.")
+                    : (lang === "vi" ? "Giá trị dịch vụ đã hoàn tất, không phải xác nhận tiền đã thu." : "Completed service value, not confirmation of collected payments.")}
+                </p>
+              ) : null}
             </section>
 
             {/* ═══════════════════════════════════════════════════════════════
@@ -1253,11 +1261,11 @@ export function ClientProfile360Drawer({
 
 function KpiCell({ label, value }: { label: string; value: string }) {
   return (
-    <div className="text-center">
+    <div className="min-w-0 text-center">
       <dt className="text-[10px] font-medium uppercase tracking-wide text-nq-muted">
         {label}
       </dt>
-      <dd className="mt-0.5 truncate text-sm font-bold tabular-nums text-nq-foreground">
+      <dd className="mt-0.5 break-words text-sm font-bold tabular-nums text-nq-foreground">
         {value}
       </dd>
     </div>

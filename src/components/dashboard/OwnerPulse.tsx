@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import Link from "next/link";
 
 import { cn } from "@/shared/lib/cn";
+import { ownerPulseAttentionHref } from "@/shared/dashboard/ownerPulseAttentionHref";
 import { GlobalLanguageToggle } from "@/components/user/GlobalLanguageToggle";
 import type {
   OwnerPulseData,
@@ -36,11 +37,12 @@ const COPY = {
     statusQuiet: "Vắng khách",
     statusEmpty: "Chưa có ai",
     revenueToday: "Doanh thu hôm nay",
+    revenueBasis: "Giá trị dịch vụ đã hoàn tất, không phải xác nhận tiền đã thu.",
     vsLastWeek: (p: number) => `${p}% so với cùng ngày tuần trước`,
     noBench: "Chưa có dữ liệu tuần trước để so",
     done: "Xong",
     remaining: "Còn lại",
-    noShow: "No-show",
+    noShow: "Vắng mặt",
     walkin: "Khách vãng lai",
     attentionTitle: "Cần chú ý",
     allGood: "Mọi thứ đang ổn",
@@ -52,7 +54,7 @@ const COPY = {
           : `${n} khách đang chờ — lâu nhất ${minutes} phút`,
       overdue: (n: number) => `${n} hẹn đang trễ giờ (quá giờ kết thúc)`,
       not_started: (n: number) => `${n} hẹn tới giờ mà chưa bắt đầu`,
-      no_show_risk: (n: number) => `${n} hẹn có nguy cơ no-show hôm nay`,
+      no_show_risk: (n: number) => `${n} hẹn có nguy cơ khách không đến hôm nay`,
       tomorrow_low: (n: number) =>
         n === 0
           ? "Ngày mai chưa có hẹn nào"
@@ -88,6 +90,7 @@ const COPY = {
     statusQuiet: "Quiet",
     statusEmpty: "Nobody in",
     revenueToday: "Revenue today",
+    revenueBasis: "Completed service value, not confirmation of collected payments.",
     vsLastWeek: (p: number) => `${p}% vs same day last week`,
     noBench: "No data from last week to compare",
     done: "Done",
@@ -329,6 +332,7 @@ export function OwnerPulse({
             <p className="mt-0.5 text-3xl font-bold tabular-nums text-nq-primary">
               {money(data.revenueTodayCents)}
             </p>
+            <p className="mt-2 text-xs text-nq-muted">{t.revenueBasis}</p>
           </div>
           {benchPct != null ? (
             <span
@@ -395,11 +399,7 @@ export function OwnerPulse({
           data.attention.map((a) => (
             <Link
               key={a.kind}
-              href={
-                a.kind === "waitlist"
-                  ? `/dashboard/${encodeURIComponent(slug)}/center?view=day#waitlist`
-                  : `/dashboard/${encodeURIComponent(slug)}/center`
-              }
+              href={ownerPulseAttentionHref({ slug, kind: a.kind, timezone: data.timezone, generatedAtUtc: data.generatedAtUtc })}
               className={cn(
                 "flex items-center justify-between gap-3 rounded-2xl border px-4 py-3.5 transition-opacity active:opacity-70",
                 ATT_TONE[a.kind],

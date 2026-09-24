@@ -104,6 +104,8 @@ export interface WalkinQueueSidebarProps {
     sourceFallback: string;
     /** "chờ" / "waiting" — shown under the hero wait number on each card. */
     waitHeroSuffix: string;
+    minuteUnit?: string;
+    durationMinutes?: (minutes: number) => string;
     vipAria: string;
     /** "Ready ~{time}" template for the staff-dispatch line. */
     readyAroundShort: string;
@@ -650,6 +652,8 @@ export function WalkinQueueSidebar({
                       displayMode={queueDisplayMode}
                       labels={{
                         waitHeroSuffix: labels.waitHeroSuffix,
+                        minuteUnit: labels.minuteUnit,
+                        durationMinutes: labels.durationMinutes,
                         vipAria: labels.vipAria,
                         readyAroundShort: labels.readyAroundShort,
                         requestedByClientLine: labels.requestedByClientLine,

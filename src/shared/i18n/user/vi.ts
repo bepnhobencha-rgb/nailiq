@@ -1,5 +1,6 @@
 import { PHONE_INPUT_PLACEHOLDER_NANP } from "@/shared/lib/phoneFormat";
 import { formatPublicMonthlyPrice } from "@/shared/subscriptions/pricingCatalog";
+import { waitlistDurationParts } from "@/shared/lib/waitlistPresentation";
 import type { UserMessages } from "./en";
 
 export const userVi: UserMessages = {
@@ -1458,6 +1459,7 @@ export const userVi: UserMessages = {
       server_error: "Có lỗi kỹ thuật. Thử lại sau.",
     },
     dateSwitcher: {
+      day: "Ngày",
       yesterday: "Hôm qua",
       today: "Hôm nay",
       tomorrow: "Ngày mai",
@@ -1739,6 +1741,8 @@ export const userVi: UserMessages = {
       partySizeLabel: (n: number) => `Nhóm ${n} người`,
       sourceFallback: "Khách vãng lai",
       waitHeroSuffix: "chờ",
+      minuteUnit: "phút",
+      durationMinutes: (minutes: number) => `${minutes} phút`,
       vipAria: "Khách VIP",
       readyAroundShort: "Sẵn sàng ~{time}",
       requestedByClientLine: "Yêu cầu thợ này",
@@ -1844,6 +1848,8 @@ export const userVi: UserMessages = {
         bestMatchRecommendation: "Gợi ý: {name} — {wait}",
         readyNow: "Rảnh ngay",
         waitMinutesShort: (n: number) => `Chờ ~${n} phút`,
+        waitUnknown: "Đang bận — chưa xác định giờ rảnh",
+        serviceDuration: (minutes: number) => `${minutes} phút`,
         readyAroundTime: "Sẵn sàng lúc {time}",
         assignImmediately: "Xếp ngay",
         waitForStaff: "Chờ {name}",
@@ -1928,7 +1934,7 @@ export const userVi: UserMessages = {
       smsChannel: "SMS",
       emailChannel: "Email",
       deliveryStatus: {
-        sent: "Provider đã nhận",
+        sent: "Đơn vị gửi đã nhận",
         delivered: "Đã giao",
         sending: "Đang gửi",
         failed: "Gửi thất bại",
@@ -1946,8 +1952,16 @@ export const userVi: UserMessages = {
         `Đã mở chỗ cho ${name}. NailIQ vẫn đang xác minh việc gửi thông báo.`,
       deliveryFailedToast: (name) =>
         `Đã mở chỗ cho ${name}, nhưng chưa gửi được thông báo.`,
-      waitingMinutes: (minutes) =>
-        minutes === 0 ? "Vừa vào danh sách chờ" : `Đã chờ ${minutes} phút`,
+      waitingMinutes: (minutes) => {
+        const parts = waitlistDurationParts(minutes);
+        if (!parts) return "—";
+        const duration = [
+          parts.days ? `${parts.days} ngày` : null,
+          parts.hours ? `${parts.hours} giờ` : null,
+          parts.minutes ? `${parts.minutes} phút` : null,
+        ].filter(Boolean).join(" ");
+        return duration ? `Đã chờ ${duration}` : "Vừa vào danh sách chờ";
+      },
       claimed: "✅ Đã giành chỗ",
       createBooking: "Tạo lịch",
       empty: "Chưa có khách chờ chỗ",
@@ -1960,17 +1974,17 @@ export const userVi: UserMessages = {
       detailsDescription: "Thông tin liên hệ riêng tư dành cho nhân viên tiệm.",
       closeDetails: "Đóng thông tin khách",
       fullName: "Họ tên",
-      statusLabel: "Trạng thái Waitlist",
+      statusLabel: "Trạng thái chờ chỗ",
       phoneLabel: "Số điện thoại",
       emailLabel: "Email",
       serviceLabel: "Dịch vụ",
       dateLabel: "Ngày mong muốn",
       timeLabel: "Giờ mong muốn",
       staffLabel: "Thợ mong muốn",
-      joinedAtLabel: "Vào Waitlist lúc",
+      joinedAtLabel: "Vào danh sách chờ lúc",
       waitingLabel: "Đã chờ",
       requestKindLabel: "Loại yêu cầu",
-      sourceLabel: "Lý do vào Waitlist",
+      sourceLabel: "Lý do vào danh sách chờ",
       anyTime: "Bất kỳ giờ nào",
       anyStaff: "Bất kỳ thợ nào",
       individualRequest: "Lịch cá nhân",
@@ -2309,6 +2323,8 @@ export const userVi: UserMessages = {
       searchPlaceholder: "Tìm theo tên hoặc số điện thoại…",
       loading: "Đang tải khách…",
       empty: "Chưa có khách.",
+      noSearchResults: "Không tìm thấy khách phù hợp. Thử tên hoặc số điện thoại khác.",
+      retry: "Thử lại",
       unknownName: "(chưa có tên)",
       vipBadge: "VIP",
       summaryLine: (visits, lastVisit) =>

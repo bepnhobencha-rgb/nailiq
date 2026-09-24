@@ -1,6 +1,7 @@
 import { expect, test } from "@playwright/test";
 
-import { cleanupTestSalon } from "../helpers/db";
+import { cleanupTestSalon, cleanupTestUser, seedTestSalonMember } from "../helpers/db";
+import { loginReceptionist } from "./realReceptionist";
 import {
   cleanReceptionistData,
   clickWalkinService,
@@ -15,15 +16,18 @@ import {
 } from "./helpers";
 
 let fx: ReceptionistCenterFixture;
+let receptionist: Awaited<ReturnType<typeof seedTestSalonMember>>;
 
 test.use({ serviceWorkers: "block" });
 
 test.beforeAll(async ({}, testInfo) => {
   fx = await seedReceptionistCenterFixture(rcSlug(testInfo.project.name));
+  receptionist = await seedTestSalonMember(fx.salonId, "receptionist");
 });
 
-test.beforeEach(async () => {
+test.beforeEach(async ({ page }) => {
   await cleanReceptionistData(fx.salonId);
+  await loginReceptionist(page, receptionist);
 });
 
 test.afterEach(async () => {
@@ -36,11 +40,12 @@ test.afterEach(async () => {
 });
 
 test.afterAll(async ({}, testInfo) => {
-  await cleanupTestSalon(rcSlug(testInfo.project.name));
+  try { if (receptionist) await cleanupTestUser(receptionist.userId); }
+  finally { await cleanupTestSalon(rcSlug(testInfo.project.name)); }
 });
 
 test("a lost create response retries to the same committed walk-in", async ({ page }) => {
-  await gotoReceptionistCenter(page, fx.slug);
+  await gotoReceptionistCenter(page, fx.slug, { useDemoCookie: false });
 
   const clientName = testClientNameMarker();
   await fillWalkinGuestContact(page, clientName);
@@ -106,7 +111,7 @@ test("an assignment race keeps the committed customer in the queue", async ({ pa
     .eq("id", fx.salonId);
   if (settingError) throw new Error(settingError.message);
 
-  await gotoReceptionistCenter(page, fx.slug);
+  await gotoReceptionistCenter(page, fx.slug, { useDemoCookie: false });
   const clientName = testClientNameMarker();
   await fillWalkinGuestContact(page, clientName);
   await clickWalkinService(page, fx.serviceIds[0]!);

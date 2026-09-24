@@ -12,7 +12,8 @@
  * accepts waiting.
  *
  * Membership is gated via `getDashboardWriteClient`. The query window
- * is bounded to `now()..now()+4h` so this stays cheap during peak; the
+ * forecasts confirmed reservations within `now()..now()+4h`, while explicit
+ * in-progress services remain busy until completion (even with stale dates); the
  * receptionist polls via the existing realtime channel rather than
  * keeping a hot subscription on this endpoint.
  */
@@ -252,8 +253,7 @@ export async function getStaffAvailability(
       .eq("schedule_model", "single")
       .in("staff_id", staffIds)
       .in("status", ["confirmed", "in_progress"])
-      .lte("start_time_utc", horizonIso)
-      .or(`status.eq.in_progress,end_time_utc.gte.${nowIso}`)
+      .or(`status.eq.in_progress,and(start_time_utc.lte.${horizonIso},end_time_utc.gte.${nowIso})`)
       .is("deleted_at" as never, null),
     serviceRole
       .from("booking_service_segments" as never)
@@ -269,9 +269,8 @@ export async function getStaffAvailability(
       .is("booking.deleted_at" as never, null)
       .in("staff_id" as never, staffIds as never)
       .in("reservation_status" as never, ["confirmed", "in_progress"] as never)
-      .lte("occupied_start_utc" as never, horizonIso as never)
       .or(
-        `reservation_status.eq.in_progress,occupied_end_utc.gte.${nowIso}` as never,
+        `reservation_status.eq.in_progress,and(occupied_start_utc.lte.${horizonIso},occupied_end_utc.gte.${nowIso})` as never,
       ),
   ]);
 
@@ -440,7 +439,7 @@ export async function getStaffAvailability(
 
       // Overrun heuristic: in_progress past planned end without a
       // completion. Bigger overrun = lower confidence.
-      if (b.status === "in_progress" && endMs < nowMs) {
+      if (b.status === "in_progress" && endMs <= nowMs) {
         const overrunMin = Math.floor((nowMs - endMs) / 60000);
         runningOverMin = Math.max(runningOverMin, overrunMin);
         // Push the ready-at projection out by the overrun gap so the

@@ -762,7 +762,10 @@ export function BookingBlock(props: BookingBlockProps) {
           style={style}
           title={tooltipTitle}
           aria-label={`Booking ${bookingId}: ${clientName}`}
-          onClick={onClick}
+          onClick={(event) => {
+            event.currentTarget.focus({ preventScroll: true });
+            onClick();
+          }}
           onKeyDown={(event) => {
             if (event.key === "Enter" || event.key === " ") {
               event.preventDefault();
@@ -785,7 +788,10 @@ export function BookingBlock(props: BookingBlockProps) {
         style={style}
         title={tooltipTitle}
         aria-label={`Booking ${bookingId}: ${clientName}`}
-        onClick={onClick}
+        onClick={(event) => {
+          event.currentTarget.focus({ preventScroll: true });
+          onClick();
+        }}
         onPointerDown={onPointerDown}
       >
         {inner}
