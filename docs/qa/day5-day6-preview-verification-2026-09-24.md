@@ -395,3 +395,138 @@ hai file test/config chưa commit/push.
 - Rollback boundary: this is display-only and additive to the response; revert
   this batch's formatter, response field and UI call sites together. No stored
   data or schema rollback is required. Preserve the earlier report evidence.
+
+## Approved publication and hosted timezone verification — 2026-09-24
+
+This section supersedes the unpublished/not-hosted boundary above for this
+specific fix, not for the whole Day 6 acceptance plan.
+
+- User approved commit/push into PR #1424 and Preview redeploy, keeping Draft.
+  Published commit: `6c31974ac4568e30fb083b459462fe9a1b9f62cb`.
+- Preview deployment `dpl_BT1f9uLZgdFWZt5ivgCNr1TboxX5`: READY.
+  URL: https://nailiq-m4pi3h1yl-bepnhobencha-2588s-projects.vercel.app
+  Branch alias: https://nailiq-git-qa-day5-reception-b8704e-bepnhobencha-2588s-projects.vercel.app
+  Browser `/api/version` visibly returned the exact published SHA.
+- Read-only environment preflight: 60 branch-scoped Preview variables; QA ref
+  `uhpzafoiifupyypkcwln`; 32 provider credentials blank; outbound SMS/email/call
+  and payment/provider workers disabled. No environment or WAF changes made.
+  Initial REST create attempt rejected `target: preview` before creation;
+  corrected by omitting target, then exactly one new Preview was created.
+- Synthetic fixture: two isolated QA salons, two auth users (owner and
+  receptionist), three staff, two services, three bookings and one customer
+  profile. UTC salon; completed booking at 07:00 UTC with service 45 + add-on
+  10. This fixture time differs from local automated 08:30 fixture.
+- **Hosted computer-use PASS, owner:** authenticated through the real login
+  form, opened customer detail, saw 07:00 salon time and $55 completed service
+  value. Verified Vietnamese desktop and Vietnamese/English 375x667 mobile.
+  English displayed `9/24/2026 07:00`; Vietnamese `24/9/2026 07:00`.
+  Mobile screenshot showed contained content and accessible footer actions.
+  Escape and Close returned focus to the customer name. No Book again or
+  Message action was submitted.
+- **Hosted computer-use PASS, receptionist:** revoked only the synthetic owner
+  session via QA admin API, reloaded to login and signed in as receptionist.
+  List displayed spend as an em dash; detail omitted lifetime/average amounts
+  and timeline price, while keeping the correct 07:00 time and operational
+  history. Direct navigation to the other synthetic salon's clients route
+  redirected to the user's own salon without displaying its client list.
+  This confirms the tested route behaviour, not exhaustive IDOR coverage.
+- Fixture inspection before teardown: three original booking statuses and
+  amounts unchanged. No additional booking was created through the UI.
+- **Cleanup PASS:** closed the test tab, reset viewport, globally revoked the
+  two synthetic users' sessions, removed both fixture salons and their exact
+  child records, removed the synthetic profile and two auth users. Cleanup
+  receipt: `sessionsRevoked=true`, `salonsRemaining=0`, `accountsRemoved=2`.
+  Disposable test records are permanently removed; no live salon touched.
+- Read-only Production deployment comparison remained
+  `dpl_FX3WJBMueRCword7mwJyyhafPNPc`, READY, SHA
+  `f6bf087b9d6f4354c3742ee270ab6aaf78cc8d9d`.
+- CI snapshot after hosted QA: 19 checks SUCCESS (including Vercel), one
+  SKIPPED; non-RC and settings-recovery checks still running. Receptionist
+  mobile passed. Build/typecheck, security, smoke, receptionist desktop, tenant
+  roles/session revocation, SuperAdmin HTTPS and visual regression PASS.
+  Runs: CI `36020134066`, E2E `36020134065`. Pending is not PASS.
+- Known minor copy findings remain: English UI has Vietnamese activity-log
+  accessible label and some document titles do not track current language.
+  First-time-owner comprehension and a physical iPhone remain NOT PROVEN.
+- **PASS for hosted verification of this timezone/role-display fix.** Day 6
+  is not closed and no 100% claim is made. PR remains OPEN/Draft. No merge,
+  Production deploy, migration, notification or external provider call.
+  This follow-up evidence is local/uncommitted after the single approved push.
+
+## Final CI closeout for published head — 2026-09-24
+
+- Refreshed PR #1424 at exact head
+  `6c31974ac4568e30fb083b459462fe9a1b9f62cb`: OPEN/Draft, **22 checks
+  SUCCESS, 2 SKIPPED, zero pending/in-progress and zero failed checks**.
+  This supersedes the pending snapshots above. Skipped checks are MQA-0148
+  and AI Triage, not acceptance passes.
+- Read individual completed job logs through GitHub API (the CLI refused to
+  retrieve job logs while the overall workflow was still running):
+  - receptionist Chromium `107702863049`: **109 passed, 4 skipped**;
+  - receptionist mobile `107702863022`: **103 passed, 10 skipped**;
+  - non-RC `107702863072`: **179 passed, 2 skipped**, plus Guided Setup 6,
+    Reports WebKit 1, Superadmin authority 6, booking capability 7,
+    registration 3, complete booking diagnostics 10, group placeholders 18;
+  - real-auth settings recovery `107702863067`: **196 passed (17.6 minutes)**.
+  No flaky/retry summaries found in these filtered test-result logs. This is
+  not a guarantee that future runs cannot flake.
+- Completed server logs still contain `The destination stream closed early.`
+  in desktop/mobile/recovery outputs. Preserve the previous diagnostic
+  boundary: assertions passed, but do not claim perfectly clean runtime logs
+  or that every historical/Production stream abort has been explained.
+- Updated the current acceptance index and existing iPhone handoff sheet
+  locally. Five physical-device tasks now have explicit blank result fields;
+  they remain NOT PROVEN, not automatically passed by the CI results.
+- **PASS_CI + PASS_HOSTED for the documented scope.** No source-code changes,
+  new commit/push, PR-state change, deployment, database/provider activity or
+  notifications during this CI closeout turn. Documentation-only diff check
+  PASS; application typecheck/build not rerun for documentation-only changes.
+- Day 6 remains open for V1-24 physical-iPhone/new-owner acceptance and release
+  authorization. V1-21 new receptionist timing remains separately open.
+
+## Review tập trung trước phát hành — 24/09/2026
+
+- Đọc lại diff runtime từ base `f6bf087b9d6f4354c3742ee270ab6aaf78cc8d9d`
+  tới head `6c31974ac4568e30fb083b459462fe9a1b9f62cb`, cùng các caller và
+  regression liên quan. PR #1424 vẫn OPEN/Draft; không thay đổi trạng thái PR.
+- Review tập trung: query availability và trạng thái in-progress; phép chiếu
+  khoảng trống walk-in; số tiền dịch vụ/add-on tách khỏi receipt thanh toán;
+  membership/role trước đọc hồ sơ; thời gian salon; phản hồi tải ngày/tìm kiếm
+  đến trễ; trạng thái Loyalty qua refresh; focus của form/drawer; thay đổi
+  fixture để tránh cache trỏ ID salon đã xóa. Hướng dẫn React và checklist
+  Supabase được dùng để rà vòng đời state và ranh giới quyền.
+- Không tìm thấy lỗi P0/P1 mới có thể xác lập từ phần diff đã rà. Đây là review
+  tập trung, không phải security audit toàn hệ thống hoặc bằng chứng rằng
+  mọi ca thực tế đều không có lỗi. Không sửa source để tạo thêm công việc.
+- Chạy mới 10 suite unit: **122/122 PASS, 10/10 files PASS**, 376ms;
+  không skipped. Lệnh:
+
+```sh
+./node_modules/.bin/vitest run src/shared/dashboard/__tests__/availabilityEngineSequence.spec.ts src/shared/dashboard/__tests__/clientProfileDateTime.spec.ts src/shared/dashboard/__tests__/clientSpendAuthorization.spec.ts src/shared/dashboard/__tests__/ownerPulseAttentionHref.spec.ts src/shared/dashboard/__tests__/receptionistDaySnapshot.spec.ts src/shared/dashboard/__tests__/receptionistKpiWindow.spec.ts src/shared/dashboard/__tests__/serviceValueCents.spec.ts src/shared/dashboard/__tests__/walkinGapSafety.spec.ts src/shared/lib/__tests__/waitlistPresentation.spec.ts src/components/receptionist/__tests__/receptionistLocale.spec.ts
+```
+
+- Runner có warning về Vite native config loader trong phiên bản tương lai;
+  không ẩn warning và không đổi cấu hình ngoài phạm vi review. `git diff
+  --check` PASS. Không chạy lại build/full browser suite vì source không đổi;
+  bằng chứng CI/hosted trước đó vẫn được ghi riêng ở trên.
+- Còn copy/title nhỏ EN/VI và stream-abort đã ghi trong report; chưa có bằng
+  chứng iPhone vật lý/người mới. Không tính việc gửi link là đã nghiệm thu.
+- Ranh giới release: `vercel.json` giữ `main: false` có sẵn và khóa Git deploy
+  của nhánh QA. Không hứa merge sẽ tự deploy Production; khi được phê duyệt
+  cần xác minh cơ chế phát hành hiện hành và exact SHA riêng. Không migration.
+- Lượt review chỉ đọc source/GitHub, chạy unit có mock và bổ sung tài liệu
+  local. Không commit/push, merge/deploy, database mutation, provider hoặc
+  thông báo. Ba báo cáo local có sẵn được giữ nguyên các thay đổi trước đó.
+
+## Phê duyệt xuất bản báo cáo và chuyển review — 24/09/2026
+
+- Huy trả lời “n” xác nhận đề nghị commit/push đúng ba báo cáo QA và chuyển
+  PR #1424 sang Ready for review; không merge/deploy Production.
+- Batch này chỉ cập nhật `MASTERPLAN_ACCEPTANCE_CURRENT.md`, báo cáo này
+  và `masterplan-day-6-admin-handoff-2026-09-24.md`. Không đổi runtime,
+  migration, cấu hình, dữ liệu hoặc quyền salon.
+- Các trạng thái Draft/local ở trên là checkpoint lịch sử. CI và hosted
+  evidence ở SHA `6c31974` không được gán thành kết quả CI của commit tài liệu
+  mới; Preview hiện có vẫn là ứng viên runtime đã kiểm chứng.
+- Ready for review chỉ là sẵn sàng để xét duyệt, không phải xác nhận V1-21,
+  V1-24, ngày 6 hoặc Master Plan đạt 100%. Giữ toàn bộ mục chưa nghiệm thu.
