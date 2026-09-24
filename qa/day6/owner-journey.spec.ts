@@ -93,6 +93,10 @@ test("real owner/admin sees truthful totals, searches customers and follows tomo
   await noHorizontalOverflow(page);
   await expect(detail).toContainText("$55");
   await expect(detail).not.toContainText("$45");
+  // The salon fixture is UTC; the viewer is in Los Angeles. Visit history
+  // must show salon time, not the viewer's clock (08:30 UTC became 01:30).
+  expect(fx.timezone).toBe("UTC");
+  await expect(detail.getByText("08:30", { exact: true })).toBeVisible();
   // A text-content assertion alone passes even when CSS hides the last digits.
   const kpis = detail.getByTestId("client-360-kpis");
   await expect(kpis.locator("dd")).toHaveCount(4);

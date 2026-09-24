@@ -58,6 +58,20 @@ describe("Client spend authorization", () => {
       expect(mocks.tables).not.toContain("client_ai_summaries");
     }
   });
+  it.each(["owner", "admin", "receptionist"])("returns the authorized salon timezone for %s without shifting stored instants", async role => {
+    mocks.context.mockResolvedValue({ role, salon: { id: "salon-a", timezone: "America/Los_Angeles" } });
+    const result = await loadClientProfile360("qa-a", "16045550123");
+    expect(result.ok).toBe(true);
+    if (result.ok) {
+      expect(result.data.salonTimezone).toBe("America/Los_Angeles");
+      expect(result.data.timeline[0].startUtc).toBe("2026-01-01T10:00:00Z");
+    }
+  });
+  it("rejects a salon without authorized membership before privileged reads", async () => {
+    mocks.context.mockResolvedValue(null);
+    expect(await loadClientProfile360("other-salon", "16045550123")).toEqual({ ok: false, error: "unauthorized" });
+    expect(mocks.service).not.toHaveBeenCalled();
+  });
   it.each(["owner", "admin", "senior"])("preserves financial profile for %s", async role => {
     mocks.context.mockResolvedValue({ role, salon: { id: "salon-a" } });
     const r = await loadClientProfile360("qa-a", "16045550123"); expect(r.ok).toBe(true);

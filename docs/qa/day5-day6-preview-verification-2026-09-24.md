@@ -221,3 +221,177 @@ hai file test/config chưa commit/push.
 - Các dòng “chưa commit/push” phía trên là trạng thái trước phê duyệt.
   CI của batch mới phải được kiểm chứng riêng. Không merge, không deploy
   Production, không Publish firewall, không migration hoặc gửi thông báo.
+
+## Hosted Computer Use — ngoại lệ QA đã active, 24/09
+
+### Môi trường và phạm vi
+
+- Đọc UI Vercel và `vercel firewall overview --json` xác nhận active version 12,
+  updatedAt `2026-09-24T15:00:49.255Z`, draft=null. Alias QA ngày 5 có trong
+  nhóm ngoại lệ writer; nhóm payment reconciliation vẫn không cho alias này.
+  Agent không bấm Publish. Hai SDK rules vẫn log-only, không có system bypass.
+- Preview branch `qa/day5-receptionist-20260924`; application runtime đã ghi
+  nhận ở checkpoint trước là `8e220721`, không phải test-only head `3d2a85b1`.
+- Fixture kiểm lại branch-only Preview env trước khi ghi: cả URL Supabase trỏ
+  QA `uhpzafoiifupyypkcwln`, SMS/email/call OFF, payment workers OFF,
+  card-save dispatch disabled. Không đọc/ghi tenant kinh doanh hoặc Production.
+- Hai salon synthetic riêng, 3 nhân viên, 2 dịch vụ, 3 lịch synthetic,
+  một hồ sơ khách và hai tài khoản Owner/Receptionist. Auth admin createUser
+  đã-confirm không gửi invitation. Một password dùng tạm, không ghi vào file.
+- Computer Use trong in-app browser: desktop EN rồi viewport 375×667 VI.
+  Đây là mô phỏng trên Mac, không phải iPhone vật lý.
+
+### PASS đã quan sát trực tiếp
+
+1. Owner đăng nhập thật thành công; lỗi POST login bị WAF chặn trước đây không
+   tái hiện. Trang chủ hiển thị đúng 3 lịch, 1 hoàn tất, QA Casey đang bận.
+2. Trang chủ và Pulse cùng $55 (= dịch vụ $45 + add-on $10), chú thích rõ đây
+   là giá trị dịch vụ hoàn tất, không xác nhận tiền đã thu.
+3. Danh sách tìm bằng số synthetic mở đúng hồ sơ; Tổng chi/TB mỗi lần/lịch sử
+   cùng $55; tên và ngày không bị cắt ở viewport đã xem. Escape trả focus về
+   tên khách. Không bấm Mời đặt lại/Nhắn tin.
+4. Cảnh báo Ngày mai mở `date=2026-09-25`; tab Ngày mai selected, reload vẫn
+   giữ ngày này. UI nói SMS/email đang tắt đúng cấu hình, không báo đã gửi.
+5. Owner truy cập đường dẫn Clients của salon synthetic thứ hai bị chuyển về
+   salon của mình; không thấy danh sách khách của salon khác. Đây là bằng chứng
+   route UI, không thay thế toàn bộ IDOR/RLS suite.
+
+### FAIL mới: giờ lịch sử khách theo máy xem, không theo salon
+
+- Fixture salon timezone UTC, lịch hoàn tất bắt đầu `2026-09-24T07:00:00Z`.
+  Trong hồ sơ khách VI, lịch sử hiển thị **24/9/2026 00:00** thay vì 07:00 UTC.
+- Root cause ở `ClientProfile360Drawer.tsx`: `formatTime` dùng
+  `Date.getHours()/getMinutes()` theo timezone runtime; hai formatter ngày
+  dùng `toLocaleDateString` không truyền salon timeZone. Contract
+  `ClientProfile360` chưa có timezone salon. Sai khác này có thể cả giờ/ngày
+  khi chủ xem từ múi giờ khác; không phải dữ liệu booking bị đổi.
+- Đối chiếu các formatter với main base
+  `f6bf087b9d6f4354c3742ee270ab6aaf78cc8d9d`: mã formatter giống nhau.
+  Đây là lỗi có sẵn theo so sánh source, không tuyên bố đã chạy UI main.
+- Mức độ trung bình: thông tin lịch sử sai cho người xem khác timezone.
+  Cần truyền timezone salon từ loader đã xác minh quyền, định dạng giờ/ngày
+  nhất quán, test chênh ngày và DST trước khi xuất bản. Chưa sửa trong lượt UI này.
+- Metadata title còn `Clients`/`Pulse` trong VI; đã là hạn chế ghi trước đó.
+
+### BLOCKED / cleanup
+
+- Bấm Đăng xuất mở JS confirm. Công cụ không hoàn tất điều khiển hộp thoại:
+  các thao tác được tài liệu hỗ trợ timeout tại `Emulation.setFocusEmulationEnabled`;
+  API getJsDialog trả undefined. Native app host bị chặn vì an toàn nên không
+  sử dụng đường đó. Không coi đây là bằng chứng lỗi đăng xuất của NailIQ.
+- Do chưa hoàn tất chuyển phiên bằng UI, **Receptionist hosted NOT TESTED**.
+  Không tái sử dụng phiên Owner để giả làm Receptionist. Không đánh dấu toàn
+  bộ hosted QA PASS hoặc đóng Ngày 6.
+- Thu hồi global sessions của đúng hai Auth user synthetic bằng Supabase QA,
+  rồi cleanup fixture: **PASS, salonsRemaining=0, accountsRemoved=2**;
+  script xóa các booking/client profile/staff/services/membership của riêng
+  fixture. Không xóa dữ liệu ngoài lượt thử; dữ liệu synthetic có thể dựng lại.
+- Viewport đã reset. Lệnh đóng tab QA bị timeout; không tuyên bố đã đóng tab.
+  Membership/user của fixture đã xóa nên không còn quyền truy cập salon QA.
+- Không migration, commit/push thêm, deploy, email/SMS/call/payment/provider.
+  Mục báo cáo này local-only. **PASS một phần UI Owner; FAIL timezone;
+  BLOCKED công cụ chuyển role; NOT PROVEN nghiệm thu người dùng/iPhone thật.**
+
+## CI xác nhận batch fixture — 24/09, sau 14:56 UTC
+
+- Head kiểm chứng: `3d2a85b158e1622895c01ba4ae582f707de8b7f0`.
+  CI `36013530425` và E2E `36013530353` đều COMPLETED/SUCCESS.
+  PR #1424 vẫn OPEN/Draft: 20 checks SUCCESS, 2 SKIPPED
+  (MQA-0148 và AI Triage); không tính skipped là PASS.
+- Đọc log riêng job non-RC `107680212413`: **179 passed, 2 skipped**,
+  không có kết quả flaky hoặc retry # trong log. Bốn ca flaky của lần trước
+  không tái xuất hiện ở lần này; không suy rộng thành cam kết không bao giờ flake.
+- Các nhóm non-RC bổ sung: Guided Setup mobile 6 PASS, Reports WebKit 1 PASS,
+  Superadmin authority WebKit 6 PASS, Booking capability WebKit 7 PASS,
+  registration WebKit 3 PASS, booking diagnostics WebKit 10 PASS,
+  group placeholders WebKit 18 PASS.
+- Log settings recovery `107680212582`: **196 passed**, không ghi nhận
+  flaky/retry. Các checks receptionist desktop/mobile, tenant roles,
+  SuperAdmin HTTPS, visual, smoke, build/typecheck, i18n và security đều SUCCESS.
+- Kiểm chứng bằng `gh pr view 1424 --json
+  headRefOid,isDraft,state,statusCheckRollup`, `gh run view` cho hai run và
+  `gh run view 36013530353 --job <job-id> --log`.
+- **PASS_CI** cho batch fixture. Hosted Owner/Receptionist vẫn chưa PASS:
+  lần đọc firewall có dữ liệu gần nhất còn draft và `liveAllowsQa=false`.
+  Lần gọi CLI overview sau CI kết thúc trả exit 0 nhưng không có JSON;
+  không dùng kết quả rỗng để suy ra đã publish. Không tự publish hoặc thử
+  lại đăng nhập/tạo fixture khi chưa chứng minh ngoại lệ QA đã active.
+- Nghiệm thu người mới/iPhone vật lý vẫn **NOT PROVEN**. Chưa đóng Ngày 6,
+  không tuyên bố 100%; không merge, deploy Production, migration hoặc gửi
+  thông báo/provider. Mục bằng chứng cuối này lưu local, chưa commit/push.
+
+## Local Customer 360 timezone fix — 2026-09-24
+
+### Current truth and scope
+
+- This section supersedes the older WAF blocker wording above: the prior hosted
+  audit recorded active WAF version 12 with no draft and a working QA owner
+  login. No firewall change was made during this local fix.
+- Branch remains `qa/day5-receptionist-20260924`, HEAD `3d2a85b1`; these changes
+  are uncommitted. The existing CI success applies to HEAD, **not** this fix.
+- Root cause: Customer 360 used the viewer's default timezone and `getHours()`.
+  Its server response omitted the authorized salon timezone. Stored appointment
+  instants were correct; this was a display defect.
+- The response now includes `salonTimezone` from the existing authenticated
+  dashboard context, with no additional database access. Timeline/upcoming and
+  other profile timestamp dates use that zone. Calendar-only dates keep their
+  literal day; invalid/missing timezone never falls back to the viewer's zone.
+- No booking/status/financial/role/provider logic, migration, or UI primitive
+  was changed. Receptionist spend redaction remains covered.
+
+### Verification evidence
+
+1. **RED, browser reproduced:**
+   `node qa/day5/run-local.mjs test --config qa/day6/playwright.config.ts --project desktop-admin-en --grep 'real owner/admin'`
+   failed before rebuilding the application: the UTC fixture's `08:30` history
+   was absent with a Los Angeles viewer. This complements the hosted `07:00`
+   versus `00:00` evidence recorded earlier; fixtures have different times.
+2. **PASS, 27 tests:**
+   `npx --offline vitest run src/shared/dashboard/__tests__/clientProfileDateTime.spec.ts src/shared/dashboard/__tests__/clientSpendAuthorization.spec.ts`.
+   Covers UTC/Los Angeles/Vietnam clocks, day rollover, spring/fall DST,
+   EN/VI, calendar-only expiry, invalid input, authorized timezone provenance,
+   unchanged stored instants, membership rejection and existing spend privacy.
+3. **PASS, timezone independence:** reran the eight formatter cases with
+   `TZ=Pacific/Kiritimati` and `TZ=America/Los_Angeles`; eight passed each run.
+4. **PASS, 4 existing DST tests:**
+   `npx --offline vitest run src/shared/lib/__tests__/salonTimeDst.spec.ts`.
+5. **PASS:** `npm run typecheck`, then `node qa/day5/run-local.mjs build`;
+   these ran sequentially to avoid `.next/types` conflicts.
+6. **PASS, 18/18 browser tests, retries=0:**
+   `node qa/day5/run-local.mjs test --config qa/day6/playwright.config.ts owner-journey.spec.ts`.
+   Six configurations: iPhone SE EN/VI, iPhone Pro Max EN/VI, iPad VI
+   (WebKit emulation) and desktop admin EN (Chromium). Verifies corrected
+   salon clock, owner totals, customer search, tomorrow navigation/reload,
+   server date markup and cross-salon route rejection.
+7. **PASS, actual computer use on local build:** synthetic owner signed in;
+   searched the synthetic customer's phone; opened Customer 360; visibly
+   confirmed `24/9/2026 08:30` and `$55` on desktop and 375×667 viewport.
+   Switched to English and confirmed `9/24/2026 08:30`. Escape and Close
+   returned focus to the customer name. No message/booking button submitted.
+   Temporary viewport reset and agent-created local tab closed.
+8. **Cleanup PASS:** the exact manual synthetic salon, user and profile fixture
+   was removed by its cleanup routine (`Manual fixture removed; salon count=0`).
+   Local server stopped. Automated fixtures also completed teardown.
+9. **Checks with known warnings:** touched-file ESLint: zero errors, one existing
+   unused `handleBookAgain` warning (also present at HEAD). i18n checker:
+   zero errors, 13 existing warnings; no translation bundles changed.
+   `git diff --check` passed. WebKit server output still reports early-closed
+   streams during navigation; test assertions had no page errors/5xx and this
+   fix does not claim to resolve that separate diagnostic. The manual local
+   server also logged stale refresh-token errors from prior browser state;
+   fresh synthetic login succeeded.
+
+### Remaining boundary
+
+- **PASS locally for this timezone fix; not deployed or hosted-verified.**
+- Hosted receptionist flow, rerun of hosted owner after publishing this fix,
+  first-time-owner acceptance and physical iPhone testing are not proven.
+  Do not close Day 6 or claim 100% from these local results.
+- Minor copy follow-up observed: activity-log accessible label remained
+  Vietnamese after switching to English; existing Clients page title is English.
+  Neither unrelated copy item was changed in this timezone batch.
+- No commit, push, PR state change, Preview redeploy, Production mutation,
+  migration, real notification or provider request in this local batch.
+- Rollback boundary: this is display-only and additive to the response; revert
+  this batch's formatter, response field and UI call sites together. No stored
+  data or schema rollback is required. Preserve the earlier report evidence.

@@ -27,6 +27,7 @@ export type C360Booking = {
 
 
 export type ClientProfile360 = {
+  salonTimezone: string;
   profile: {
     id: string | null;
     name: string | null;
@@ -780,6 +781,7 @@ export async function loadClientProfile360(
 
   // ── Assemble result ───────────────────────────────────────────────────────
   const data: ClientProfile360 = {
+    salonTimezone: ctx.salon.timezone,
     profile,
     stats,
     reliability,

@@ -29,6 +29,11 @@ import {
   type ClientProfile360,
 } from "@/shared/dashboard/loadClientProfile360Action";
 import { sendClientMessage } from "@/shared/dashboard/sendClientMessageAction";
+import {
+  formatClientProfileDate as formatDate,
+  formatClientProfileDateShort as formatDateShort,
+  formatClientProfileTime as formatTime,
+} from "@/shared/dashboard/clientProfileDateTime";
 
 // C360Booking and ClientProfile360 types are imported from
 // "@/shared/dashboard/loadClientProfile360Action" above.
@@ -55,41 +60,6 @@ function formatCentsCompact(cents: number): string {
   const dollars = Math.round((cents || 0) / 100);
   if (dollars >= 1000) return `$${(dollars / 1000).toFixed(1)}k`;
   return `$${dollars}`;
-}
-
-/** Format a full date, locale-aware based on UI language. */
-function formatDate(iso: string | null, lang: "en" | "vi" = "en"): string {
-  if (!iso) return "—";
-  const ms = Date.parse(iso);
-  if (!Number.isFinite(ms)) return iso;
-  const d = new Date(ms);
-  const locale = lang === "vi" ? "vi-VN" : "en-US";
-  return d.toLocaleDateString(locale, {
-    day: "numeric",
-    month: "numeric",
-    year: "numeric",
-  });
-}
-
-/** Format a short date (e.g. "14 Jun 2026"), locale-aware. */
-function formatDateShort(iso: string | null, lang: "en" | "vi" = "en"): string {
-  if (!iso) return "—";
-  const ms = Date.parse(iso);
-  if (!Number.isFinite(ms)) return iso;
-  const d = new Date(ms);
-  const locale = lang === "vi" ? "vi-VN" : "en-US";
-  return d.toLocaleDateString(locale, {
-    day: "numeric",
-    month: "short",
-    year: "numeric",
-  });
-}
-
-function formatTime(iso: string): string {
-  const ms = Date.parse(iso);
-  if (!Number.isFinite(ms)) return "";
-  const d = new Date(ms);
-  return `${String(d.getHours()).padStart(2, "0")}:${String(d.getMinutes()).padStart(2, "0")}`;
 }
 
 function initialsOf(name: string | null): string {
@@ -271,14 +241,16 @@ function TimelineEntry({
   m,
   highlight,
   lang,
+  timezone,
 }: {
   booking: C360Booking;
   m: ReceptionistMessages["clientProfiles"]["profile360"];
   highlight?: boolean;
   lang: "en" | "vi";
+  timezone: string;
 }) {
-  const dateStr = formatDate(booking.startUtc, lang);
-  const timeStr = formatTime(booking.startUtc);
+  const dateStr = formatDate(booking.startUtc, lang, timezone);
+  const timeStr = formatTime(booking.startUtc, timezone);
 
   return (
     <li
@@ -877,7 +849,7 @@ export function ClientProfile360Drawer({
                   </p>
                   {data.profile.createdAt ? (
                     <p className="text-xs text-nq-muted">
-                      {m.clientSince(formatDateShort(data.profile.createdAt, lang))}
+                      {m.clientSince(formatDateShort(data.profile.createdAt, lang, data.salonTimezone))}
                     </p>
                   ) : null}
                 </div>
@@ -888,7 +860,7 @@ export function ClientProfile360Drawer({
                 {data.stats.lifetimeSpentCents !== null ? <KpiCell label={m.lifetimeSpent} value={formatCentsCompact(data.stats.lifetimeSpentCents)} /> : null}
                 <KpiCell label={m.visits} value={String(data.stats.visitCount)} />
                 {data.stats.avgTicketCents !== null ? <KpiCell label={m.avgTicket} value={formatCentsCompact(data.stats.avgTicketCents)} /> : null}
-                <KpiCell label={m.lastVisit} value={formatDate(data.stats.lastVisitAt, lang)} />
+                <KpiCell label={m.lastVisit} value={formatDate(data.stats.lastVisitAt, lang, data.salonTimezone)} />
               </dl>
               {data.stats.lifetimeSpentCents !== null && data.stats.spendBasis ? (
                 <p className="text-xs text-nq-muted">
@@ -1018,7 +990,7 @@ export function ClientProfile360Drawer({
                     {data.pattern.nextPredictedAt ? (
                       <p className="text-sm text-nq-muted">
                         <span className="font-semibold text-nq-foreground">{m.nextPredicted}:</span>{" "}
-                        {formatDateShort(data.pattern.nextPredictedAt, lang)}
+                        {formatDateShort(data.pattern.nextPredictedAt, lang, data.salonTimezone)}
                       </p>
                     ) : null}
                   </>
@@ -1113,7 +1085,7 @@ export function ClientProfile360Drawer({
                           </div>
                           {v.expiresAt ? (
                             <span className="text-[11px] text-nq-muted">
-                              {m.expiresOn(formatDate(v.expiresAt, lang))}
+                              {m.expiresOn(formatDate(v.expiresAt, lang, data.salonTimezone))}
                             </span>
                           ) : null}
                         </li>
@@ -1135,7 +1107,7 @@ export function ClientProfile360Drawer({
                     <SectionLabel>{m.upcomingTitle}</SectionLabel>
                     <ul className="space-y-1.5">
                       {data.upcoming.map((b) => (
-                        <TimelineEntry key={b.id} booking={b} m={m} highlight lang={lang} />
+                        <TimelineEntry key={b.id} booking={b} m={m} highlight lang={lang} timezone={data.salonTimezone} />
                       ))}
                     </ul>
                   </>
@@ -1147,7 +1119,7 @@ export function ClientProfile360Drawer({
                     <SectionLabel>{m.timelineTitle}</SectionLabel>
                     <ul className="space-y-1.5">
                       {visibleTimeline.map((b) => (
-                        <TimelineEntry key={b.id} booking={b} m={m} lang={lang} />
+                        <TimelineEntry key={b.id} booking={b} m={m} lang={lang} timezone={data.salonTimezone} />
                       ))}
                     </ul>
                     {hasMoreTimeline ? (
@@ -1185,7 +1157,7 @@ export function ClientProfile360Drawer({
                             ) : null}
                             {r.submittedAt ? (
                               <span className="text-[11px] tabular-nums text-nq-muted">
-                                {formatDate(r.submittedAt, lang)}
+                                {formatDate(r.submittedAt, lang, data.salonTimezone)}
                               </span>
                             ) : null}
                           </div>
@@ -1225,7 +1197,7 @@ export function ClientProfile360Drawer({
                           </span>
                           {n.sentAt ? (
                             <span className="text-[10px] tabular-nums text-nq-muted/70">
-                              {formatDate(n.sentAt, lang)}
+                              {formatDate(n.sentAt, lang, data.salonTimezone)}
                             </span>
                           ) : null}
                         </li>
@@ -1241,7 +1213,7 @@ export function ClientProfile360Drawer({
                       <KpiCell label={m.chatCount} value={String(data.ai.chatCount)} />
                       <KpiCell label={m.voiceCount} value={String(data.ai.voiceCount)} />
                       {data.ai.lastInteractionAt ? (
-                        <KpiCell label={m.lastInteraction} value={formatDate(data.ai.lastInteractionAt, lang)} />
+                        <KpiCell label={m.lastInteraction} value={formatDate(data.ai.lastInteractionAt, lang, data.salonTimezone)} />
                       ) : null}
                     </dl>
                   </div>
