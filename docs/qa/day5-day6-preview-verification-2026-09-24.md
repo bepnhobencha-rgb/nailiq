@@ -143,3 +143,81 @@ hai file test/config chưa commit/push.
 - Cần CI của commit mới xác nhận lại; không lấy kết quả local thay cho CI.
   Preview hiện tại vẫn phục vụ SHA `8e220721`; batch này chỉ test/config/docs,
   chưa đổi application runtime. PR tiếp tục Draft, không merge/deploy Production.
+
+## CI hoàn tất — 24/09, sau 10:04 UTC
+
+- Commit kiểm chứng: `f8526fcb01ac6fdd5befcd2a74e4389ea7f43169`.
+  PR #1424 vẫn OPEN/Draft. CI `35982753920` và E2E `35982753932`
+  đều kết thúc SUCCESS; 20 checks SUCCESS, 2 SKIPPED (MQA-0148, AI Triage).
+- Unit: 851 files PASS / 6 skipped; 6658 tests PASS / 65 skipped.
+- Settings recovery: **196 passed**, gồm đủ 10 ca Loyalty EN/VI trên
+  Chromium/mobile; không ghi nhận flaky trong nhóm này.
+- Receptionist desktop: 109 passed, 4 skipped; mobile: 103 passed, 10 skipped.
+  Tenant/role/session revocation: 18 passed; SuperAdmin HTTPS: 54 passed.
+  Smoke: 8 passed; visual: 16 passed.
+- Non-RC chính: **175 passed, 4 flaky, 2 skipped**. Bốn ca chỉ qua retry #1:
+  `booking-errors.spec.ts` idor-8, input-12, input-13 và
+  `booking-validation.spec.ts` bv-2. Lỗi ban đầu là không thấy phone gate trong
+  5 giây hoặc không thấy marker hydration trong 15 giây. Chưa xác định nguyên
+  nhân gốc; không gọi đây là tenant leak, cũng không mặc định lỗi môi trường.
+- Các nhóm bổ sung non-RC đều PASS: Guided Setup mobile 6; Reports WebKit 1;
+  Superadmin authority WebKit 6; Booking capability WebKit 7; registration
+  WebKit 3; booking diagnostics WebKit 10; group placeholders WebKit 18.
+- Lệnh xác minh: `gh pr view 1424 --json headRefOid,isDraft,state,statusCheckRollup`,
+  `gh run view 35982753932 --log`, và đọc riêng job `107578452905` để đối chiếu
+  retry. Không tăng timeout, bỏ assertion hoặc rerun workflow để che lỗi.
+- `vercel firewall overview --json`: draft vẫn tồn tại; active rule chưa cho
+  phép alias QA. Do đó hosted role QA vẫn **BLOCKED**, không thử lại credential
+  và không tạo thêm fixture. Theo skill Vercel Firewall, Publish do người dùng
+  thực hiện; agent không kích hoạt thay.
+- **Kết luận:** CI PASS có cảnh báo 4 flaky; chưa đóng Ngày 6/100%. Còn hosted
+  Owner/Receptionist QA, điều tra flake và nghiệm thu người mới/iPhone vật lý.
+  Không thay đổi Production, không gửi thông báo/provider. Phần báo cáo bổ sung
+  này chỉ lưu local, chưa commit/push.
+
+## Điều tra bốn flake booking — tiếp tục local
+
+- Đã tải artifact `playwright-report-shard-1` của run `35982753932` và đọc
+  cả bốn error-context/ảnh: tất cả đang ở trang **Booking is paused**, không
+  phải chỉ chậm hydration. Response public page là HTTP 200.
+- Cơ chế liên quan: snapshot catalog được giữ tối đa 1 giây theo slug, trong
+  khi entitlement được đọc mới theo salon ID. Hai spec xóa/tạo lại salon với
+  cùng slug giữa các test; snapshot có thể vẫn trỏ ID đã bị xóa, nên entitlement
+  từ chối đúng. Đây là va chạm danh tính fixture; không cần nới guard ứng dụng.
+- `resolvePublicBookingPage.ts` và `loadBookingServices.ts` không khác `main`
+  hiện tại (`f6bf087b9d6f4354c3742ee270ab6aaf78cc8d9d`). Đây là đối chiếu mã,
+  không phải tuyên bố đã chạy toàn suite trên một build main riêng.
+- Baseline local: `node qa/day5/run-local.mjs test --config
+  qa/day6/booking-entry.config.ts --project chromium --grep
+  'hours-7|idor-8|input-12|input-13|bv-2' --repeat-each 3`:
+  **13 passed, 5 failed**, retries=0. Tái hiện paused ở idor-8 và input-13.
+  Hai flake còn lại có cùng UI lỗi trong CI nhưng không tái hiện ở vòng local này.
+- Sửa chỉ test: tạo slug riêng cho mỗi fixture trong `booking-errors.spec.ts`
+  và `booking-validation.spec.ts`; giữ mọi assertion, thời gian chờ, guard,
+  entitlement và ca pause/reopen cùng salon. Không thêm retry hoặc auto-reload.
+- Chạy cùng grep trên cả Chromium/mobile WebKit, `--repeat-each 3`:
+  **36/36 PASS**, 42.6 giây, retries=0. Đây là 6 kịch bản × 2 browser × 3 vòng.
+- Config mới tái sử dụng runner loopback/real Auth/provider-OFF; lỗi đường dẫn
+  teardown ở lần cấu hình đầu đã sửa trước khi test chạy. Không tính lần lỗi
+  cấu hình đó là bằng chứng lỗi ứng dụng.
+- `npm run typecheck`, ESLint hai spec + config, `git diff --check`: PASS.
+- Chưa đổi application runtime, không build lại ứng dụng; dùng production build
+  local đã kiểm chứng. Bản sửa này chưa commit/push hoặc được CI xác nhận.
+- Trọn hai spec: `node qa/day5/run-local.mjs test --config
+  qa/day6/booking-entry.config.ts`: **50/50 PASS**, 1.8 phút, Chromium/WebKit,
+  retries=0, không skipped. Bao gồm conflict/race, hours/closure, IDOR, validation,
+  XSS, Unicode và UTC/timezone; chỉ có booking synthetic trên QA local.
+- Đối chiếu read-only sau teardown trên container
+  `supabase_db_nailiq-day5-20260924`: salons=0, auth.users=0, bookings=0,
+  client_profiles=0. Dữ liệu thử đã được xóa; có thể dựng lại bằng fixture.
+- Hosted firewall vẫn có draft và `liveAllowsQa=false`; không Publish thay
+  người dùng. CI PASS trước đó thuộc commit `f8526fcb`, không chứng minh bản
+  sửa fixture chưa push này. **PASS_LOCAL; hosted QA BLOCKED; chưa đóng Ngày 6.**
+
+## Phê duyệt xuất bản batch fixture
+
+- Huy xác nhận “N” sau câu hỏi commit/push bản sửa fixture vào PR #1424 và
+  chạy lại CI. Chỉ xuất bản hai spec, config local và báo cáo này; giữ PR Draft.
+- Các dòng “chưa commit/push” phía trên là trạng thái trước phê duyệt.
+  CI của batch mới phải được kiểm chứng riêng. Không merge, không deploy
+  Production, không Publish firewall, không migration hoặc gửi thông báo.
