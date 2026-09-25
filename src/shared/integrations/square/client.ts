@@ -666,8 +666,30 @@ export async function chargeSavedCard(
     // basis for winning a no-show chargeback dispute.
     customer_details: { customer_initiated: false, seller_keyed_in: false },
   });
-  const p = (json.payment as Record<string, unknown>) ?? {};
-  return { paymentId: String(p.id ?? ""), status: String(p.status ?? "") };
+  const payment = json.payment && typeof json.payment === "object" && !Array.isArray(json.payment)
+    ? json.payment as Record<string, unknown>
+    : null;
+  const money = payment?.amount_money && typeof payment.amount_money === "object" && !Array.isArray(payment.amount_money)
+    ? payment.amount_money as Record<string, unknown>
+    : null;
+  // HTTP 200 is not proof that this operation collected the agreed fee. Bind
+  // the receipt to the exact request before the ledger can mark it successful.
+  // Keep malformed receipts ambiguous: the request may already have charged,
+  // so callers must reconcile instead of issuing another CreatePayment.
+  if (
+    typeof payment?.id !== "string" || !/^[A-Za-z0-9_-]{1,192}$/.test(payment.id) ||
+    typeof payment.status !== "string" ||
+    !["APPROVED", "PENDING", "COMPLETED", "CANCELED", "FAILED"].includes(payment.status) ||
+    !Number.isSafeInteger(money?.amount) || money?.amount !== opts.amountCents ||
+    money?.currency !== cfg.currency ||
+    payment.location_id !== cfg.locationId ||
+    payment.customer_id !== opts.customerId ||
+    (opts.referenceId !== undefined && payment.reference_id !== opts.referenceId)
+  ) {
+    // Never include raw Square payloads: they can contain customer/card data.
+    throw new Error("square_payment_receipt_invalid");
+  }
+  return { paymentId: payment.id, status: payment.status };
 }
 
 /** Customer-present one-time charge from a Web Payments SDK token. The DB

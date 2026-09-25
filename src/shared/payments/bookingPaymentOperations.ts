@@ -26,6 +26,8 @@ export type BookingPaymentOperationMaterial = {
   reservedCents: number;
   remainingRefundableCents: number;
   materialFingerprint: string;
+  providerRequestReference?: string;
+  cancellationReviewKind?: "late" | "group";
   providerMaterial: {
     providerAccountId: string;
     providerLocationId: string | null;
@@ -159,6 +161,13 @@ export function parseBookingPaymentOperationMaterial(
   const reservedCents = integer(row.reserved_cents);
   const remainingRefundableCents = integer(row.remaining_refundable_cents);
   const materialFingerprint = boundedString(row.material_fingerprint, 64);
+  const providerRequestReference = row.provider_request_reference == null
+    ? undefined : boundedString(row.provider_request_reference, 40);
+  if (row.provider_request_reference != null &&
+      (!providerRequestReference || providerRequestReference !== bookingId)) return null;
+  const cancellationReviewKind = record(row.cancel_preview)?.review_kind;
+  if (cancellationReviewKind != null &&
+      cancellationReviewKind !== "late" && cancellationReviewKind !== "group") return null;
   const providerRow = record(row.provider_material);
   const providerAccountId = boundedString(providerRow?.provider_account_id, 255);
   const providerLocationId = nullableBoundedString(
@@ -274,6 +283,9 @@ export function parseBookingPaymentOperationMaterial(
     reservedCents,
     remainingRefundableCents,
     materialFingerprint,
+    ...(providerRequestReference ? { providerRequestReference } : {}),
+    ...(cancellationReviewKind === "late" || cancellationReviewKind === "group"
+      ? { cancellationReviewKind } : {}),
     providerMaterial: {
       providerAccountId,
       providerLocationId,

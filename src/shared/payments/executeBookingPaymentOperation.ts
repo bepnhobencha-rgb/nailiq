@@ -87,10 +87,24 @@ function providerOutcome(
   };
 }
 
-function definiteProviderError(error: unknown): string | null {
+function definiteProviderError(error: unknown, provider: "square" | "stripe"): string | null {
   const row = error && typeof error === "object"
     ? error as Record<string, unknown>
     : null;
+  if (provider === "square") {
+    const codes = row?.codes;
+    const definitiveCodes = ["CARD_DECLINED", "GENERIC_DECLINE", "CARD_NOT_SUPPORTED",
+      "CARD_EXPIRED", "INVALID_CARD_DATA", "VERIFY_CVV_FAILURE", "VERIFY_AVS_FAILURE",
+      "CARD_DECLINED_VERIFICATION_REQUIRED", "SOURCE_EXPIRED", "SOURCE_USED",
+      "CARD_TOKEN_EXPIRED", "CARD_TOKEN_USED"];
+    if (row?.name !== "SquareHttpError" || typeof row.status !== "number" ||
+        row.status < 400 || row.status >= 500 || [408, 429].includes(row.status) ||
+        !Array.isArray(codes) || codes.length === 0 ||
+        !codes.every((code) => typeof code === "string" && definitiveCodes.includes(code))) return null;
+    if (codes.includes("CARD_DECLINED_VERIFICATION_REQUIRED")) return "authentication_required";
+    if (codes.includes("CARD_EXPIRED")) return "expired_card";
+    return "card_declined";
+  }
   const code = String(row?.decline_code ?? row?.code ?? "").trim().toLowerCase();
   if (["card_declined", "expired_card", "insufficient_funds", "authentication_required"].includes(code)) {
     return code;
@@ -150,6 +164,22 @@ export async function dispatchClaimedBookingPaymentOperation(args: {
       reason: "provider_purpose_mismatch",
     };
   }
+  if (args.providerPurpose === "approved_cancellation_fee" &&
+      !claim.material.cancellationReviewKind) {
+    return { ok: false, status: "unknown", operationId: claim.operationId,
+      reason: "approval_material_invalid" };
+  }
+  // The same immutable approval must produce exactly the same request on cron
+  // replay. Preserve legacy references; only new DB-versioned material uses the
+  // shorter Square-compatible reference, never rewrite an unknown old request.
+  const note = args.providerPurpose === "approved_no_show_charge"
+    ? "Approved no-show fee"
+    : args.providerPurpose === "approved_cancellation_fee"
+      ? claim.material.cancellationReviewKind === "group"
+        ? "Approved group cancellation fee" : "Approved late cancellation fee"
+      : args.note ?? "Booking payment";
+  const referenceId = claim.material.providerRequestReference ??
+    args.referenceId ?? `booking:${claim.material.bookingId}`;
   let provider: PaymentProvider;
   try {
     provider = args.provider ?? await resolvePaymentProvider(
@@ -207,8 +237,8 @@ export async function dispatchClaimedBookingPaymentOperation(args: {
           cardId: claim.material.providerMaterial.savedCardId!,
           amountCents: claim.material.amountCents,
           idempotencyKey: claim.providerIdempotencyKey,
-          note: args.note ?? "Booking payment",
-          referenceId: args.referenceId ?? `booking:${claim.material.bookingId}`,
+          note,
+          referenceId,
           providerAccountId: claim.material.providerMaterial.providerAccountId,
           providerLocationId: claim.material.providerMaterial.providerLocationId,
           providerEnvironment: claim.material.providerMaterial.providerEnvironment,
@@ -217,7 +247,7 @@ export async function dispatchClaimedBookingPaymentOperation(args: {
         }).then((result) => ({ id: result.paymentId, status: result.status }));
     completion = providerOutcome(provider.kind, claim.material.operationKind, receipt);
   } catch (error) {
-    const definite = definiteProviderError(error);
+    const definite = definiteProviderError(error, provider.kind);
     completion = definite
       ? {
           outcome: "definite_failure",
@@ -227,7 +257,8 @@ export async function dispatchClaimedBookingPaymentOperation(args: {
       : {
           outcome: "unknown",
           providerStatus: "",
-          errorCode: "provider_transport_error",
+          errorCode: error instanceof Error && error.message === "square_payment_receipt_invalid"
+            ? "provider_outcome_ambiguous" : "provider_transport_error",
         };
   }
 

@@ -243,6 +243,7 @@ describe("runApprovedCancellationFeePayment", () => {
     parent_operation_id: null,
     operation_occurrence_version: 1,
     cancel_preview: {
+      review_kind: "group",
       will_charge: true,
       has_chargeable_card: true,
       fee_cents: 2_500,
@@ -333,4 +334,85 @@ describe("runApprovedCancellationFeePayment", () => {
     });
     expect(paymentProvider.chargeSavedCard).not.toHaveBeenCalled();
   });
+});
+
+
+describe("fee delivery request stability", () => {
+  it.each(["noshow", "late", "group"] as const)("replays the identical %s approval payload", async (kind) => {
+    const material: ClaimedBookingPaymentOperation["material"] = {
+      ...claim.material,
+      operationKind: kind === "noshow" ? "noshow_charge" : "late_cancel_charge",
+      ...(kind === "noshow" ? {} : { cancellationReviewKind: kind }),
+      providerRequestReference: claim.material.bookingId,
+    };
+    const providerPurpose = kind === "noshow" ? "approved_no_show_charge" : "approved_cancellation_fee";
+    const paymentProvider = provider();
+    const db = { rpc: vi.fn().mockResolvedValue({ data: { success: true, code: "succeeded" }, error: null }) };
+    await dispatchClaimedBookingPaymentOperation({ db, claim: { ...claim, material },
+      provider: paymentProvider, providerPurpose, note: "caller must not override approval", referenceId: "caller-reference" });
+    await dispatchClaimedBookingPaymentOperation({ db, claim: { ...claim, material, attemptCount: 2 },
+      provider: paymentProvider, providerPurpose });
+    const [first, replay] = paymentProvider.chargeSavedCard.mock.calls;
+    expect(first).toEqual(replay);
+    expect(first[0]).toMatchObject({ referenceId: claim.material.bookingId,
+      note: kind === "noshow" ? "Approved no-show fee" : kind === "late"
+        ? "Approved late cancellation fee" : "Approved group cancellation fee" });
+    expect(first[0].referenceId.length).toBeLessThanOrEqual(40);
+  });
+
+  it("does not silently rewrite a historical unknown request reference", async () => {
+    const paymentProvider = provider();
+    await dispatchClaimedBookingPaymentOperation({
+      db: { rpc: vi.fn().mockResolvedValue({ data: { success: true, code: "succeeded" }, error: null }) },
+      claim: { ...claim, attemptCount: 2 }, provider: paymentProvider, providerPurpose: "approved_no_show_charge",
+    });
+    expect(paymentProvider.chargeSavedCard).toHaveBeenCalledWith(expect.objectContaining({
+      referenceId: `booking:${claim.material.bookingId}`, note: "Approved no-show fee",
+    }));
+  });
+
+  it("does not dispatch approved cancellation with missing durable review kind", async () => {
+    const paymentProvider = provider();
+    const result = await dispatchClaimedBookingPaymentOperation({ db: { rpc: vi.fn() },
+      claim: { ...claim, material: { ...claim.material, operationKind: "late_cancel_charge" } },
+      provider: paymentProvider, providerPurpose: "approved_cancellation_fee" });
+    expect(result).toMatchObject({ status: "unknown", reason: "approval_material_invalid" });
+    expect(paymentProvider.chargeSavedCard).not.toHaveBeenCalled();
+  });
+});
+
+describe("Square explicit decline versus ambiguity", () => {
+  it.each([
+    [400, ["CARD_DECLINED"], "definite_failure", "card_declined"],
+    [400, ["CARD_EXPIRED"], "definite_failure", "expired_card"],
+    [400, ["CARD_DECLINED_VERIFICATION_REQUIRED"], "definite_failure", "authentication_required"],
+    [400, ["CARD_DECLINED", "UNCLASSIFIED"], "unknown", "provider_transport_error"],
+    [500, ["CARD_DECLINED"], "unknown", "provider_transport_error"],
+    [408, ["CARD_DECLINED"], "unknown", "provider_transport_error"],
+    [429, ["CARD_DECLINED"], "unknown", "provider_transport_error"],
+    [400, [], "unknown", "provider_transport_error"],
+  ])("classifies status %s codes %j safely", async (status, codes, outcome, errorCode) => {
+    const rpc = vi.fn().mockResolvedValue({ data: { success: false }, error: null });
+    const chargeSavedCard = vi.fn().mockRejectedValue({ name: "SquareHttpError", status, codes });
+    const square = { ...provider(), kind: "square" as const, chargeSavedCard };
+    await dispatchClaimedBookingPaymentOperation({ db: { rpc },
+      claim: { ...claim, material: { ...claim.material, provider: "square" } }, provider: square });
+    expect(chargeSavedCard).toHaveBeenCalledTimes(1);
+    expect(rpc).toHaveBeenCalledWith("complete_booking_payment_operation", expect.objectContaining({
+      p_outcome: outcome, p_error_code: errorCode,
+    }));
+  });
+});
+
+
+it("keeps a mismatched Square receipt ambiguous, never definitive or paid", async () => {
+  const rpc = vi.fn().mockResolvedValue({ data: { success: false }, error: null });
+  const chargeSavedCard = vi.fn().mockRejectedValue(new Error("square_payment_receipt_invalid"));
+  await dispatchClaimedBookingPaymentOperation({ db: { rpc },
+    claim: { ...claim, material: { ...claim.material, provider: "square" } },
+    provider: { ...provider(), kind: "square", chargeSavedCard } });
+  expect(chargeSavedCard).toHaveBeenCalledTimes(1);
+  expect(rpc).toHaveBeenCalledWith("complete_booking_payment_operation", expect.objectContaining({
+    p_outcome: "unknown", p_error_code: "provider_outcome_ambiguous", p_provider_payment_id: null,
+  }));
 });

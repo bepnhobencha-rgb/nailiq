@@ -1,0 +1,189 @@
+{
+  "date": "2026-09-25",
+  "scope": "actual Square Sandbox adapter tests; no Production, database, booking or owner UI certification",
+  "runs": [
+    {
+      "source": "nailiq-square-fee-sandbox-preflight-20260925.json",
+      "evidence": {
+        "environment": "sandbox",
+        "productionCalls": 0,
+        "mutationCalls": 0,
+        "status": "PASS_READONLY_PREFLIGHT",
+        "steps": [
+          {
+            "endpoint": "/oauth2/token/status",
+            "status": 200,
+            "codes": []
+          },
+          {
+            "endpoint": "/v2/locations",
+            "status": 200,
+            "codes": []
+          },
+          {
+            "endpoint": "/oauth2/token/status",
+            "status": 200,
+            "codes": []
+          },
+          {
+            "endpoint": "/v2/webhooks/subscriptions",
+            "status": 200,
+            "codes": []
+          }
+        ]
+      }
+    },
+    {
+      "source": "nailiq-square-fee-sandbox-df910d2b-656b-4209-ae78-8b8a7aa13e1a.json",
+      "evidence": {
+        "run": "df910d2b-656b-4209-ae78-8b8a7aa13e1a",
+        "environment": "sandbox",
+        "status": "FAILED_OR_BLOCKED",
+        "productionCalls": 0,
+        "customerCreates": 1,
+        "cardCreates": 1,
+        "paymentPosts": 4,
+        "reads": 5,
+        "customerContactProvided": false,
+        "notificationEndpointsCalled": false,
+        "enabledWebhooks": 0,
+        "databaseCalls": 0,
+        "scenarios": [
+          {
+            "name": "success_and_exact_replay",
+            "status": "PASS",
+            "paymentFingerprint": "367788a716936f32",
+            "sameReceipt": true
+          },
+          {
+            "name": "decline",
+            "status": "PASS",
+            "providerCode": "GENERIC_DECLINE"
+          }
+        ],
+        "reason": "sandbox_test_incomplete"
+      }
+    },
+    {
+      "source": "nailiq-square-fee-sandbox-recovery-20260925.json",
+      "evidence": {
+        "environment": "sandbox",
+        "mutationCalls": 0,
+        "status": "PASS_READONLY_RECOVERY",
+        "responses": [
+          {
+            "httpStatus": 200,
+            "codes": [],
+            "matches": 1,
+            "receiptChecks": [
+              {
+                "status": "COMPLETED",
+                "locationMatches": true,
+                "applicationMatches": true,
+                "amountMatches": true,
+                "currencyMatches": true,
+                "hasCustomer": true,
+                "createdInWindow": true
+              }
+            ]
+          }
+        ],
+        "paymentFingerprint": "5cd09f9aa58291c5"
+      }
+    },
+    {
+      "source": "nailiq-square-fee-sandbox-race-52dac8df-d7ad-4a1a-83e7-3270d152b641.json",
+      "evidence": {
+        "environment": "sandbox",
+        "status": "FAILED_OR_BLOCKED",
+        "reads": 3,
+        "paymentPosts": 2,
+        "customerCreates": 0,
+        "cardCreates": 0,
+        "productionCalls": 0,
+        "notificationCalls": 0,
+        "reference": "52dac8df-d7ad-4a1a-83e7-3270d152b641",
+        "reason": "square_payment_recovery_receipt_invalid"
+      }
+    },
+    {
+      "source": "nailiq-square-fee-sandbox-recovery-52dac8df-d7ad-4a1a-83e7-3270d152b641.json",
+      "evidence": {
+        "environment": "sandbox",
+        "mutationCalls": 0,
+        "status": "PASS_READONLY_RECOVERY",
+        "responses": [
+          {
+            "httpStatus": 200,
+            "codes": [],
+            "matches": 1,
+            "receiptChecks": [
+              {
+                "status": "COMPLETED",
+                "locationMatches": true,
+                "applicationMatches": true,
+                "amountMatches": true,
+                "currencyMatches": true,
+                "hasCustomer": true,
+                "createdInWindow": true
+              }
+            ]
+          }
+        ],
+        "paymentFingerprint": "4c968c1edd0e8ec0",
+        "createdAt": "2026-09-25T20:34:24.936Z"
+      }
+    },
+    {
+      "source": "nailiq-square-fee-sandbox-race-6df85fdd-7e99-4b0d-bfe7-cf048770ae4e.json",
+      "evidence": {
+        "environment": "sandbox",
+        "status": "PASS_SANDBOX_RACE",
+        "reads": 4,
+        "paymentPosts": 2,
+        "customerCreates": 0,
+        "cardCreates": 0,
+        "productionCalls": 0,
+        "notificationCalls": 0,
+        "reference": "6df85fdd-7e99-4b0d-bfe7-cf048770ae4e",
+        "successfulResponses": 2,
+        "rejectedResponses": [],
+        "sameReceipt": true,
+        "paymentFingerprint": "d7fe994c8d4cc53c",
+        "recoveryReads": [
+          {
+            "httpStatus": 200,
+            "matches": 1,
+            "checks": [
+              {
+                "status": "APPROVED",
+                "location": true,
+                "application": true,
+                "amount": true,
+                "currency": true,
+                "createdAt": "2026-09-25T20:35:36.471Z",
+                "endTime": "2026-09-25T20:35:37.069Z"
+              }
+            ]
+          },
+          {
+            "httpStatus": 200,
+            "matches": 1,
+            "checks": [
+              {
+                "status": "COMPLETED",
+                "location": true,
+                "application": true,
+                "amount": true,
+                "currency": true,
+                "createdAt": "2026-09-25T20:35:36.471Z",
+                "endTime": "2026-09-25T20:35:38.285Z"
+              }
+            ]
+          }
+        ],
+        "exactProviderMatches": 1
+      }
+    }
+  ]
+}

@@ -350,7 +350,7 @@ describe("Square public deposit response-loss reconciliation", () => {
       '"discover_due_public_square_deposit_reconciliations"',
     );
     const genericDiscovery = route.indexOf(
-      '"discover_due_booking_payment_reconciliations"',
+      '"discover_due_enabled_booking_payment_reconciliations"',
     );
     const genericFunctionStart = migration.indexOf(
       "CREATE OR REPLACE FUNCTION public.discover_due_booking_payment_reconciliations",

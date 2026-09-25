@@ -232,7 +232,22 @@ describe("query grammar injection inventory", () => {
       "20260913034721_scope_booking_otp_channel_authority.sql",
       "20260913130949_require_sms_for_phone_bound_incentives.sql",
       "20260913131209_scope_booking_crm_mutation_authority.sql",
+      "20260925203046_bind_fee_provider_request_reference.sql",
+      "20260925204601_bind_square_fee_webhook_customer.sql",
     ]);
+
+    // Reviewed migration-time rewrites operate on fixed catalog function
+    // identities and literal anchors. No request data builds executable SQL.
+    for (const filename of [
+      "20260925203046_bind_fee_provider_request_reference.sql",
+      "20260925204601_bind_square_fee_webhook_customer.sql",
+    ]) {
+      const source = fs.readFileSync(path.join(migrationRoot, filename), "utf8");
+      expect(source).toContain("pg_get_functiondef('public.");
+      expect(source).toContain("prerequisite drift");
+      expect(source).toContain("<> 1 THEN");
+      expect(source).toMatch(/BEGIN;[\s\S]*COMMIT;/);
+    }
 
     const sequenceCardPolicy = fs.readFileSync(
       path.join(

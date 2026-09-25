@@ -41,6 +41,8 @@ export type SanitizedSquarePaymentEvent = {
   currency: string;
   updatedAt: string;
   referenceId: string | null;
+  /** Opaque provider identity for exact fee binding; never customer contact. */
+  customerId: string | null;
 };
 
 const OPTIONAL_EVENTS = new Set<string>([
@@ -283,6 +285,9 @@ export function sanitizeSquarePaymentEvent(
   const referenceId = payment?.reference_id == null
     ? null
     : providerIdentifier(payment.reference_id);
+  const customerId = payment?.customer_id == null
+    ? null
+    : providerIdentifier(payment.customer_id);
   if (
     !payment || !paymentId || event.dataId !== paymentId || !locationId
     || !["APPROVED", "PENDING", "COMPLETED", "CANCELED", "FAILED"].includes(
@@ -290,6 +295,7 @@ export function sanitizeSquarePaymentEvent(
     )
     || !amountMoney || amountMoney.amount <= 0 || amountMoney.amount > 2_147_483_647
     || !updatedAt || (payment.reference_id != null && !referenceId)
+    || (payment.customer_id != null && !customerId)
   ) {
     return null;
   }
@@ -301,6 +307,7 @@ export function sanitizeSquarePaymentEvent(
     currency: amountMoney.currency,
     updatedAt,
     referenceId,
+    customerId,
   };
 }
 

@@ -80,6 +80,7 @@ function paymentBody(overrides: Record<string, unknown> = {}) {
           amount_money: { amount: 2_500, currency: "CAD" },
           updated_at: "2026-08-29T04:10:00Z",
           reference_id: "booking:11111111-1111-4111-8111-111111111111",
+          customer_id: "customer-qa",
           ...overrides,
         },
       },
@@ -374,7 +375,7 @@ describe("Square webhook route", () => {
       eventId: "payment-event-1",
     });
     expect(mocks.rpc).toHaveBeenCalledWith(
-      "record_square_payment_webhook_event",
+      "record_square_payment_webhook_event_bound",
       expect.objectContaining({
         p_salon_id: salonId,
         p_event_id: "payment-event-1",
@@ -384,9 +385,43 @@ describe("Square webhook route", () => {
         p_amount_cents: 2_500,
         p_currency: "CAD",
         p_reference_id: "booking:11111111-1111-4111-8111-111111111111",
+        p_customer_id: "customer-qa",
       }),
     );
   });
+
+  it("passes absent customer evidence explicitly and rejects an unbound fee", async () => {
+    vi.stubEnv("NAILIQ_SQUARE_PAYMENT_WEBHOOK_INGESTION", "true");
+    mocks.rpc.mockResolvedValue({
+      data: { success: false, code: "provider_binding_mismatch" }, error: null,
+    });
+    const response = await POST(request(paymentBody({ customer_id: undefined })));
+    expect(response.status).toBe(409);
+    await expect(response.json()).resolves.toEqual({ ok: false, code: "provider_binding_mismatch" });
+    expect(mocks.rpc).toHaveBeenCalledWith("record_square_payment_webhook_event_bound",
+      expect.objectContaining({ p_customer_id: null }));
+  });
+
+  it("allows a customer-absent payment only when the database accepts its operation kind", async () => {
+    vi.stubEnv("NAILIQ_SQUARE_PAYMENT_WEBHOOK_INGESTION", "true");
+    mocks.rpc.mockResolvedValue({
+      data: { success: true, code: "payment_applied", event_id: "payment-event-1" }, error: null,
+    });
+    const response = await POST(request(paymentBody({ customer_id: undefined, reference_id: "deposit-qa" })));
+    expect(response.status).toBe(200);
+    expect(mocks.rpc).toHaveBeenCalledWith("record_square_payment_webhook_event_bound",
+      expect.objectContaining({ p_customer_id: null, p_reference_id: "deposit-qa" }));
+  });
+
+  it.each([{}, "", "customer with spaces", "c".repeat(256)])(
+    "rejects malformed customer evidence before the database", async (customerId) => {
+      vi.stubEnv("NAILIQ_SQUARE_PAYMENT_WEBHOOK_INGESTION", "true");
+      const response = await POST(request(paymentBody({ customer_id: customerId })));
+      expect(response.status).toBe(400);
+      await expect(response.json()).resolves.toEqual({ ok: false, code: "invalid_payment_event" });
+      expect(mocks.rpc).not.toHaveBeenCalled();
+    },
+  );
 
   it("accepts Square's current dispute state event", async () => {
     const upsert = vi.fn(async () => ({ error: null }));

@@ -17,6 +17,7 @@ import { runTrackedCron } from "@/shared/security/cronRunHistory";
 import { reconcileBookingCardSaveOperations } from "@/shared/booking/reconcileBookingCardSaveOperations";
 import { reconcileBookingCardContinuations } from "@/shared/booking/reconcileBookingCardContinuations";
 import {
+  allowsApprovedCancellationFeeDispatch,
   allowsApprovedNoShowChargeDispatch,
   v1AllowsCustomerPaymentGateway,
 } from "@/shared/release/v1IntegrationScope";
@@ -204,10 +205,20 @@ export async function GET(request: NextRequest) {
       }
     }
     let discovered: { data: unknown; error: unknown };
+    // Pass release scope into discovery, before SQL leases rows or increments
+    // attempts. The RPC also filters fee salons by their current allowlist.
+    const operationKinds = ["deposit_charge", "deposit_refund"];
+    if (v1AllowsCustomerPaymentGateway()) {
+      operationKinds.push("noshow_charge", "late_cancel_charge", "noshow_refund", "late_cancel_refund");
+    } else {
+      if (allowsApprovedNoShowChargeDispatch()) operationKinds.push("noshow_charge");
+      if (allowsApprovedCancellationFeeDispatch()) operationKinds.push("late_cancel_charge");
+    }
     try {
-      discovered = await db.rpc("discover_due_booking_payment_reconciliations", {
+      discovered = await db.rpc("discover_due_enabled_booking_payment_reconciliations" as never, {
+        p_operation_kinds: operationKinds,
         p_limit: 25,
-      });
+      } as never);
     } catch {
       discovered = { data: null, error: new Error("discovery_unavailable") };
     }
@@ -293,7 +304,10 @@ export async function GET(request: NextRequest) {
       }
       const approvedNoShowReconciliation = operationKind === "noshow_charge" &&
         allowsApprovedNoShowChargeDispatch();
-      if (!v1AllowsCustomerPaymentGateway() && !approvedNoShowReconciliation && [
+      const approvedCancellationReconciliation = operationKind === "late_cancel_charge" &&
+        allowsApprovedCancellationFeeDispatch();
+      if (!v1AllowsCustomerPaymentGateway() && !approvedNoShowReconciliation &&
+          !approvedCancellationReconciliation && [
         "noshow_charge",
         "late_cancel_charge",
         "noshow_refund",
@@ -323,6 +337,8 @@ export async function GET(request: NextRequest) {
         claim,
         ...(approvedNoShowReconciliation
           ? { providerPurpose: "approved_no_show_charge" as const }
+          : approvedCancellationReconciliation
+            ? { providerPurpose: "approved_cancellation_fee" as const }
           : {}),
       });
       if (result.ok) succeeded += 1;

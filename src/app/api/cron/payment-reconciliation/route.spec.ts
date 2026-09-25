@@ -5,6 +5,9 @@ const mocks = vi.hoisted(() => ({
   rpc: vi.fn(),
   runTrackedCron: vi.fn(),
   reconcileContinuations: vi.fn(),
+  parseMaterial: vi.fn(),
+  parseClaim: vi.fn(),
+  dispatch: vi.fn(),
 }));
 
 vi.mock("@/shared/security/cronAuthorization", () => ({
@@ -18,12 +21,12 @@ vi.mock("@/shared/lib/supabase/serviceRole", () => ({
 }));
 vi.mock("@/shared/lib/stripe", () => ({ getStripeClient: () => null }));
 vi.mock("@/shared/payments/bookingPaymentOperations", () => ({
-  parseBookingPaymentOperationMaterial: () => null,
-  parseClaimedBookingPaymentOperation: () => null,
+  parseBookingPaymentOperationMaterial: mocks.parseMaterial,
+  parseClaimedBookingPaymentOperation: mocks.parseClaim,
   parsePublicDepositPaymentMaterial: () => null,
 }));
 vi.mock("@/shared/payments/executeBookingPaymentOperation", () => ({
-  dispatchClaimedBookingPaymentOperation: vi.fn(),
+  dispatchClaimedBookingPaymentOperation: mocks.dispatch,
 }));
 vi.mock("@/shared/payments/publicDepositFinalizeCapability", () => ({
   derivePublicDepositFinalizeToken: () => "unused",
@@ -58,6 +61,12 @@ describe("GET /api/cron/payment-reconciliation", () => {
     vi.stubEnv("PAYMENT_LEDGER_WORKERS_ENABLED", "true");
     vi.stubEnv("SQUARE_PUBLIC_DEPOSIT_RECONCILIATION_ENVIRONMENT", "");
     vi.stubEnv("BOOKING_CARD_CONTINUATION_RECONCILIATION_ENABLED", "false");
+    vi.stubEnv("BOOKING_CARD_RECONCILIATION_ENABLED", "false");
+    vi.stubEnv("NAILIQ_APPROVED_NO_SHOW_CHARGE_DISPATCH", "false");
+    vi.stubEnv("NAILIQ_APPROVED_CANCELLATION_FEE_DISPATCH", "false");
+    mocks.parseMaterial.mockReturnValue(null);
+    mocks.parseClaim.mockReturnValue(null);
+    mocks.dispatch.mockResolvedValue({ ok: true });
     mocks.reconcileContinuations.mockResolvedValue({
       ok: true, processed: 0, awaitingCustomer: 0, pendingProvider: 0,
       resolved: 0, manualReview: 0, errors: 0,
@@ -93,6 +102,10 @@ describe("GET /api/cron/payment-reconciliation", () => {
       unresolved: 0,
     });
     expect(mocks.runTrackedCron).toHaveBeenCalledTimes(1);
+    expect(mocks.rpc).toHaveBeenCalledExactlyOnceWith(
+      "discover_due_enabled_booking_payment_reconciliations",
+      { p_operation_kinds: ["deposit_charge", "deposit_refund"], p_limit: 25 },
+    );
   });
 
   it("runs the no-provider continuation worker while payment workers are off", async () => {
@@ -135,5 +148,60 @@ describe("GET /api/cron/payment-reconciliation", () => {
       succeeded: 0,
       unresolved: 1,
     });
+  });
+
+  it.each([
+    ["late_cancel_charge", "NAILIQ_APPROVED_CANCELLATION_FEE_DISPATCH", "approved_cancellation_fee"],
+    ["noshow_charge", "NAILIQ_APPROVED_NO_SHOW_CHARGE_DISPATCH", "approved_no_show_charge"],
+  ])("reconciles released %s with its tenant-allowlisted provider purpose", async (
+    operationKind, flag, providerPurpose,
+  ) => {
+    vi.stubEnv(flag, "true");
+    const material = { operationKind };
+    const claim = { operationId: "approved-operation", material };
+    mocks.rpc.mockResolvedValue({ data: [{ operation_kind: operationKind }], error: null });
+    mocks.parseMaterial.mockReturnValue(material);
+    mocks.parseClaim.mockReturnValue(claim);
+
+    const response = await GET(request());
+
+    expect(response.status).toBe(200);
+    expect(mocks.rpc).toHaveBeenCalledExactlyOnceWith(
+      "discover_due_enabled_booking_payment_reconciliations",
+      { p_operation_kinds: ["deposit_charge", "deposit_refund", operationKind], p_limit: 25 },
+    );
+    expect(mocks.dispatch).toHaveBeenCalledExactlyOnceWith({
+      db: expect.anything(), claim, providerPurpose,
+    });
+    expect(await response.json()).toMatchObject({ succeeded: 1, unresolved: 0 });
+  });
+
+  it.each([
+    ["late_cancel_charge", "NAILIQ_APPROVED_NO_SHOW_CHARGE_DISPATCH"],
+    ["noshow_charge", "NAILIQ_APPROVED_CANCELLATION_FEE_DISPATCH"],
+    ["late_cancel_refund", "NAILIQ_APPROVED_CANCELLATION_FEE_DISPATCH"],
+    ["noshow_refund", "NAILIQ_APPROVED_NO_SHOW_CHARGE_DISPATCH"],
+  ])("keeps %s blocked when only %s is enabled", async (operationKind, flag) => {
+    vi.stubEnv(flag, "true");
+    mocks.rpc.mockResolvedValue({ data: [{ operation_kind: operationKind }], error: null });
+    mocks.parseMaterial.mockReturnValue({ operationKind });
+    mocks.parseClaim.mockReturnValue({ material: { operationKind } });
+
+    const response = await GET(request());
+
+    expect(response.status).toBe(503);
+    expect(mocks.dispatch).not.toHaveBeenCalled();
+    expect(await response.json()).toMatchObject({ succeeded: 0, unresolved: 1 });
+  });
+
+  it("does not dispatch a released cancellation whose durable claim is invalid", async () => {
+    vi.stubEnv("NAILIQ_APPROVED_CANCELLATION_FEE_DISPATCH", "true");
+    mocks.rpc.mockResolvedValue({ data: [{ operation_kind: "late_cancel_charge" }], error: null });
+    mocks.parseMaterial.mockReturnValue({ operationKind: "late_cancel_charge" });
+
+    const response = await GET(request());
+
+    expect(response.status).toBe(503);
+    expect(mocks.dispatch).not.toHaveBeenCalled();
   });
 });

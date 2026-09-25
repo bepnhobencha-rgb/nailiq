@@ -333,7 +333,7 @@ async function recordPaymentEvent(input: {
     return json({ ok: false, code: "provider_context_mismatch" }, 409);
   }
   const { data, error } = await input.db.rpc(
-    "record_square_payment_webhook_event" as never,
+    "record_square_payment_webhook_event_bound" as never,
     {
       p_salon_id: input.integration.salon_id,
       p_event_id: input.event.eventId,
@@ -347,6 +347,7 @@ async function recordPaymentEvent(input: {
       p_currency: payment.currency,
       p_payment_updated_at: payment.updatedAt,
       p_reference_id: payment.referenceId,
+      p_customer_id: payment.customerId,
       p_merchant_id: input.event.merchantId,
       p_application_id: input.profile.applicationId,
       p_environment: input.profile.environment,

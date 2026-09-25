@@ -94,7 +94,7 @@ describe("Square webhook runtime boundary", () => {
     expect(JSON.stringify(sanitizeSquareRefundEvent(event!))).not.toMatch(/16045550199|secret|reason/);
   });
 
-  it("projects payment truth without retaining customer or card data", () => {
+  it("projects opaque customer binding without retaining customer contact or card data", () => {
     const event = parseSquareEvent(JSON.stringify({
       merchant_id: "merchant-1",
       type: "payment.updated",
@@ -110,7 +110,9 @@ describe("Square webhook runtime boundary", () => {
             amount_money: { amount: 2_500, currency: "CAD" },
             updated_at: "2026-08-29T04:10:00.123Z",
             reference_id: "booking:11111111-1111-4111-8111-111111111111",
-            customer_id: "customer-secret",
+            customer_id: "customer-qa",
+            buyer_email_address: "private-contact@example.invalid",
+            billing_address: { address_line_1: "private-address" },
             card_details: { card: { last_4: "4242" } },
           },
         },
@@ -125,8 +127,9 @@ describe("Square webhook runtime boundary", () => {
       currency: "CAD",
       updatedAt: "2026-08-29T04:10:00.123Z",
       referenceId: "booking:11111111-1111-4111-8111-111111111111",
+      customerId: "customer-qa",
     });
-    expect(JSON.stringify(sanitizeSquarePaymentEvent(event!))).not.toMatch(/customer-secret|4242/);
+    expect(JSON.stringify(sanitizeSquarePaymentEvent(event!))).not.toMatch(/private-contact|private-address|4242/);
   });
 
   it.each([
@@ -136,6 +139,10 @@ describe("Square webhook runtime boundary", () => {
     ["zero amount", { amount_money: { amount: 0, currency: "CAD" } }],
     ["bad currency", { amount_money: { amount: 100, currency: "cad" } }],
     ["bad revision time", { updated_at: "today" }],
+    ["object customer", { customer_id: {} }],
+    ["empty customer", { customer_id: "" }],
+    ["whitespace customer", { customer_id: "customer qa" }],
+    ["oversized customer", { customer_id: "c".repeat(256) }],
   ])("rejects payment material with %s", (_name, override) => {
     const { dataId = "payment-1", ...paymentOverride } = override as Record<string, unknown>;
     const event = parseSquareEvent(JSON.stringify({
