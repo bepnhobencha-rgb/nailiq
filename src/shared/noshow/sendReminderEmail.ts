@@ -2,6 +2,7 @@ import { createTextBackgroundAnthropicClient } from "@/shared/ai/anthropicProvid
 import { getResendClient, getResendFrom } from "@/shared/lib/resend";
 import { complianceFooterHtml, listUnsubscribeHeaders, isEmailSuppressed } from "@/shared/lib/emailCompliance";
 import { emailExperienceTags } from "@/shared/lib/emailExperienceRegistry";
+import { reminderSendDeadlinePassed } from "@/shared/reminders/reminderSchedule";
 import {
   isProviderTimeoutError,
   trackAnthropicMessage,
@@ -14,6 +15,9 @@ import {
 } from "@/shared/booking/emailBranding";
 
 export type ReminderEmailInput = {
+  /** Catch-up copy must use the actual appointment date/time, never AI relative time. */
+  deterministicCopy?: boolean;
+  sendBeforeUtc?: string;
   salonId: string;
   /** Durable reminder claim used only for signed delivery correlation. */
   deliveryClaimId?: string;
@@ -84,6 +88,7 @@ function formatAppointmentTime(
 }
 
 async function generateAiBody(input: ReminderEmailInput): Promise<string> {
+  if (input.deterministicCopy) return defaultBody(input);
   const key = process.env.ANTHROPIC_API_KEY?.trim();
   if (!key) return defaultBody(input);
 
@@ -211,6 +216,8 @@ export type GroupMember = {
 };
 
 export type GroupReminderEmailInput = {
+  recoveryStartTimeUtc?: string;
+  sendBeforeUtc?: string;
   /** Durable reminder claim used only for signed delivery correlation. */
   deliveryClaimId?: string;
   confirmToken: string;
@@ -260,7 +267,9 @@ export function buildGroupReminderEmailHtml(input: GroupReminderEmailInput): str
   const allConfirmed = unconfirmed.length === 0;
   const total = input.members.length;
 
-  const whenLabel = input.reminderType === "24h" ? copy.tomorrow : copy.hours;
+  const whenLabel = input.recoveryStartTimeUtc
+    ? escapeEmailHtml(formatAppointmentTime(input.recoveryStartTimeUtc, input.timezone, locale))
+    : input.reminderType === "24h" ? copy.tomorrow : copy.hours;
 
   const memberRows = input.members
     .map((m) => {
@@ -380,6 +389,7 @@ export async function sendGroupReminderEmail(
     getResendFrom();
 
   try {
+    if (reminderSendDeadlinePassed(input.sendBeforeUtc)) return { ok: false, error: "recovery_window_expired" };
     const { data, error } = await resend.emails.send({
       from,
       to: input.organizerEmail,
@@ -447,6 +457,7 @@ export async function sendReminderEmail(
     getResendFrom();
 
   try {
+    if (reminderSendDeadlinePassed(input.sendBeforeUtc)) return { ok: false, error: "recovery_window_expired" };
     const { data, error } = await resend.emails.send({
       from,
       to: input.clientEmail,

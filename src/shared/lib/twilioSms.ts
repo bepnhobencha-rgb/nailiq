@@ -9,6 +9,7 @@
 
 import { validateGuestPhone } from "@/shared/booking/validateGuestPhone";
 import { isUsPhone } from "@/shared/lib/phoneRegion";
+import { reminderSendDeadlinePassed } from "@/shared/reminders/reminderSchedule";
 import {
   isRequiredSmsTemplate,
   isSmsTemplateEnabled,
@@ -377,6 +378,7 @@ export async function sendSmsReminder(
     lang?: "en" | "vi";
     bookingId?: string | null;
     notificationType?: string;
+    sendBeforeUtc?: string;
   },
 ): Promise<SmsDispatchResult> {
   // Guarantee an opt-out on every customer SMS (idempotent — see withOptOut).
@@ -554,6 +556,7 @@ export async function sendSmsReminder(
   params.StatusCallback = statusCallbackUrl;
 
   try {
+    if (reminderSendDeadlinePassed(opts.sendBeforeUtc)) return rejectBeforeProvider("recovery_window_expired");
     const res = await fetch(url, {
       method: "POST",
       headers: {

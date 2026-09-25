@@ -25,6 +25,15 @@ const INDIVIDUAL: ReminderEmailInput = {
 };
 
 describe("reminder email branding", () => {
+  it.each(["en", "vi"] as const)("uses actual appointment time for group recovery in %s", (locale) => {
+    const html = buildGroupReminderEmailHtml({
+      ...INDIVIDUAL, locale, organizerName: "QA", organizerEmail: "qa@example.invalid",
+      reminderType: "3h", recoveryStartTimeUtc: "2026-09-26T18:00:00Z", timezone: "America/Vancouver",
+      members: [{ name: "QA", serviceName: "Test", staffName: "Test", startTimeUtc: "2026-09-26T18:00:00Z", status: "confirmed" }],
+    });
+    expect(html).not.toMatch(/in 3 hours|trong 3 giờ|tomorrow|ngày mai/);
+    expect(html).toContain("11:00");
+  });
   beforeEach(() => {
     vi.stubEnv("NEXT_PUBLIC_SUPABASE_URL", "https://project-ref.supabase.co");
   });

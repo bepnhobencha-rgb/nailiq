@@ -118,6 +118,9 @@ export function classifyReminderProviderResult(
   }
 
   const error = String(result.error ?? "").trim().toLowerCase();
+  if (error === "recovery_window_expired") {
+    return { status: "failed", providerMessageId: null, errorCode: error };
+  }
   const knownPreflightFailure =
     error === "invalid_phone" ||
     error === "sms_consent_unavailable" ||

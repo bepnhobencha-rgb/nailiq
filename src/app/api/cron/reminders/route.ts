@@ -9,6 +9,11 @@ import { reminderLang, buildReminderSmsBody } from "@/shared/reminders/reminderS
 import {
   formatReminderTimeLabel,
   reminderDueWindows,
+  reminderRecoveryStart,
+  isReminderRecoveryDue,
+  formatReminderAppointmentLabel,
+  reminderRecoveryDeadline,
+  reminderSendDeadlinePassed,
 } from "@/shared/reminders/reminderSchedule";
 import { isUsPhone } from "@/shared/lib/phoneRegion";
 import { sendGroupReminderEmail, type GroupMember } from "@/shared/noshow/sendReminderEmail";
@@ -219,9 +224,59 @@ export async function GET(req: Request) {
     return NextResponse.json({ ok: false, error: "query_failed" }, { status: 500 });
   }
 
+  // Discover existing failed claims separately: shared markers can hide a
+  // failed group member. Never widen normal discovery to create late first sends.
+  const recoveryTasks: Array<{ booking: BookingRow; kind: ReminderType; channels: Set<ReminderChannel> }> = [];
+  const safeRecoveryErrors = ["delivery_preflight_or_rejection_failed",
+    "suppression_lookup_unavailable", "capability_mint_unavailable", "ai_timeout_before_delivery"];
+  for (const kind of ["24h", "3h"] as const) {
+    const { data: rows, error } = await supabase
+      .from("booking_reminder_delivery_claims" as never)
+      .select("booking_id,salon_id,appointment_start_utc,channel,status,attempt_count,provider_message_id,last_error_code")
+      .eq("reminder_type", kind).eq("status", "failed").lt("attempt_count", 3)
+      .is("provider_message_id", null).in("last_error_code", safeRecoveryErrors)
+      .gte("appointment_start_utc", reminderRecoveryStart(now, kind))
+      .lt("appointment_start_utc", kind === "24h" ? window24hStart : window3hStart)
+      .order("appointment_start_utc").limit(200);
+    if (error) return NextResponse.json({ ok: false, error: "recovery_query_failed" }, { status: 500 });
+    const claims = ((rows ?? []) as Array<{
+      booking_id: string; salon_id: string; appointment_start_utc: string;
+      channel: ReminderChannel; status: string; attempt_count: number;
+      provider_message_id: string | null; last_error_code: string | null;
+    }>).filter((claim) => claim.status === "failed" && claim.attempt_count >= 1
+      && claim.attempt_count < 3 && !claim.provider_message_id
+      && safeRecoveryErrors.includes(claim.last_error_code ?? "")
+      && (claim.channel === "email" || claim.channel === "sms")
+      && isReminderRecoveryDue(claim.appointment_start_utc, kind, now));
+    if (!claims.length) continue;
+    const { data: current, error: bookingError } = await supabase
+      .from("bookings" as never).select(baseSelect)
+      .in("id", [...new Set(claims.map((claim) => claim.booking_id))])
+      .in("status", ["pending", "confirmed"]).limit(200);
+    if (bookingError) return NextResponse.json({ ok: false, error: "recovery_booking_query_failed" }, { status: 500 });
+    for (const booking of (current ?? []) as BookingRow[]) {
+      const channels = new Set(claims.filter((claim) => claim.booking_id === booking.id
+        && claim.salon_id === booking.salon_id
+        && Date.parse(claim.appointment_start_utc) === Date.parse(booking.start_time_utc))
+        .map((claim) => claim.channel));
+      if (channels.size && ["pending", "confirmed"].includes(booking.status)) {
+        recoveryTasks.push({ booking, kind, channels });
+      }
+    }
+  }
+
   let sent24h = 0;
   let sent3h = 0;
   let errors = 0;
+  let recoverySettled = 0;
+
+  async function enforceRecoveryDeadline(claimId: string, booking: BookingRow, kind: ReminderType, recovery: boolean) {
+    if (!recovery || isReminderRecoveryDue(booking.start_time_utc, kind, new Date())) return;
+    if (!await completeReminderDelivery({ claimId, status: "failed", errorCode: "recovery_window_expired" })) {
+      throw new Error("reminder_claim_completion_failed");
+    }
+    throw new Error("reminder_recovery_window_expired");
+  }
 
   /** Fetch all members of a group for the consolidated reminder. */
   async function fetchGroupMembers(groupId: string): Promise<GroupMember[]> {
@@ -264,7 +319,7 @@ export async function GET(req: Request) {
     if (error) throw new Error("group_reminder_marker_failed");
   }
 
-  async function processGroupReminder(booking: BookingRow, reminderType: "24h" | "3h") {
+  async function processGroupReminder(booking: BookingRow, reminderType: "24h" | "3h", recovery = false) {
     const salon = booking.salons!;
     if (salon.email_outbound_enabled === false || !booking.client_email || !booking.group_id) return;
 
@@ -297,8 +352,11 @@ export async function GET(req: Request) {
           return;
         }
         let result;
+        await enforceRecoveryDeadline(claim.claimId, booking, reminderType, recovery);
         try {
           result = await sendGroupReminderEmail({
+            ...(recovery ? { recoveryStartTimeUtc: booking.start_time_utc } : {}),
+            ...(recovery ? { sendBeforeUtc: reminderRecoveryDeadline(booking.start_time_utc, reminderType) } : {}),
             deliveryClaimId: claim.claimId,
             ...capabilities,
             organizerName: booking.client_name,
@@ -345,6 +403,10 @@ export async function GET(req: Request) {
       return;
     }
 
+    // Catch up only this organizer's failed claim, never other party members.
+    // Leave the shared group marker untouched; each claim owns deduplication.
+    if (recovery) { recoverySettled++; return; }
+
     // Send individual reminder to members with their own distinct email
     let retryableMemberFailure = false;
     for (const m of members) {
@@ -353,6 +415,10 @@ export async function GET(req: Request) {
       // renders confirm/reschedule/cancel buttons from it, so an organizer-bound
       // token let a member cancel/reschedule the ORGANIZER's appointment.
       if (!m.bookingId) continue;
+      const memberDeadline = reminderRecoveryDeadline(m.startTimeUtc, reminderType);
+      if (reminderSendDeadlinePassed(memberDeadline)) {
+        errors++; retryableMemberFailure = true; continue;
+      }
       if (await import("@/shared/lib/emailCompliance").then((mod) => mod.isEmailSuppressed(m.email!))) continue;
       const { sendReminderEmail } = await import("@/shared/noshow/sendReminderEmail");
       const memberBooking: BookingRow = {
@@ -401,6 +467,8 @@ export async function GET(req: Request) {
       let memberResult;
       try {
         memberResult = await sendReminderEmail({
+          sendBeforeUtc: memberDeadline,
+          deterministicCopy: isReminderRecoveryDue(m.startTimeUtc, reminderType, new Date()),
           salonId: booking.salon_id,
           deliveryClaimId: memberClaim.claimId,
           ...memberCapabilities,
@@ -459,7 +527,7 @@ export async function GET(req: Request) {
     if (reminderType === "24h") sent24h++; else sent3h++;
   }
 
-  async function processReminder(booking: BookingRow, reminderType: "24h" | "3h") {
+  async function processReminder(booking: BookingRow, reminderType: "24h" | "3h", recoveryChannels: Set<ReminderChannel> | null = null) {
     const salon = booking.salons;
     if (!salon?.reminders_enabled) return;
     const entitlements = resolveTenantEntitlements(salon, now);
@@ -472,18 +540,24 @@ export async function GET(req: Request) {
     if (reminderType === "24h" && !salon.reminder_24h_enabled) return;
     if (reminderType === "3h"  && !salon.reminder_3h_enabled)  return;
 
+    const recovery = recoveryChannels !== null;
+    if (recovery && !isReminderRecoveryDue(booking.start_time_utc, reminderType, new Date())) return;
+
     // Group member (non-organizer): skip — handled via organizer's group email
-    if (booking.group_id && !booking.is_group_organizer) return;
+    if (booking.group_id && !booking.is_group_organizer && !recovery) return;
 
     // Group organizer: send consolidated group email
     if (booking.group_id && booking.is_group_organizer) {
-      await processGroupReminder(booking, reminderType);
+      if (recovery && !recoveryChannels?.has("email")) return;
+      await processGroupReminder(booking, reminderType, recovery);
       return;
     }
 
-    const wantsEmail = salon.email_outbound_enabled !== false && !!booking.client_email;
+    const wantsEmail = salon.email_outbound_enabled !== false && !!booking.client_email
+      && (!recoveryChannels || recoveryChannels.has("email"));
     const smsA2pRegistered = salon.sms_a2p_registered === true; // fail-safe: only an explicit true (A2P approved) permits US link-SMS; NULL/false → email-links mitigation
     let wantsSms   = salon.sms_outbound_enabled !== false && salon.sms_reminders_enabled && !!booking.client_phone;
+    if (recoveryChannels && (!recoveryChannels.has("sms") || booking.group_id)) wantsSms = false;
     // A2P 10DLC guardrail: US numbers require A2P registration; skip SMS if not registered.
     if (wantsSms && isUsPhone(booking.client_phone) && !smsA2pRegistered) {
       wantsSms = false;
@@ -508,6 +582,7 @@ export async function GET(req: Request) {
     if (!capabilities) { errors++; return; }
 
     let anySuccess = false;
+    let allChannelsSettled = true;
 
     // Email channel
     if (wantsEmail) {
@@ -518,17 +593,25 @@ export async function GET(req: Request) {
       );
       if (!emailClaim.ok) {
         errors++;
+        allChannelsSettled = false;
       } else if (emailClaim.claimed) {
         const emailSuppression = await suppressReminderEmailBeforeProvider({
           claimId: emailClaim.claimId,
           salonId: booking.salon_id,
           email: booking.client_email!,
         });
-        if (emailSuppression === "retryable") errors++;
+        if (emailSuppression === "retryable") {
+          errors++;
+          allChannelsSettled = false;
+        }
+        if (emailSuppression === "suppressed") anySuccess = true;
         if (emailSuppression === "send") {
           let result;
+          await enforceRecoveryDeadline(emailClaim.claimId, booking, reminderType, recovery);
           try {
             result = await sendReminderEmail({
+              ...(recovery ? { deterministicCopy: true } : {}),
+              ...(recovery ? { sendBeforeUtc: reminderRecoveryDeadline(booking.start_time_utc, reminderType) } : {}),
               salonId: booking.salon_id,
               deliveryClaimId: emailClaim.claimId,
               ...capabilities,
@@ -559,6 +642,7 @@ export async function GET(req: Request) {
               throw new Error("reminder_claim_completion_failed");
             }
             errors++;
+            allChannelsSettled = false;
             result = null;
           }
           if (result) {
@@ -579,9 +663,16 @@ export async function GET(req: Request) {
             });
             if (delivery.status === "sent" || delivery.status === "suppressed") {
               anySuccess = true;
-            } else errors++;
+            } else {
+              errors++;
+              allChannelsSettled = false;
+            }
           }
         }
+      } else if (["sent", "suppressed"].includes(emailClaim.status)) {
+        anySuccess = true;
+      } else {
+        allChannelsSettled = false;
       }
     }
 
@@ -594,6 +685,7 @@ export async function GET(req: Request) {
       );
       if (!smsClaim.ok) {
         errors++;
+        allChannelsSettled = false;
       } else if (smsClaim.claimed) {
         const confirmUrl = `${SITE_URL}/booking/confirm?token=${capabilities.confirmToken}`;
         const rescheduleUrl = `${SITE_URL}/booking/reschedule?token=${capabilities.rescheduleToken}`;
@@ -604,6 +696,7 @@ export async function GET(req: Request) {
         // cannot both cross either external boundary for the same channel.
         let aiLead: string | null = null;
         if (
+          !recovery &&
           (salon.feature_flags as Record<string, unknown> | null)
             ?.ai_smart_reminders === true &&
           (await isAiAgentPermissionEnabled(
@@ -665,6 +758,7 @@ export async function GET(req: Request) {
                 throw new Error("reminder_claim_completion_failed");
               }
               errors++;
+              allChannelsSettled = false;
               smsProviderAllowed = false;
             }
             /* non-timeout generation failures use deterministic copy */
@@ -672,6 +766,15 @@ export async function GET(req: Request) {
         }
 
         if (smsProviderAllowed) {
+          await enforceRecoveryDeadline(smsClaim.claimId, booking, reminderType, recovery);
+          if (recovery) {
+            const lang = reminderLang(booking.client_locale);
+            const appointment = formatReminderAppointmentLabel(booking.start_time_utc,
+              salon.timezone ?? "America/Los_Angeles", lang);
+            aiLead = lang === "vi"
+              ? `Nhắc lịch: ${booking.services?.name ?? "Dịch vụ"} tại ${salon.name}, ${appointment}.`
+              : `Reminder: ${booking.services?.name ?? "Appointment"} at ${salon.name}, ${appointment}.`;
+          }
           const body = buildSmsBody(
             booking,
             reminderType,
@@ -681,6 +784,7 @@ export async function GET(req: Request) {
           );
           const statusCallbackUrl = `${SITE_URL}/api/twilio/status`;
           const result = await sendSmsReminder(toE164, body, {
+            ...(recovery ? { sendBeforeUtc: reminderRecoveryDeadline(booking.start_time_utc, reminderType) } : {}),
             salonId: booking.salon_id,
             statusCallbackUrl,
             bookingId: booking.id,
@@ -693,7 +797,10 @@ export async function GET(req: Request) {
           );
           if (delivery.status === "sent" || delivery.status === "suppressed") {
             anySuccess = true;
-          } else errors++;
+          } else {
+            errors++;
+            allChannelsSettled = false;
+          }
           // Accepted SMS correlation is materialized transactionally by
           // complete_booking_reminder_delivery. Do not race the callback with
           // a fire-and-forget duplicate booking_notifications insert.
@@ -712,10 +819,17 @@ export async function GET(req: Request) {
             });
           }
         }
+      } else if (["sent", "suppressed"].includes(smsClaim.status)) {
+        anySuccess = true;
+      } else {
+        allChannelsSettled = false;
       }
     }
 
-    if (!anySuccess) return;
+    // A shared marker must not hide an unfinished channel from later runs.
+    // Durable per-channel claims prevent resending the already accepted channel.
+    if (!anySuccess || !allChannelsSettled) return;
+    if (recovery) { recoverySettled++; return; }
 
     const col = reminderType === "24h" ? "reminder_24h_sent_at" : "reminder_3h_sent_at";
     const { error: markerError } = await supabase
@@ -731,7 +845,8 @@ export async function GET(req: Request) {
   const tasks24h = ((need24h ?? []) as BookingRow[]).map((b) => processReminder(b, "24h"));
   const tasks3h  = ((need3h  ?? []) as BookingRow[]).map((b) => processReminder(b, "3h"));
 
-  const taskResults = await Promise.allSettled([...tasks24h, ...tasks3h]);
+  const catchupTasks = recoveryTasks.map(({ booking, kind, channels }) => processReminder(booking, kind, channels));
+  const taskResults = await Promise.allSettled([...tasks24h, ...tasks3h, ...catchupTasks]);
   const taskFailures = taskResults.filter(
     (result): result is PromiseRejectedResult => result.status === "rejected",
   ).length;
@@ -747,12 +862,13 @@ export async function GET(req: Request) {
         sent24h,
         sent3h,
         errors: errors + taskFailures,
+        recoverySettled,
         processedAt: now.toISOString(),
       },
       { status: 500 },
     );
   }
 
-    return NextResponse.json({ ok: true, sent24h, sent3h, errors, processedAt: now.toISOString() });
+    return NextResponse.json({ ok: true, sent24h, sent3h, errors, recoverySettled, processedAt: now.toISOString() });
   });
 }
