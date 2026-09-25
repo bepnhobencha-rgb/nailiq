@@ -33,10 +33,12 @@ Nguồn contract: [Square CreatePayment](https://developer.squareup.com/referenc
 - Next production build: PASS. Lần chạy sandbox hệ điều hành bị treo; đã dừng đúng tiến trình QA và chạy lại tuần tự với quyền tạo tiến trình local. Không dùng môi trường Production.
 - SQL fixture riêng: 11 kiểm tra gate/NULL/attempt/ACL PASS; hai worker đồng thời chỉ một worker có lease.
 - Square Sandbox thật: lưu thẻ synthetic rồi thu phí thành công; replay cùng key cùng receipt; decline; mất phản hồi sau dispatch phục hồi bằng read-only; hai yêu cầu đồng thời cùng receipt. Chi tiết: [báo cáo Sandbox](square-saved-card-fee-sandbox-2026-09-25.md).
-- Full schema Supabase local: **139/139 assertions PASS**; đã áp đúng ba migration cuối trên clone mới chỉ có cấu trúc `nailiq_fee_final_acceptance_20260925`; no-show, late cancellation, group cancellation và legacy no-show PASS chuỗi approval → claim → unknown → reconciliation → webhook → replay; sai salon/số tiền/completion token bị chặn. Fixture rollback. Regression webhook tới sau hoàn một phần/toàn bộ PASS, no-show và cancellation; webhook cũ không ghi đè occurrence mới. Có khóa booking trước tính tổng refund. Chưa chạy riêng tình huống refund và webhook đồng thời; race đã chạy là cấp lease SQL và payment request Sandbox.
-- Browser QA Preview: trang chủ và form đăng nhập đã mở bằng Computer Use. Đăng nhập Owner synthetic báo chưa xác nhận được kết quả; chưa tới dashboard, chưa đạt acceptance luồng thu phí. Firewall live version 16 chặn POST từ hostname QA mới; runtime log chỉ có GET /login. Không thay đổi firewall.
-- Full unit suite sau cập nhật schema contract: **6.924 PASS, 0 FAIL, 79 SKIP** (7.003 total). Lần chạy trong sandbox hạn chế cổng localhost khiến 4 test Mailpit timeout; chạy lại với quyền loopback đạt.
-- CI ở commit `2bb0f7e2`: migration rehearsal, smoke, tenant auth và visual regression PASS. Build/unit gate còn đỏ do ba test contract giữ expected 600 thay vì 602; đã sửa đúng equality và xác minh full unit ở trên. Cần CI trên commit kế tiếp; không coi CI đã xanh toàn bộ.
+- Full schema Supabase local: **139/139 assertions PASS**; đã áp đúng ba migration cuối trên clone mới chỉ có cấu trúc `nailiq_fee_final_acceptance_20260925`; no-show, late cancellation, group cancellation và legacy no-show PASS chuỗi approval → claim → unknown → reconciliation → webhook → replay; sai salon/số tiền/completion token bị chặn. Fixture rollback. Regression webhook tới sau hoàn một phần/toàn bộ PASS, no-show và cancellation; webhook cũ không ghi đè occurrence mới. Có khóa booking trước tính tổng refund. Bổ sung 4/4 race thực tế refund/webhook: no-show và hủy trễ, một phần/toàn bộ; xác minh webhook chờ Lock trước khi refund commit và bảo toàn số tiền sau đó. Deposit thiếu customer PASS 4 assertions với RPC mới, wrapper cũ, ledger và replay.
+- Browser QA Preview trên `65880b9d`: đăng nhập Owner synthetic PASS sau ngoại lệ firewall được Huy duyệt. Tạo/mở link quản lý thẻ và reload PASS, vẫn hiện Appointment reserved/chưa bảo vệ. Duyệt no-show $25 PASS với `approved_charge/dispatch_blocked`, miễn phí hủy trễ PASS với `waived/not_authorized`; đối chiếu DB không có payment operation. Card receipt fixture là mô phỏng UI, không phải bằng chứng Square đã lưu thẻ thật.
+- Browser phát hiện hàng đợi phí hủy nhóm bị ẩn: loader truy vấn cột `group_size` không tồn tại trên bảng review; cột thật nằm trong `policy_snapshot`. Đã sửa loader và 16 regression tests, cần xác minh bản sửa tiếp trên Preview.
+- Hộp xác nhận Collect được mở để thử Cancel nhưng IAB không cung cấp dialog handle, còn native Codex bị công cụ cấm điều khiển. Chưa bấm xác nhận thanh toán; đã yêu cầu Huy bấm Hủy. Không coi thao tác thu phí hoặc Cancel dialog đã PASS.
+- Full unit suite sau cập nhật schema contract: **6.940 PASS, 0 FAIL, 79 SKIP** (7.019 total). Lần chạy trong sandbox hạn chế cổng localhost khiến 4 test Mailpit timeout; chạy lại với quyền loopback đạt.
+- CI ở commit `65880b9d`: Build & Type Check, Security Audit, migration rehearsal, smoke, tenant auth, SuperAdmin HTTPS recovery, receptionist Chromium/mobile, visual regression và chín component-browser jobs PASS. Settings recovery và non-RC vẫn đang chạy ở checkpoint. Bản sửa loader nhóm mới cần CI riêng trên commit tiếp theo.
 - Live fee collection: **NOT ENABLED / NOT TESTED** trong task này.
 
 Bằng chứng local cuối: `/private/tmp/nailiq-fee-final-unit-20260925.json`, `/private/tmp/nailiq-fee-full-schema-final-20260925.log`, `/private/tmp/nailiq-fee-build-final-20260925.log`, `/private/tmp/nailiq-fee-final-typecheck-20260925.log`. Báo cáo Sandbox đã lưu bản sanitized trong repository.
@@ -64,7 +66,7 @@ Thẻ bị từ chối: không báo đã thu. Timeout/receipt không rõ: giữ 
 - CI và browser QA Preview từ đúng bản sửa, với role Owner/Admin/Receptionist, không thẻ, thiếu consent, sai salon, double-click và reload.
 - Kiểm tra cấu hình webhook signature, merchant/location/currency, quyền Square và các gate trên đúng deployment; không coi biến project là bằng chứng runtime đã bật.
 - Kiểm tra operation chưa rõ kết quả trước khi mở gate; operation cũ không được đổi reference hay tạo key mới để thử lại.
-- Race refund/webhook đồng thời chưa chạy; có regression tuần tự và khóa booking trước aggregation. Deposit thiếu customer qua RPC mới chưa test SQL riêng; điều kiện mới chỉ áp dụng fee, deposit tiếp tục ngoài phạm vi Live V1.
+- Race refund/webhook và deposit thiếu customer đã bổ sung PASS ở QA local; deposit vẫn ngoài phạm vi bật Live V1. Fixture race không xóa được qua cascade bình thường vì receipt bất biến; giữ trong clone disposable, không tắt guard.
 - Provider/configuration lỗi sau khi cron đã cấp lease vẫn có thể tiêu hao attempt. Giới hạn thử vẫn an toàn về trùng thu, nhưng có thể cần xử lý thủ công sau exhaustion; chưa coi đây là phục hồi vô hạn tự động.
 - Bản sửa gửi link lưu thẻ bằng email khi SMS tắt thuộc PR #1429, còn mở lúc kiểm tra; không mô tả là đã Live.
 - Request deposit nằm ngoài phạm vi gateway V1 đã chốt; không được bật rộng cổng thanh toán chỉ để làm nút này hoạt động.
@@ -77,7 +79,7 @@ Thẻ bị từ chối: không báo đã thu. Timeout/receipt không rõ: giữ 
 | Có trước task | Lưu thẻ, consent, Owner/Admin review, ledger, các gate mặc định tắt |
 | Implemented locally | Bản sửa trên nhánh riêng, ba migration, fixture và harness |
 | QA tested | Unit, local Supabase schema clone, Square Sandbox adapter; các bằng chứng được ghi riêng |
-| Preview verified | Một phần: home/login hiện; Owner flow bị firewall chặn |
+| Preview verified | Một phần: Owner login, retry link/reload, duyệt no-show, miễn phí hủy trễ PASS; nhóm tìm thấy lỗi và đang sửa; collect chưa được thực hiện |
 | Deployed | QA Preview; không Production |
 | Production verified | Chỉ xác minh SHA hiện tại; chưa xác minh thu phí live |
 
@@ -96,7 +98,15 @@ Kết luận: **PASS phần kiểm thử đã ghi nhận; CHƯA ĐẠT điều k
 - Chỉ nhánh `fix/fee-release-readiness-20260925`: Supabase QA `osdqutwunokiielbairj`; service-role key và JWT riêng lưu dưới dạng biến sensitive của Vercel. Không dùng credentials Production.
 - Đã áp ba migration của PR lên Supabase QA. Hai RPC mới và wrapper legacy chỉ service_role gọi được; anon/authenticated không có EXECUTE.
 - SMS/email/call OFF; hai fee dispatch gate, payment worker, Square webhook ingestion, card/continuation reconciliation OFF. URL công khai trỏ về alias QA riêng.
-- Preview alias hiện trỏ deployment `dpl_3DHCQHs3igj11ZKXVNqFMsrxnkPn`, commit metadata `2bb0f7e271ae5a322e9bf765d8f0715e32218fc4`, Vercel READY. Chưa đọc được runtime /api/version vì Vercel protection; không dùng metadata làm bằng chứng runtime endpoint.
-- Rule live `Card receipt release - fence stale deployment writers 20260911` không cho hostname QA mới POST. Có draft khác đang tồn tại; chưa ghi đè, stage hoặc publish.
-- Đã chuẩn bị đề xuất local chỉ cho host QA này, environment preview, POST và ba đường dẫn: `/login`, `/dashboard/card-truth-preview-20260911/no-show-protection`, `/dashboard/card-truth-preview-20260911/center`. Ma trận 5.313 trường hợp PASS, chỉ ba trường hợp QA được đổi quyết định; mọi case Production và cron payment-reconciliation giữ nguyên. Đây là kiểm tra logic local, chưa phải cấu hình firewall đã áp.
+- Checkpoint CUA: alias trỏ deployment `dpl_7jRpgY6Xio1Jg25GHeuHQXJ5yPe7`, commit metadata `65880b9d642a01fc65f6efe0330e2a2f18223022`, Vercel READY. Chưa đọc được runtime /api/version vì Vercel protection; không dùng metadata làm bằng chứng runtime endpoint.
+- Sau Huy duyệt: rule live version 17 đã áp đúng ngoại lệ hostname QA+preview+POST và ba đường dẫn đã nêu. Action vẫn deny; cron, rule khác, CRS, IP rules và firewallEnabled giữ nguyên. Bản draft cũ đã sao lưu và phục hồi có rebase ngoại lệ QA mới, vẫn chưa publish; pendingChanges=1.
+- Đã chuẩn bị đề xuất local chỉ cho host QA này, environment preview, POST và ba đường dẫn: `/login`, `/dashboard/card-truth-preview-20260911/no-show-protection`, `/dashboard/card-truth-preview-20260911/center`. Ma trận 5.313 trường hợp và review độc lập 13.600 trường hợp PASS, chỉ ba trường hợp QA được đổi quyết định; mọi case Production và cron payment-reconciliation giữ nguyên. Active sau publish đã đối chiếu đúng payload được duyệt.
 - Đề xuất local: `/private/tmp/nailiq-fee-firewall-proposal-20260925.json`. Trước bất kỳ publish nào phải đọc lại active version/draft, giữ draft của công việc khác, kiểm tra scope và có phê duyệt riêng. Rollback ngoại lệ phải tái dựng trên active mới nhất để không xóa thay đổi của người khác.
+
+## Bản sửa hàng đợi nhóm từ Computer Use
+
+- Existing before task: loader lấy `group_size` trực tiếp từ review table, PostgreSQL trả 42703 nhưng bị đổi thành danh sách rỗng. Đây là lỗi code có trước task, không phải migration QA thiếu.
+- Implemented locally: dùng `policy_snapshot.group_size`; fallback `bookings.group_size` hợp lệ cho snapshot cũ. Lỗi DB trả thông báo an toàn thay vì giả vờ không có review. Giữ lọc salon và quyền Owner/Admin. Không thêm migration.
+- Focused: 26/26 tests, typecheck và touched ESLint PASS; full unit 6.940 PASS, 79 skip.
+- Hosted QA fixture: 6 booking synthetic thuộc đúng salon Synthetic Card Preview QA, 3 review; missing-card/no-consent bị RPC từ chối trước khi tạo review. Tất cả provider IDs có prefix qa-simulated; outbound và dispatch OFF. Dữ liệu có receipt bất biến được giữ làm QA evidence; không bypass cleanup guard.
+- Chưa chứng minh bản sửa nhóm trên browser hoặc thu phí Live.

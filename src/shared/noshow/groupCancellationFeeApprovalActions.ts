@@ -40,20 +40,22 @@ export async function loadGroupCancellationFeeReviewQueue(
   const ctx = await getDashboardWriteClient(slug);
   if (!ctx || !isOwnerOrAdmin(ctx.role)) return [];
   const db = createServiceRoleClient();
-  const { data } = await db
+  const { data, error } = await db
     .from("booking_group_cancellation_fee_reviews" as never)
-    .select("id, group_id, organizer_booking_id, group_size, amount_cents, currency, card_brand, card_last4, state, payment_status, consent_policy_version, requested_at" as never)
+    .select("id, group_id, organizer_booking_id, policy_snapshot, amount_cents, currency, card_brand, card_last4, state, payment_status, consent_policy_version, requested_at" as never)
     .eq("salon_id" as never, ctx.salon.id)
     .order("requested_at" as never, { ascending: false })
     .limit(100);
+  if (error) throw new Error("group_cancellation_fee_queue_unavailable");
   const rows = (data ?? []) as unknown as Array<Record<string, unknown>>;
   if (rows.length === 0) return [];
   const bookingIds = rows.map((row) => String(row.organizer_booking_id));
-  const { data: bookings } = await db
+  const { data: bookings, error: bookingsError } = await db
     .from("bookings" as never)
-    .select("id, client_name, start_time_utc, services!bookings_service_id_fkey(name)" as never)
+    .select("id, client_name, start_time_utc, group_size, services!bookings_service_id_fkey(name)" as never)
     .eq("salon_id" as never, ctx.salon.id)
     .in("id" as never, bookingIds);
+  if (bookingsError) throw new Error("group_cancellation_fee_queue_unavailable");
   const byId = new Map(
     ((bookings ?? []) as unknown as Array<Record<string, unknown>>).map((booking) => [String(booking.id), booking]),
   );
@@ -63,6 +65,15 @@ export async function loadGroupCancellationFeeReviewQueue(
     const serviceName = Array.isArray(service)
       ? String(service[0]?.name ?? "")
       : String(service?.name ?? "");
+    // The cancellation RPC stores the original party size in its snapshot;
+    // the review table has no group_size column. Older snapshots may omit it.
+    const snapshot = row.policy_snapshot && typeof row.policy_snapshot === "object"
+      && !Array.isArray(row.policy_snapshot)
+      ? row.policy_snapshot as Record<string, unknown>
+      : {};
+    const groupSize = [snapshot.group_size, booking?.group_size].find(
+      (size): size is number => typeof size === "number" && Number.isSafeInteger(size) && size > 0,
+    ) ?? 0;
     return {
       reviewId: String(row.id),
       groupId: String(row.group_id),
@@ -70,7 +81,7 @@ export async function loadGroupCancellationFeeReviewQueue(
       clientName: String(booking?.client_name ?? "Guest"),
       serviceName,
       startTimeUtc: String(booking?.start_time_utc ?? ""),
-      groupSize: Number(row.group_size ?? 0),
+      groupSize,
       amountCents: Number(row.amount_cents ?? 0),
       currency: String(row.currency ?? "CAD"),
       cardBrand: String(row.card_brand ?? "Card"),
