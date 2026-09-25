@@ -107,3 +107,13 @@ Status: hosted QA migration/DB contract PASS; hosted UI/Preview NOT PROVEN. Four
 - Repeated on this exact branch: 48 unit tests PASS, typecheck PASS, targeted ESLint PASS, production build PASS with outbound suppression, diff check PASS. Providers mocked; no live email sent.
 - Production still points to `dpl_93ZAvNVmmdpf48sMpLuifg3cTSVf` at the same main SHA before publishing.
 - Hosted Preview isolation and browser verification must be recorded separately after deployment. A Git-generated Preview before branch-specific QA configuration is not QA-safe evidence.
+
+## PR1429 first hosted/CI attempt
+
+- Published scoped commit `7565f592`; PR1429 remains Draft.
+- Configured 60 branch-only Preview variables; QA ref `uhpzafoiifupyypkcwln`, no provider credentials, dispatch/email/SMS/calls disabled. Secrets transferred in memory only. Unrelated environment metadata and Production target unchanged.
+- CLI deployment `dpl_HMLwoi3Nje9HNE6uqzS469Gua2Kj` lacked Git branch metadata: not accepted as QA isolation evidence; no login submitted there.
+- Redeployed Git-backed commit as `dpl_CdpfNmXHSdA2rvcM22AMUeYhwqYH`, READY, exact SHA/branch verified. URL: https://nailiq-kwne382ow-bepnhobencha-2588s-projects.vercel.app . This deployment is BEFORE the parity-only correction below.
+- Initial CI attempt FAILED at schema parity before E2E: actual 247 tables / 3813 columns / 602 functions / 1015 indexes and service_role reachability 235, versus stale 246 / 3803 / 600 / 1012 / 234. This matches the exact additive migration delta. Preserve run `36183910672` and folded-history run `36183910580`; a transient image-pull rate limit also appeared but did not explain the final parity failure.
+- Corrected release-shape counts and added an explicit service-only receipt/RPC security assertion rather than relaxing browser-role counts. QA read-only verification confirmed RLS, browser denial, service grants and two invoker RPCs.
+- First CI build/typecheck, security audit, visual regression, i18n and focused browser jobs passed. Full E2E was blocked by parity, not passed. Follow-up CI must run on the corrected commit.
