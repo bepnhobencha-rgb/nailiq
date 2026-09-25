@@ -16,13 +16,14 @@ import { expect } from "vitest";
 // already applied in Production. information_schema.columns and the grant
 // matrix both count that view.
 // Fee delivery adds two service-only RPCs: gated reconciliation discovery and
-// customer-bound Square payment webhook. Fresh blank CI measured 602 functions.
+// customer-bound Square payment webhook. Fresh blank CI measured 602 functions;
+// configuration-preflight fee discovery adds one service-only RPC (603 total).
 // This is the local release contract, not a claim about Production's schema.
 const EXPECTED_RELEASE_SHAPE = {
   tables: 246,
   columns: 3803,
   policies: 225,
-  functions: 602,
+  functions: 603,
   triggers: 169,
   indexes: 1012,
 };

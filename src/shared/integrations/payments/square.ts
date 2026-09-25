@@ -24,7 +24,7 @@ export class SquareProvider implements PaymentProvider {
   readonly kind = "square" as const;
   constructor(private readonly cfg: SquareConfig) {}
 
-  private assertProviderIdentity(input: {
+  assertPaymentIdentity(input: {
     providerAccountId?: string;
     providerLocationId?: string | null;
     providerEnvironment?: "sandbox" | "production" | null;
@@ -103,7 +103,7 @@ export class SquareProvider implements PaymentProvider {
     providerCurrency?: string;
     providerAccountFingerprint?: string;
   }) {
-    this.assertProviderIdentity(input);
+    this.assertPaymentIdentity(input);
     const r = await sqCharge(this.cfg, {
       cardId: input.cardId,
       customerId: input.customerId,
@@ -126,7 +126,7 @@ export class SquareProvider implements PaymentProvider {
     providerCurrency?: string;
     providerAccountFingerprint?: string;
   }) {
-    this.assertProviderIdentity(input);
+    this.assertPaymentIdentity(input);
     const r = await sqRefund(this.cfg, {
       paymentId: input.paymentId,
       amountCents: toProviderMinorAmount(input.amountCents, this.cfg.currency),

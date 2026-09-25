@@ -91,6 +91,7 @@ describe("query grammar injection inventory", () => {
       "src/shared/booking/cardProtectionExceptionActions.ts": 1,
       "src/shared/dashboard/availabilityEngine.ts": 2,
       "src/shared/groupbooking/agentLateDecline.ts": 1,
+      "src/shared/payments/preflightFeePaymentReconciliation.ts": 2,
       "src/shared/superadmin/agentCertificationActions.ts": 1,
       "src/shared/superadmin/auditLogActions.ts": 1,
       "src/shared/superadmin/releaseReviewEmail.ts": 1,
@@ -104,6 +105,7 @@ describe("query grammar injection inventory", () => {
       "src/shared/ai/lessons.ts",
       "src/shared/dashboard/availabilityEngine.ts",
       "src/shared/dashboard/availabilityEngine.ts",
+      "src/shared/payments/preflightFeePaymentReconciliation.ts",
       "src/shared/superadmin/agentCertificationActions.ts",
       "src/shared/superadmin/auditLogActions.ts",
       "src/shared/superadmin/releaseReviewEmail.ts",
@@ -163,6 +165,19 @@ describe("query grammar injection inventory", () => {
     expect(auditLogs.indexOf("if (cursor !== null && !decoded)")).toBeLessThan(
       auditLogs.indexOf("createServiceRoleClient()"),
     );
+    const feePreflight = fs.readFileSync(
+      path.join(REPO, "src/shared/payments/preflightFeePaymentReconciliation.ts"),
+      "utf8",
+    );
+    // Only a server-generated ISO timestamp enters the reviewed due-state
+    // grammar. Tenant IDs, provider material and user input use typed filters.
+    expect(feePreflight).toContain("const now = new Date().toISOString()");
+    for (const call of templated.filter((item) =>
+      item.file === "src/shared/payments/preflightFeePaymentReconciliation.ts")) {
+      const template = unwrapExpression(call.argument) as ts.TemplateExpression;
+      expect(template.templateSpans.map((span) => span.expression.getText(call.sourceFile)))
+        .toEqual(["now", "now", "now", "now"]);
+    }
   });
 
   it("has no PostgREST filter call that accepts a raw grammar operator", () => {

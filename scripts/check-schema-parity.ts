@@ -371,7 +371,8 @@ const RELEASE_SHAPE = {
   // +5 P1-05 trial entitlement, booking/write, and charge-boundary functions.
   // +2 from 20260925202830/20260925204601: gated fee reconciliation
   // discovery and customer-bound Square webhook; legacy RPCs remain.
-  functions: 602,
+  // +1 from 20260925220858: ready-ID fee claims after configuration preflight.
+  functions: 603,
   // +4 pending-receipt correlation triggers across notification/staff INSERT
   // and provider-SID transitions.
   // +1 V1 terminal-booking policy trigger.
@@ -819,6 +820,7 @@ const CRITICAL_FUNCTIONS = [
   "bind_public_deposit_payment_operation",
   "discover_due_booking_payment_reconciliations",
   "discover_due_enabled_booking_payment_reconciliations",
+  "discover_due_ready_fee_payment_reconciliations",
   "discover_due_public_square_deposit_reconciliations",
   "discover_due_unbound_deposit_compensations",
   "claim_due_unbound_deposit_refund",

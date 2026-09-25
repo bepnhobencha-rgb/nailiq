@@ -19,6 +19,7 @@ DECLARE rpc regprocedure;
 BEGIN
  FOR rpc IN SELECT unnest(ARRAY[
    'public.discover_due_enabled_booking_payment_reconciliations(text[],integer)'::regprocedure,
+   'public.discover_due_ready_fee_payment_reconciliations(uuid[],text[],integer)'::regprocedure,
    'public.record_square_payment_webhook_event_bound(uuid,text,text,timestamptz,text,text,text,text,integer,text,timestamptz,text,text,text,text,text)'::regprocedure,
    'public.record_square_payment_webhook_event(uuid,text,text,timestamptz,text,text,text,text,integer,text,timestamptz,text,text,text,text)'::regprocedure
  ]) LOOP
@@ -52,7 +53,7 @@ BEGIN
  VALUES(service,salon,'Synthetic fee service',12500,80,'e2e-fee-release');
  INSERT INTO public.staff(id,salon_id,name,status) VALUES(staff,salon,'Synthetic QA','active');
  INSERT INTO auth.users(id,email,encrypted_password,email_confirmed_at,raw_app_meta_data,raw_user_meta_data,created_at)
- VALUES(actor,'fee-qa@nailiq.invalid','',stamp,'{"provider":"email","providers":["email"]}','{}',stamp);
+ VALUES(actor,'fee-full-schema-preflight-qa@nailiq.invalid','',stamp,'{"provider":"email","providers":["email"]}','{}',stamp);
  INSERT INTO public.salon_members(salon_id,user_id,role) VALUES(salon,actor,'owner');
  FOR i IN 1..4 LOOP
    booking:=gen_random_uuid(); cap:=gen_random_uuid(); review:=gen_random_uuid();
@@ -126,8 +127,31 @@ BEGIN
    PERFORM pg_temp.assert_true(result->>'code'='provider_outcome_unknown' AND
      (SELECT status='unknown' FROM public.booking_payment_operations WHERE id=op),'unknown persisted '||result::text);
    UPDATE public.booking_payment_operations SET next_reconcile_at=stamp-interval '1 minute' WHERE id=op;
-   SELECT value INTO result FROM public.discover_due_enabled_booking_payment_reconciliations(
-     ARRAY[CASE WHEN i IN (1,4) THEN 'noshow_charge' ELSE 'late_cancel_charge' END],25) value WHERE value->>'operation_id'=op::text;
+   IF i < 4 THEN
+     PERFORM pg_temp.assert_true((SELECT count(*)=0 FROM public.discover_due_ready_fee_payment_reconciliations(
+       NULL::uuid[],ARRAY['noshow_charge','late_cancel_charge'],25)), 'null ready set never claims');
+     PERFORM pg_temp.assert_true((SELECT count(*)=0 FROM public.discover_due_ready_fee_payment_reconciliations(
+       '{}'::uuid[],ARRAY['noshow_charge','late_cancel_charge'],25)), 'empty ready set never claims');
+     -- Simulate repeated configuration outages: no ready provider means no
+     -- attempt, lease, error-history or immutable material change.
+     FOR j IN 1..5 LOOP
+       PERFORM public.discover_due_ready_fee_payment_reconciliations(
+         '{}'::uuid[],ARRAY['noshow_charge','late_cancel_charge'],25);
+     END LOOP;
+     PERFORM pg_temp.assert_true((SELECT status='unknown' AND attempt_count=1
+       AND attempt_token IS NULL AND material_json=stable AND error_code='provider_transport_error'
+       FROM public.booking_payment_operations WHERE id=op), 'five config outages preserve operation');
+     PERFORM pg_temp.assert_true((SELECT count(*)=0 FROM public.discover_due_ready_fee_payment_reconciliations(
+       ARRAY[op],ARRAY[CASE WHEN i=1 THEN 'late_cancel_charge' ELSE 'noshow_charge' END],25)),
+       'ready ID outside enabled kind is not claimed');
+     SELECT value INTO result FROM public.discover_due_ready_fee_payment_reconciliations(
+       ARRAY[op],ARRAY[CASE WHEN i=1 THEN 'noshow_charge' ELSE 'late_cancel_charge' END],25)
+       value WHERE value->>'operation_id'=op::text;
+   ELSE
+     -- Retain compatibility coverage for an existing operation and old worker.
+     SELECT value INTO result FROM public.discover_due_enabled_booking_payment_reconciliations(
+       ARRAY['noshow_charge'],25) value WHERE value->>'operation_id'=op::text;
+   END IF;
    PERFORM pg_temp.assert_true(result->>'code'='reconcile_claimed','reconciliation claimed');
    PERFORM pg_temp.assert_true(result->'material'=stable,'reconciliation exact stored reference/material');
    payment:='qa-payment-'||i;
