@@ -211,6 +211,7 @@ jobs:
               e2e/group-booking
               e2e/guided-admin-setup.spec.ts
               e2e/landing-funnel.spec.ts
+              e2e/management-link-guidance.spec.ts
               e2e/noshow-confirm.spec.ts
               e2e/noshow-deposit.spec.ts
               e2e/noshow-reschedule.spec.ts
