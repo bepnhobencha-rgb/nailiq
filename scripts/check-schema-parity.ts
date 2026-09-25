@@ -369,7 +369,9 @@ const RELEASE_SHAPE = {
   // +1 R11 service-only atomic expired-grace pause with audit.
   // +1 P1-01 service-only Waitlist terminal-delivery truth projection.
   // +5 P1-05 trial entitlement, booking/write, and charge-boundary functions.
-  functions: 600,
+  // +2 from 20260925202830/20260925204601: gated fee reconciliation
+  // discovery and customer-bound Square webhook; legacy RPCs remain.
+  functions: 602,
   // +4 pending-receipt correlation triggers across notification/staff INSERT
   // and provider-SID transitions.
   // +1 V1 terminal-booking policy trigger.
