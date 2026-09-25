@@ -122,3 +122,21 @@ P1-01 tổng thể vẫn NOT COMPLETE.
   on GitHub (HTTP 400). No deployment was started. Publish the fenced branch,
   then configure and verify QA before creating Preview.
 - Unrelated callback/acceptance working-tree notes remain uncommitted.
+
+## Follow-up local group integration — 24/09/2026 Vancouver
+
+- Added four real local PostgreSQL handler cases: organizer recovery does not
+  fan out or mark the group; member recovery works despite the shared marker
+  without resending organizer; concurrent workers settle organizer/member once
+  each; a member SMS claim does not introduce group SMS recovery.
+- First run had one assertion failure: PostgREST returned `+00:00` whereas the
+  fixture expected `.000Z`. Both represent the same instant. Changed only the
+  assertion to compare parsed instants; no application or DB behavior changed.
+- `node /private/tmp/nailiq-p101-concurrency-qa.mjs --handler`: **14/14 PASS**.
+  Independent cleanup: counts for 10 tables unchanged, zero salons, including
+  after the failed assertion. Providers remain mocked; no hosted calls or sends.
+- Typecheck, test-file ESLint and diff check PASS. Application code unchanged;
+  no additional build or deployment claimed. These four cases are local only,
+  not included in the already-published `dab3229b`/PR CI evidence yet.
+- This supersedes the earlier local group-DB coverage gap, but not hosted cron,
+  real provider delivery, backlog/load or physical-device acceptance gaps.
