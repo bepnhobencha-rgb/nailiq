@@ -11,6 +11,32 @@ nghĩa đã xác nhận có lỗi.
 
 ## 1. Mốc và cách đọc
 
+### Checkpoint mới nhất — PR #1425 hosted QA, 24/09/2026 Vancouver
+
+- PR #1425 còn OPEN/Draft, MERGEABLE, head `e1529dd214113dafcbeb48baa36ce1bac36eb7d5`;
+  đọc lại GitHub: 22 SUCCESS, 2 SKIPPED. Không merge/deploy Production.
+- Guard không còn chỉ ở local: đã publish Preview
+  `dpl_2JVmqdUPpf7qaHXL1hpuzRsZ1jbi`, đúng head và Supabase QA riêng.
+  User đã publish WAF allowlist riêng alias QA; fence payment vẫn giữ nguyên.
+- Computer Use hosted: Receptionist EN và Owner VI đăng nhập thật bằng tài
+  khoản synthetic; Mời ngay/Mời lại chỉ tác động đúng entry, giữ epoch và
+  không nhân đôi outbox. Kênh tắt/thiếu email hiển thị trung thực; group review
+  không có nút mời. Không tạo booking hoặc gọi provider.
+- Chi tiết contact, Escape/focus return, reload và route chéo salon được kiểm
+  ở lượt Receptionist. Owner VI kiểm thêm drawer tại 375×667: cuộn nội dung,
+  các nút cuối drawer và nút đóng hoạt động, focus về tên khách. Đây là viewport
+  responsive, không phải iPhone vật lý hoặc nghiệm thu người mới.
+- Hai lượt hosted đã dọn riêng toàn bộ fixture của mình, thu hồi phiên; reload
+  protected route trở về login. Không dọn fixture bàn giao ngày 6.
+- PostgreSQL local rehearsal/race PASS đã ghi trong receipt. Hosted UI retry
+  không thay thế concurrent race; suppression không phải delivery thành công.
+- Quan sát còn mở: drawer dùng giờ trình duyệt cho joinedAt, chưa gắn timezone
+  salon; tiêu đề tab EN còn tiếng Việt. Không mở rộng guard PR sang UI ngoài
+  phạm vi và không đánh dấu các điểm này đã sửa.
+- Chi tiết: [PR #1425 Preview + hosted evidence](pr1425-preview-release-2026-09-24.md).
+  Checkpoint này thay các câu local-only/chưa publish của mục ngay dưới;
+  P1-01/V1-22/V1-23 vẫn thiếu terminal provider delivery được phép.
+
 ### Waitlist “Mời lại” — server pipeline local, 24/09/2026
 
 - Worktree cô lập từ merge SHA `15caa385fcd6357b1ff3b8ed02ef432d73c17296`.
