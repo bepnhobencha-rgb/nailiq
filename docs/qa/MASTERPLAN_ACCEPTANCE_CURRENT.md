@@ -1,7 +1,7 @@
 # NailIQ — Bảng nghiệm thu Masterplan
 
-Cập nhật bằng chứng Auth, Receptionist và Owner/Admin QA: 24/09/2026 (Vancouver); các mốc Production dưới
-đây vẫn là snapshot 22/09, không phải lần kiểm chứng Production mới.
+Cập nhật bằng chứng Auth, Receptionist, Owner/Admin và Waitlist email QA: 24/09/2026 (Vancouver).
+Mỗi checkpoint có phạm vi và thời điểm riêng; mốc cũ không phải lần kiểm chứng Production mới.
 Đây là bảng theo dõi nghiệm thu hiện hành; không thay đổi
 phạm vi, chính sách hay điều kiện đạt trong `docs/MASTER_PLAN.md`.
 
@@ -11,7 +11,37 @@ nghĩa đã xác nhận có lỗi.
 
 ## 1. Mốc và cách đọc
 
-### Checkpoint mới nhất — PR #1425 hosted QA, 24/09/2026 Vancouver
+### Checkpoint mới nhất — một email Waitlist QA đã giao, 24/09/2026 Vancouver
+
+- PR #1425 đã merge và deploy Production trong lượt trước, merge SHA
+  `a8e5fafcc43e5c9c95bc7ed992dc75f7bd2b0996`, deployment
+  `dpl_5Er8jXgSjokEgRo2fp2RPqSfmkEN`. Xem [receipt rollout](pr1425-production-rollout-2026-09-24.md).
+  Các câu OPEN/Draft/chưa deploy bên dưới là checkpoint lịch sử đã được thay thế.
+- Sau đó, theo phê duyệt riêng: Computer Use bấm Mời ngay đúng một lần trên
+  Preview dùng Supabase QA, một khách synthetic và một người nhận được duyệt.
+  Outbox email `sent`, một provider receipt khớp; Resend xác nhận **Delivered**.
+  Khóa gửi tạm có đúng một lượt sử dụng. SMS suppressed; không tạo booking.
+- Đã thu hồi khóa gửi tạm, tắt lại email QA, deploy Preview an toàn READY,
+  dọn fixture và thu hồi phiên. Production không thay đổi trong lượt email QA.
+- **Không có bằng chứng callback tự động hoặc Inbox**; không gán trạng thái
+  Delivered vào DB bằng tay. Không lấy một email Waitlist làm chứng nhận
+  SMS, reminder 24h/3h, opt-out hosted hoặc toàn P1-01.
+- Chi tiết: [receipt một email QA](waitlist-one-email-provider-2026-09-24.md).
+- Tiếp tục local-only: bổ sung 7 ca biên thời gian nhắc lịch; 10 suites,
+  **70/70 tests PASS**. Không gọi provider; test/contract không thay hosted E2E.
+- Bổ sung tiếp 13 ca chữ ký HMAC qua Resend/Svix SDK thật (không mock verifier):
+  chống sửa payload, sai khóa, timestamp hết hạn/tương lai, thiếu header và sai
+  phạm vi QA. Tổng kết hợp **83/83 tests, 11 suites PASS**; ESLint/typecheck PASS.
+  DB vẫn mock, không gọi mạng; callback hosted và ghi receipt thật vẫn chưa proven.
+- Tiếp đó chạy rehearsal receipt trên PostgreSQL disposable local thật:
+  retry không nhân row, payload xung đột, phân biệt accepted/delivered,
+  projection và ACL PASS. Rollback và số receipt trước/sau khớp, salon 0.
+  Đây là bằng chứng SQL độc lập; callback hosted/HTTP-to-DB vẫn chưa proven.
+- Build local Webpack PASS (exit 0, 61/61 static pages), không credential thật;
+  build mặc định Turbopack dừng do không tiến triển, chưa rõ nguyên nhân.
+  Không đổi cấu hình bundler hoặc deploy; xem receipt P1-01 local.
+
+### Checkpoint lịch sử — PR #1425 hosted QA, 24/09/2026 Vancouver
 
 - PR #1425 còn OPEN/Draft, MERGEABLE, head `e1529dd214113dafcbeb48baa36ce1bac36eb7d5`;
   đọc lại GitHub: 22 SUCCESS, 2 SKIPPED. Không merge/deploy Production.
@@ -201,8 +231,8 @@ ngày 20/09. Nguồn viết tắt được giải thích ở mục 6.
 | V1-19 | Recovery/exception | #1408 đã deploy; Owner QA Preview PASS | Rà soát exception hiện tại với Owner; số liệu 14/09 không coi là số hiện tại |
 | V1-20 | Không thu nhầm | PASS lịch sử; QA thiếu receipt không chargeable | Nghiệm thu thu tiền là phạm vi riêng, không suy từ lưu thẻ |
 | V1-21 | Năm việc tiếp tân | Local: 6 real-Auth UI journeys EN/VI và 15 tenant/race/retry PASS. PR #1424 có Preview; hosted receptionist kiểm chứng giờ hồ sơ, ẩn tiền theo quyền và route chéo salon. CI exact head: desktop 109 PASS/4 SKIP, mobile 103 PASS/10 SKIP; chưa Production | Người mới thật tạo hẹn/walk-in mỗi việc dưới 60 giây theo Giai đoạn 2, không hướng dẫn; pilot có ngưỡng walk-in dưới 30 giây riêng. Ghi đủ năm việc, không dùng thời gian robot thay người |
-| V1-22 | Queue/waitlist | P1-01/P1-03 synthetic UI PASS; #1406/#1407 đã deploy | Offer/claim đúng khách và terminal provider delivery có chứng cứ |
-| V1-23 | Thông báo/reminder | P1-01 delivery truth đã deploy; synthetic callback PASS | Provider QA terminal delivery chưa hoàn tất trong hồ sơ; acceptance 24h/3h và opt-out |
+| V1-22 | Queue/waitlist | Synthetic UI và guard #1425 đã deploy; một lượt hosted QA invite có receipt Resend Delivered, cleanup PASS | Callback tự động về QA và claim/booking hoàn chỉnh vẫn là cổng riêng |
+| V1-23 | Thông báo/reminder | Delivery truth đã deploy; synthetic callback PASS; một email Waitlist QA Delivered; 83 local tests PASS và rehearsal receipt PostgreSQL local PASS | Chưa đóng callback hosted, SMS, reminder 24h/3h và opt-out end-to-end; không suy rộng từ một email |
 | V1-24 | Admin một tay | 30/30 local real-Auth UI/SSR PASS; Computer Use 320px, 52 khách/3 trang, Loyalty read-only. Hosted Owner Preview kiểm chứng năm luồng trong report, rồi kiểm lại timezone fix ở exact head `6c31974`; chưa Production | Năm việc trên iPhone vật lý và chủ mới chưa proven; fixture/link tạm đã bàn giao, chưa có kết quả người dùng |
 | V1-25 | EN/VI và thiết bị | Local sáu device/language profiles PASS (Chromium desktop, WebKit iPhone/iPad × EN/VI). Hosted Preview đã kiểm EN/VI và viewport 375×667 trong phạm vi hồ sơ khách; CI exact head mobile/desktop PASS. Còn copy/title nhỏ đã ghi nhận; chưa Production | Profiles không phải phần cứng thật; hosted checks không thay toàn bộ ma trận thiết bị. Hoàn tất matrix vật lý theo phạm vi phát hành |
 | V1-26 | Incident và recovery | P1-06 drill/restore có bằng chứng; #1413 đã merge/deploy; CI và post-deploy verification PASS | Ghi người trực và thực hiện rehearsal vận hành trong pilot; rollout kỹ thuật không thay thế chứng cứ con người |
@@ -218,7 +248,7 @@ ngày 20/09. Nguồn viết tắt được giải thích ở mục 6.
 | P0-01 | #1401 merged 11/09; #1404 merged 14/09; regression và diagnostics | Chưa chứng minh nguyên nhân từng 503 lịch sử; không tự tạo lỗi trên Live | Kỹ thuật: ghép log có request/stage/SHA nếu còn; ghi rõ giới hạn lịch sử |
 | P0-02 | Đã PASS hosted QA: Preview branch-scoped dùng QA disposable, Google provider QA riêng, salon trắng/email synthetic, Google OAuth thật, callback recovery, chống trùng, private/off defaults và cleanup đều có evidence; local 12 browser + 69 contract/unit và build PASS | Không còn điểm chặn kỹ thuật Day 2/Day 3 ở mức QA; còn clean-browser/device return-login, UX logout trong Guided Setup và pilot owner thật | Đóng P0-02 ở mức QA. Chuyển UX logout/progress sang backlog và giữ Production/pilot là cổng riêng |
 | P0-03 | PR #1417 merged; migration `20260921170000` đã áp Production; metadata/function signatures/ACL/Advisor PASS với 0 ERROR/20 WARN; deployment READY; hậu-merge CI/E2E SUCCESS; WAF version 9 có `booking-page-load` 60/60s/IP và `contact-submit` 5/3600s/IP, vượt ngưỡng chỉ log | Database/ACL đã đóng. WAF cần thời gian quan sát false positive; chưa có bằng chứng enforce hay traffic/pilot thực | Kỹ thuật: giữ log-only, thu thập số liệu và chỉ đề xuất enforce bằng thay đổi riêng có rollback; không mở thêm migration cho lỗi đã đóng |
-| P1-01 | #1406/#1407 merged; synthetic delivery truth PASS | Provider delivery/callback acceptance | QA: chuẩn bị người nhận/case cụ thể trước một lượt provider được phép |
+| P1-01 | #1406/#1407 và #1425 deployed; synthetic truth PASS; một email Waitlist QA được Resend xác nhận Delivered | Callback tự động QA, SMS và reminder/opt-out end-to-end còn thiếu; Inbox chưa xác nhận | Không gửi thêm theo phê duyệt một email đã dùng hết; cần cấu hình callback cô lập an toàn trước cổng provider tiếp theo |
 | P1-02 | #1408 merged; Sandbox/backend/browser PASS | Live exception recovery cần Owner; dữ liệu cũ không đại diện hôm nay | Owner + QA: duyệt từng trường hợp sau snapshot read-only mới |
 | P1-03 | #1409 merged; profile EN/VI PASS | Người mới, thời gian, máy thật | QA/pilot: ghi từng nhiệm vụ, số trợ giúp và kết quả |
 | P1-04 | #1410 merged; 60 browser PASS, 3 SKIP; 32 unit PASS theo báo cáo | Attestation đúng cấu hình từng salon | Owner + QA: xác nhận cấu hình và rehearsal không dùng khách thật |
