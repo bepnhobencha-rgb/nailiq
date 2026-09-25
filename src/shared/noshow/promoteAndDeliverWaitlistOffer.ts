@@ -101,7 +101,17 @@ export async function promoteAndDeliverSpecificWaitlistEntry(input: {
     } as never,
   );
   if (error) return { ok: false, code: "waitlist_unavailable" };
-  return deliverCanonicalWaitlistPromotion(data);
+  const parsed = parsePromotion(data);
+  if (parsed.ok && parsed.code === "promoted") {
+    // The desk authorized one salon and one selected entry. A structurally
+    // valid RPC response must not redirect that authority to another target.
+    if (parsed.salonId.toLowerCase() !== input.salonId.trim().toLowerCase() ||
+        parsed.offer.waitlistEntryId.toLowerCase() !== input.waitlistEntryId.trim().toLowerCase()) {
+      return { ok: false, code: "invalid_waitlist_response" };
+    }
+    await deliverExactPromotion(parsed);
+  }
+  return parsed;
 }
 
 /** Expire stale offers, then deliver only the exact capabilities returned by DB. */
