@@ -62,7 +62,7 @@ describe("Waitlist terminal delivery truth boundary", () => {
     expect(loader).toContain('"load_waitlist_offer_delivery_truth"');
     expect(loader).not.toContain('from("waitlist_offer_delivery_outbox"');
     expect(parity).toContain('"load_waitlist_offer_delivery_truth"');
-    expect(parity).toContain("functions: 600");
+    expect(parity).toContain("functions: 602");
     for (const contract of [
       "terminal Twilio failure was still projected as provider accepted",
       "terminal Resend delivery was not projected",
