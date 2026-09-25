@@ -6,6 +6,7 @@ import { generateReminderToken } from "@/shared/noshow/generateReminderToken";
 import { sendSmsReminder } from "@/shared/lib/twilioSms";
 import { buildSaveCardSms } from "@/shared/lib/smsTemplateRegistry";
 import { sendCustomerLinkEmail } from "@/shared/lib/sendCustomerLinkEmail";
+import { claimCardRetryEmail, completeCardRetryEmail } from "@/shared/notifications/cardRetryEmailReceipt";
 
 /**
  * Desk-initiated "save a card to hold your spot" link.
@@ -29,6 +30,11 @@ export type SendSaveCardLinkResult =
         | "forbidden"
         | "invalid_booking"
         | "no_phone"
+        | "invalid_channel"
+        | "no_email"
+        | "email_disabled"
+        | "email_send_failed"
+        | "email_retry_blocked"
         | "trial_outbound_paused"
         | "protection_disabled"
         | "server_error";
@@ -37,7 +43,7 @@ export type SendSaveCardLinkResult =
 
 export async function sendSaveCardLink(
   slug: string,
-  input: { bookingId: string; sendSms?: boolean; language?: "en" | "vi" },
+  input: { bookingId: string; sendSms?: boolean; channel?: "email_only"; language?: "en" | "vi" },
 ): Promise<SendSaveCardLinkResult> {
   const ctx = await getDashboardWriteClient(slug);
   if (!ctx) return { ok: false, error: "unauthorized" };
@@ -46,6 +52,13 @@ export async function sendSaveCardLink(
     return { ok: false, error: "trial_outbound_paused" };
   }
 
+  // Explicit email intent never falls back to SMS, even for a forged payload.
+  if (input.channel !== undefined && input.channel !== "email_only") {
+    return { ok: false, error: "invalid_channel" };
+  }
+  const emailOnly = input.channel === "email_only";
+  if (emailOnly && input.sendSms) return { ok: false, error: "invalid_channel" };
+
   const bookingId = String(input.bookingId ?? "").trim();
   if (!bookingId) return { ok: false, error: "invalid_booking" };
 
@@ -53,11 +66,18 @@ export async function sendSaveCardLink(
   // can text the link without a second round-trip.
   const { data: bk } = await ctx.supabase
     .from("bookings")
-    .select("id, client_phone, client_email, client_name")
+    .select("id, client_phone, client_email, client_name, status, deleted_at, start_time_utc, noshow_card_required, noshow_card_id, card_protection_status")
     .eq("id", bookingId)
     .eq("salon_id", ctx.salon.id)
     .maybeSingle();
   if (!bk?.id) return { ok: false, error: "invalid_booking" };
+  if (emailOnly && (bk.deleted_at || !["pending", "confirmed"].includes(bk.status)
+    || !bk.start_time_utc || Date.parse(bk.start_time_utc) <= Date.now()
+    || !Number.isFinite(Date.parse(bk.start_time_utc))
+    || bk.noshow_card_required !== true || bk.noshow_card_id
+    || !["awaiting_card", "retry_required"].includes(bk.card_protection_status ?? ""))) {
+    return { ok: false, error: "invalid_booking" };
+  }
 
   // The link only does something if the salon has no-show protection on; fail
   // early with a clear reason rather than texting a dead link.
@@ -65,6 +85,19 @@ export async function sendSaveCardLink(
   if (!salon.noshow_protection_enabled) {
     return { ok: false, error: "protection_disabled" };
   }
+
+  const email = String(bk.client_email ?? "").trim();
+  const emailEnabled =
+    (salon as { email_links_enabled?: boolean } | null)?.email_links_enabled !== false;
+  // Validate the selected destination before creating a short-lived capability.
+  if (emailOnly && !email) return { ok: false, error: "no_email" };
+  if (emailOnly && !emailEnabled) return { ok: false, error: "email_disabled" };
+  // A receipt is never reclaimed merely because time passed. A crashed process
+  // may have sent already; reconciliation must precede any further attempt.
+  const emailLease = emailOnly ? await claimCardRetryEmail({
+    salonId: salon.id, bookingId, actorId: ctx.userId, email,
+  }) : null;
+  if (emailOnly && !emailLease) return { ok: false, error: "email_retry_blocked" };
 
   const token = await generateReminderToken(bookingId, ctx.salon.id, {
     action: "card_manage",
@@ -77,9 +110,6 @@ export async function sendSaveCardLink(
   const salonName = ctx.salon.name?.trim() || "NailIQ";
   const en = input.language === "en";
   const phone = String((bk as { client_phone?: string }).client_phone ?? "").trim();
-  const email = String((bk as { client_email?: string }).client_email ?? "").trim();
-  const emailEnabled =
-    (salon as { email_links_enabled?: boolean } | null)?.email_links_enabled !== false;
 
   let smsSent: boolean | undefined;
   let emailSent: boolean | undefined;
@@ -103,7 +133,7 @@ export async function sendSaveCardLink(
   const flags = (salon as { feature_flags?: Record<string, unknown> | null } | null)?.feature_flags;
   const aiOptedIn =
     flags?.ai_noshow_policy_live === true || flags?.ai_noshow_policy_shadow === true;
-  if (aiOptedIn) {
+  if (aiOptedIn && !emailOnly) {
     try {
       const { draftSaveCardMessages } = await import(
         "@/shared/noshow/agentNoShowPolicy"
@@ -125,11 +155,11 @@ export async function sendSaveCardLink(
   // The "send link" intent. Deliver on EVERY channel we have — SMS often never
   // reaches US handsets (carrier filtering of link-SMS from unregistered A2P
   // numbers), so email is the parallel/fallback channel, not a nice-to-have.
-  if (input.sendSms) {
+  if (input.sendSms || emailOnly) {
     const canEmail = emailEnabled && !!email;
     if (!phone && !canEmail) return { ok: false, error: "no_phone" };
 
-    if (phone) {
+    if (phone && !emailOnly) {
       try {
         const r = await sendSmsReminder(phone, smsBody, {
           salonId: ctx.salon.id,
@@ -143,7 +173,10 @@ export async function sendSaveCardLink(
     }
 
     if (canEmail) {
+      try {
       const r = await sendCustomerLinkEmail({
+        requireReceipt: emailOnly,
+        ...(emailLease ? { idempotencyKey: `card-retry-email/${emailLease.id}` } : {}),
         email,
         clientName: (bk as { client_name?: string }).client_name ?? null,
         salonName,
@@ -152,13 +185,29 @@ export async function sendSaveCardLink(
         subject: en
           ? `Save a card to hold your appointment · ${salonName}`
           : `Lưu thẻ để giữ lịch hẹn · ${salonName}`,
-        bodyText: emailBody,
+        bodyText: emailOnly
+          ? en
+            ? "Your appointment remains reserved. Please use this secure link to try saving your card again. Saving a card does not charge you. Any applicable fee requires separate authorized review under the salon policy."
+            : "Lịch hẹn của bạn vẫn được giữ. Vui lòng dùng liên kết an toàn này để thử lưu thẻ lại. Lưu thẻ không thu tiền. Mọi khoản phí áp dụng phải được người có thẩm quyền xem xét riêng theo chính sách của tiệm."
+          : emailBody,
         ctaLabel: en ? "Save a card" : "Lưu thẻ",
         url,
       });
-      emailSent = r.ok;
+      if (emailLease) {
+        const providerId = r.ok ? r.providerMessageId?.trim() || null : null;
+        const persisted = await completeCardRetryEmail(emailLease, providerId);
+        emailSent = !!providerId && persisted;
+      } else {
+        emailSent = r.ok;
+      }
+      } catch {
+        emailSent = false;
+        if (emailLease) await completeCardRetryEmail(emailLease, null);
+      }
     }
   }
+
+  if (emailOnly && !emailSent) return { ok: false, error: "email_send_failed" };
 
   return { ok: true, url, smsSent, emailSent };
 }

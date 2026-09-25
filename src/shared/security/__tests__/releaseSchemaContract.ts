@@ -16,15 +16,17 @@ import { expect } from "vitest";
 // already applied in Production. information_schema.columns and the grant
 // matrix both count that view.
 // This is the local release contract, not a claim about Production's schema.
+// Card-retry email adds one service-only receipt table, ten columns, two
+// invoker RPCs and three indexes. Browser-role reachability does not change.
 const EXPECTED_RELEASE_SHAPE = {
-  tables: 246,
-  columns: 3803,
+  tables: 247,
+  columns: 3813,
   policies: 225,
-  functions: 600,
+  functions: 602,
   triggers: 169,
-  indexes: 1012,
+  indexes: 1015,
 };
-const EXPECTED_GRANTS = { anon: 57, authenticated: 79, service_role: 234 };
+const EXPECTED_GRANTS = { anon: 57, authenticated: 79, service_role: 235 };
 
 function numericObject(source: string, name: string): Record<string, number> {
   const file = ts.createSourceFile("check-schema-parity.ts", source, ts.ScriptTarget.Latest, true);

@@ -37,7 +37,10 @@ export async function sendCustomerLinkEmail(input: {
   url: string;
   /** Honour the marketing opt-out list (default false → transactional). */
   respectOptOut?: boolean;
-}): Promise<{ ok: boolean; error?: string }> {
+  /** Strict callers need provider acceptance evidence, not a successful no-op. */
+  requireReceipt?: boolean;
+  idempotencyKey?: string;
+}): Promise<{ ok: boolean; error?: string; providerMessageId?: string }> {
   const email = (input.email ?? "").trim();
   if (!email) return { ok: false, error: "no_email" };
 
@@ -46,7 +49,7 @@ export async function sendCustomerLinkEmail(input: {
 
   if (input.respectOptOut && (await isEmailSuppressed(email))) {
     // Opted out of optional mail — treat as a successful no-op.
-    return { ok: true };
+    return input.requireReceipt ? { ok: false, error: "suppressed" } : { ok: true };
   }
 
   const lang = input.lang === "en" ? "en" : "vi";
@@ -80,7 +83,7 @@ export async function sendCustomerLinkEmail(input: {
   });
 
   try {
-    const { error } = await resend.emails.send({
+    const { data, error } = await resend.emails.send({
       from: getResendFrom(),
       to: email,
       subject: input.subject,
@@ -88,14 +91,15 @@ export async function sendCustomerLinkEmail(input: {
       text: experience.text,
       headers: experience.headers,
       tags: experience.tags,
-    });
+    }, input.idempotencyKey ? { idempotencyKey: input.idempotencyKey } : undefined);
     if (error) {
-      console.error("[sendCustomerLinkEmail] resend error", error);
-      return { ok: false, error: String(error) };
+      if (!input.requireReceipt) console.error("[sendCustomerLinkEmail] resend error", error);
+      return { ok: false, error: input.requireReceipt ? "provider_error" : String(error) };
     }
-    return { ok: true };
+    if (input.requireReceipt && !data?.id) return { ok: false, error: "missing_receipt" };
+    return input.requireReceipt ? { ok: true, providerMessageId: data!.id } : { ok: true };
   } catch (e) {
-    console.error("[sendCustomerLinkEmail] threw", e);
-    return { ok: false, error: String(e) };
+    if (!input.requireReceipt) console.error("[sendCustomerLinkEmail] threw", e);
+    return { ok: false, error: input.requireReceipt ? "provider_unknown" : String(e) };
   }
 }
