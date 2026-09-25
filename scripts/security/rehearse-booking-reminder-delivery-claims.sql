@@ -34,6 +34,7 @@ DECLARE
   v_claim jsonb;
   v_result jsonb;
   v_claim_id uuid;
+  v_attempt integer;
 BEGIN
   v_claim := public.claim_booking_reminder_delivery(
     v_salon,v_booking,v_start,'24h','email'
@@ -74,6 +75,27 @@ BEGIN
     RAISE EXCEPTION 'accepted reminder completion failed: %', v_result;
   END IF;
 
+  -- Catch-up uses the same atomic lease: three total attempts, never a fourth.
+  FOR v_attempt IN 1..3 LOOP
+    v_result := public.claim_booking_reminder_delivery(
+      v_salon,v_booking,v_start,'3h','email'
+    );
+    IF v_result->>'claimed' <> 'true'
+       OR (v_result->>'attempt_count')::integer <> v_attempt THEN
+      RAISE EXCEPTION 'recovery attempt count mismatch';
+    END IF;
+    v_claim_id := (v_result->>'claim_id')::uuid;
+    PERFORM public.complete_booking_reminder_delivery(
+      v_claim_id,'failed',null,'delivery_preflight_or_rejection_failed'
+    );
+  END LOOP;
+  v_result := public.claim_booking_reminder_delivery(
+    v_salon,v_booking,v_start,'3h','email'
+  );
+  IF v_result->>'claimed' <> 'false' OR v_result->>'attempt_count' <> '3' THEN
+    RAISE EXCEPTION 'recovery exceeded three attempts';
+  END IF;
+
   v_result := public.claim_booking_reminder_delivery(
     v_salon,v_booking,v_start,'24h','sms'
   );
@@ -94,6 +116,10 @@ BEGIN
   SET start_time_utc='2026-08-26T18:00:00Z',
       end_time_utc='2026-08-26T18:30:00Z'
   WHERE id=v_booking;
+  v_result := public.claim_booking_reminder_delivery(v_salon,v_booking,v_start,'3h','sms');
+  IF v_result->>'code' <> 'invalid_claim' THEN
+    RAISE EXCEPTION 'old occurrence accepted after reschedule';
+  END IF;
   v_result := public.claim_booking_reminder_delivery(
     v_salon,v_booking,'2026-08-26T18:00:00Z','24h','email'
   );
@@ -107,6 +133,14 @@ BEGIN
   );
   IF v_result->>'code' <> 'invalid_claim' THEN
     RAISE EXCEPTION 'cross-salon reminder claim accepted: %', v_result;
+  END IF;
+
+  UPDATE public.bookings SET status='cancelled' WHERE id=v_booking;
+  v_result := public.claim_booking_reminder_delivery(
+    v_salon,v_booking,'2026-08-26T18:00:00Z','3h','sms'
+  );
+  IF v_result->>'code' <> 'invalid_claim' THEN
+    RAISE EXCEPTION 'cancelled booking accepted for recovery';
   END IF;
 END;
 $behavior$;

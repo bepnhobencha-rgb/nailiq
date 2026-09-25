@@ -1,6 +1,38 @@
 const MINUTE_MS = 60_000;
 const HOUR_MS = 60 * MINUTE_MS;
 
+/** Maximum lateness from the nominal due instant, not from the window edge. */
+export const REMINDER_RECOVERY_MINUTES = 60;
+
+export function reminderRecoveryDeadline(startUtc: string, kind: "24h" | "3h"): string {
+  return new Date(instantMs(startUtc) - (kind === "24h" ? 24 : 3) * HOUR_MS
+    + REMINDER_RECOVERY_MINUTES * MINUTE_MS).toISOString();
+}
+
+export function reminderSendDeadlinePassed(deadline: string | undefined, now = Date.now()): boolean {
+  return deadline !== undefined && (!Number.isFinite(Date.parse(deadline)) || now > Date.parse(deadline));
+}
+
+export function reminderRecoveryStart(now: Date | string | number, kind: "24h" | "3h"): string {
+  return new Date(instantMs(now) + (kind === "24h" ? 24 : 3) * HOUR_MS
+    - REMINDER_RECOVERY_MINUTES * MINUTE_MS).toISOString();
+}
+
+export function isReminderRecoveryDue(startUtc: string, kind: "24h" | "3h", now: Date | string | number): boolean {
+  const start = Date.parse(startUtc);
+  const current = instantMs(now);
+  const late = current - (start - (kind === "24h" ? 24 : 3) * HOUR_MS);
+  return Number.isFinite(start) && start > current && late > 15 * MINUTE_MS
+    && late <= REMINDER_RECOVERY_MINUTES * MINUTE_MS;
+}
+
+export function formatReminderAppointmentLabel(startUtc: string, timezone: string, locale: "en" | "vi"): string {
+  return new Intl.DateTimeFormat(locale === "vi" ? "vi-VN" : "en-US", {
+    timeZone: timezone, year: "numeric", month: "short", day: "numeric",
+    hour: "numeric", minute: "2-digit", timeZoneName: "short",
+  }).format(new Date(instantMs(startUtc)));
+}
+
 export type ReminderDueWindows = {
   reminder24h: { startUtc: string; endUtc: string };
   reminder3h: { startUtc: string; endUtc: string };
