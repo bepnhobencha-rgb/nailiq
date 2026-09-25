@@ -15,12 +15,14 @@ import { expect } from "vitest";
 // P0-03 restores the five-column public booking resource catalog view that was
 // already applied in Production. information_schema.columns and the grant
 // matrix both count that view.
+// Fee delivery adds two service-only RPCs: gated reconciliation discovery and
+// customer-bound Square payment webhook. Fresh blank CI measured 602 functions.
 // This is the local release contract, not a claim about Production's schema.
 const EXPECTED_RELEASE_SHAPE = {
   tables: 246,
   columns: 3803,
   policies: 225,
-  functions: 600,
+  functions: 602,
   triggers: 169,
   indexes: 1012,
 };
