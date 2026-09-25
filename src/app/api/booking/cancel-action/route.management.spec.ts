@@ -57,7 +57,7 @@ const inspection = {
     scopeKind: "booking_own",
     context: { groupId: null },
     cancelPreview,
-    booking: { salonSlug: "qa-salon" },
+    booking: { salonSlug: "qa-salon", salonName: "QA Salon", serviceName: "Classic", startTimeUtc: "2099-08-20T17:00:00Z", salonTimezone: "America/Vancouver", clientEmail: "private@example.invalid" },
   },
 };
 const committed = {
@@ -105,8 +105,19 @@ describe("cancel management runtime behavior", () => {
   it("keeps GET inspection-only and never charges or consumes", async () => {
     const response = await GET(new Request(`https://nailiq.test/api/booking/cancel-action?token=${TOKEN}`));
     expect(response.status).toBe(200);
-    expect(await response.json()).toMatchObject({ ok: true, feeCents: 2500, salonSlug: "qa-salon" });
+    const body = await response.json();
+    expect(body).toMatchObject({ ok: true, feeCents: 2500, salonSlug: "qa-salon" });
+    expect(body.booking).toEqual({ salonName: "QA Salon", serviceName: "Classic", startTimeUtc: "2099-08-20T17:00:00Z", salonTimezone: "America/Vancouver" });
+    expect(JSON.stringify(body)).not.toContain("private@example.invalid");
     expect(mocks.inspect).toHaveBeenCalledWith({ tokenId: TOKEN, expectedAction: "cancel" });
+    expect(mocks.cancel).not.toHaveBeenCalled();
+    expect(mocks.after).not.toHaveBeenCalled();
+  });
+
+  it.each(["invalid_token", "expired_or_revoked", "stale_booking", "token_consumed"])("does not disclose a summary for %s", async code => {
+    mocks.inspect.mockResolvedValueOnce({ ok: false, code });
+    const response = await GET(new Request(`https://nailiq.test/api/booking/cancel-action?token=${TOKEN}`));
+    expect(await response.json()).toEqual({ ok: false, code });
     expect(mocks.cancel).not.toHaveBeenCalled();
     expect(mocks.after).not.toHaveBeenCalled();
   });

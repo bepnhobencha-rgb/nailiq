@@ -8,6 +8,8 @@ import {
   stableBookingManagementRequestId,
 } from "@/shared/booking/bookingManagementRequestId";
 import { isCommittedCancellationPaymentPending } from "@/shared/payments/paymentOutagePresentation";
+import { bookingManagementLinkMessage } from "@/shared/booking/bookingManagementLinkMessage";
+import { formatBookingManagementTime } from "@/shared/booking/bookingManagementTime";
 
 type Preview = {
   ok: boolean;
@@ -21,6 +23,12 @@ type Preview = {
   brand?: string | null;
   currency?: string;
   salonSlug?: string | null;
+  booking?: {
+    salonName: string;
+    serviceName: string | null;
+    startTimeUtc: string;
+    salonTimezone: string;
+  };
 };
 
 type CancelResponse = {
@@ -288,19 +296,13 @@ export default function CancelBookingPage() {
     );
   }
 
-  const errorMessages: Record<string, string> = {
-    missing_token: "This cancellation link is invalid.",
-    token_invalid: "This link has already been used or has expired.",
-    booking_not_cancellable: "This appointment cannot be cancelled at this time.",
-    server_error: "Something went wrong. Please contact the salon directly.",
-  };
-
   if (state === "error") {
+    const message = bookingManagementLinkMessage(code);
     return (
       <Shell>
         <div className="text-center">
-          <h1 className="text-xl font-semibold text-white">Unable to Cancel</h1>
-          <p className="mt-3 text-sm text-nq-muted">{errorMessages[code] ?? "An unexpected error occurred."}</p>
+          <h1 className="text-xl font-semibold text-white">{message.title}</h1>
+          <p role="status" className="mt-3 text-sm text-nq-muted">{message.message}</p>
         </div>
       </Shell>
     );
@@ -318,6 +320,14 @@ export default function CancelBookingPage() {
     <Shell>
       <div className="text-center">
         <h1 className="text-2xl font-semibold text-white">Cancel Appointment</h1>
+        {preview?.booking && (
+          <div className="mt-4 text-sm text-nq-muted" aria-label="Appointment details / Thông tin lịch hẹn">
+            <p className="font-medium text-nq-text">{preview.booking.salonName}</p>
+            <p>{preview.booking.serviceName}</p>
+            <p>{formatBookingManagementTime(preview.booking.startTimeUtc, preview.booking.salonTimezone)
+              ?? "Salon local time unavailable — please contact the salon. / Chưa xác minh được giờ tiệm; vui lòng liên hệ tiệm."}</p>
+          </div>
+        )}
         <p className="mt-3 text-sm text-nq-muted">
           Are you sure you want to cancel your appointment?
         </p>
