@@ -20,6 +20,7 @@
  * unchanged.
  */
 
+import { groupMemberHasActiveSlot, groupMemberCountsAsConfirmed } from "@/shared/booking/groupMemberStatus";
 import { useEffect, useRef, useState, useTransition } from "react";
 import { validateGuestPhone } from "@/shared/booking/validateGuestPhone";
 import {
@@ -108,8 +109,8 @@ function AddToCalendarButton({
 
 // ─── Group progress bar ────────────────────────────────────────────
 function GroupProgress({ slots, t }: { slots: PartyLinkSlot[]; t: PartyPageT }) {
-  const total = slots.length;
-  const confirmed = slots.filter((s) => s.claimed).length;
+  const total = slots.filter(s => groupMemberHasActiveSlot(s.memberStatus)).length;
+  const confirmed = slots.filter(s => groupMemberCountsAsConfirmed(s.memberStatus)).length;
   const pending = total - confirmed;
   const pct = total > 0 ? Math.round((confirmed / total) * 100) : 0;
 
@@ -347,17 +348,17 @@ function SlotCard({
           </p>
         </div>
 
-        {slot.claimed ? (
+        {slot.readOnly || slot.claimed ? (
           <div className="flex shrink-0 items-center gap-2">
-            <CheckCircle className="h-5 w-5 text-emerald-600" />
+            {groupMemberCountsAsConfirmed(slot.memberStatus) && <CheckCircle className="h-5 w-5 text-nq-success" />}
             <div className="text-right leading-tight">
               {displayName ? (
                 <>
                   <p className="text-sm font-semibold text-[#2c2620]">{displayName}</p>
-                  <p className="text-[11px] font-medium text-emerald-600">{t.claimed}</p>
+                  <p className="text-[11px] font-medium text-emerald-600">{t.memberStatuses[slot.memberStatus ?? "pending"]}</p>
                 </>
               ) : (
-                <p className="text-sm font-semibold text-emerald-600">{t.claimed}</p>
+                <p className="text-sm font-semibold text-emerald-600">{t.memberStatuses[slot.memberStatus ?? "pending"]}</p>
               )}
             </div>
           </div>
@@ -382,8 +383,10 @@ function SlotCard({
         )}
       </div>
 
+      {slot.replacesGuest && <p className="px-4 pb-3 text-xs text-nq-muted">{t.replacementReadOnly}</p>}
+
       {/* Expandable claim form (unclaimed only) */}
-      {expanded && !slot.claimed && !expired && (
+      {expanded && !slot.claimed && !slot.readOnly && !expired && (
         <ClaimForm
           token={token}
           claimId={slot.claimId}
@@ -396,7 +399,7 @@ function SlotCard({
       )}
 
       {/* Personal Pass — shown after claiming in this session */}
-      {slot.claimed && isMySlot && (
+      {slot.claimed && isMySlot && !slot.readOnly && groupMemberHasActiveSlot(slot.memberStatus) && (
         <PersonalPass
           slot={slot}
           displayName={displayName}
@@ -408,7 +411,7 @@ function SlotCard({
       )}
 
       {/* Post-claim controls — only shown on the slot claimed by this session */}
-      {slot.claimed && isMySlot && !expired && (
+      {slot.claimed && isMySlot && !slot.readOnly && !expired && (
         <div className="space-y-2 border-t border-[#f0e7d8] bg-[#fcfaf6] px-4 py-3">
           {/* Edit my details */}
           <button

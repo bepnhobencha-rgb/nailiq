@@ -3,12 +3,16 @@
  * Shared by loadPartyCardsAction (server) and unit tests.
  */
 
+import { groupMemberStatus, groupMemberIsReadOnly, groupMemberHasActiveSlot, groupMemberCountsAsConfirmed, type GroupMemberStatus } from "@/shared/booking/groupMemberStatus";
 import { formatInSalonTz } from "@/shared/lib/salonTime";
 import type { GroupSyncMode } from "@/shared/booking/loadGroupSmartSchedule";
 
 // ─── Public types ────────────────────────────────────────────────
 
 export type PartyCardSlot = {
+  memberStatus?: GroupMemberStatus;
+  readOnly?: boolean;
+  replacesGuest?: boolean;
   /** UUID of the party_link_claims row. */
   claimId: string;
   /** UUID of the bookings row. */
@@ -71,6 +75,7 @@ export type RawClaim = {
   booking_id: string;
   member_name: string | null;
   claimed_at: string | null;
+  replacement?: "pending" | "accepted";
   bookings: {
     start_time_utc: string | null;
     end_time_utc: string | null;
@@ -83,6 +88,7 @@ export type RawClaim = {
      *  party drops off the strip. Optional: absent in older test fixtures,
      *  treated as not-cancelled. */
     status?: string | null;
+    attendance_status?: string | null;
     services: { name: string } | null;
     staff: { name: string } | null;
   } | null;
@@ -136,19 +142,23 @@ export function buildPartyCard(
 
   const slots: PartyCardSlot[] = sorted.map((c, idx) => {
     const b = c.bookings;
+    const memberStatus = groupMemberStatus({ status: b?.status, attendanceStatus: b?.attendance_status, replacement: c.replacement });
+    const active = groupMemberHasActiveSlot(memberStatus);
     const startIso = b?.start_time_utc ?? "";
     const endIso = b?.end_time_utc ?? "";
 
-    if (startIso) startIsos.push(startIso);
-    if (endIso) endIsos.push(endIso);
+    if (active && startIso) startIsos.push(startIso);
+    if (active && endIso) endIsos.push(endIso);
 
-    if (b?.price_cents != null) {
-      totalRevenueCents += b.price_cents;
-    } else {
-      allPricesKnown = false;
+    if (active) {
+      if (b?.price_cents != null) totalRevenueCents += b.price_cents;
+      else allPricesKnown = false;
     }
 
     return {
+      memberStatus,
+      readOnly: groupMemberIsReadOnly(memberStatus, c.replacement),
+      replacesGuest: c.replacement === "accepted",
       claimId: c.id,
       bookingId: c.booking_id,
       memberName: c.member_name ?? null,
@@ -188,11 +198,11 @@ export function buildPartyCard(
       ? formatInSalonTz(groupEndIso, tz, "shortTime")
       : "—",
     groupStartUtcIso: groupStartIso,
-    totalSlots: slots.length,
-    claimedCount: slots.filter((s) => s.claimed).length,
-    pendingCount: slots.filter((s) => !s.claimed).length,
+    totalSlots: slots.filter(s => groupMemberHasActiveSlot(s.memberStatus)).length,
+    claimedCount: slots.filter(s => groupMemberCountsAsConfirmed(s.memberStatus)).length,
+    pendingCount: slots.filter(s => s.memberStatus === "pending" || s.memberStatus === "replacement_pending").length,
     estimatedRevenueCents:
-      allPricesKnown && slots.length > 0 ? totalRevenueCents : null,
+      allPricesKnown && slots.some(s => groupMemberHasActiveSlot(s.memberStatus)) ? totalRevenueCents : null,
     slots,
     pendingChangeRequestCount,
     waveCount,

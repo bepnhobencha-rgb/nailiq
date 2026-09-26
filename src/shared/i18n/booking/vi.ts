@@ -485,6 +485,17 @@ export const bookingVi: BookingMessages = {
 
   /** Strings used on the public /party/[token] page. */
   partyPage: {
+    memberStatuses: {
+      pending: "Chờ xác nhận tham gia",
+      confirmed: "Đã xác nhận",
+      replacement_pending: "Đang tìm người thay",
+      replacement_confirmed: "Người thay đã xác nhận",
+      cancelled: "Đã hủy",
+      declined: "Đã từ chối lời mời",
+      completed: "Đã hoàn thành",
+      no_show: "Vắng mặt",
+    },
+    replacementReadOnly: "Khách cũ đã được thay thế. Liên hệ salon để thay đổi lịch hẹn này.",
     errCardContactReview: "Lịch hẹn của bạn vẫn được giữ. Vui lòng liên hệ tiệm để đổi số điện thoại khi lịch hẹn đang liên kết với thẻ.",
     invited: "Bạn được mời!",
     groupBookingAt: "Đặt lịch nhóm tại",

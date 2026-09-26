@@ -675,7 +675,7 @@ function SlotRow({
       className="flex flex-col gap-1 text-[11px]"
     >
       <div className="flex items-center gap-2">
-        <StatusBadge status={slot.claimed ? "confirmed" : "pending"} labels={labels} />
+        <span className="shrink-0 rounded bg-nq-surface px-1.5 py-0.5 text-[10px] font-semibold text-nq-foreground">{labels.memberStatuses[slot.memberStatus ?? "pending"]}</span>
         <div className="min-w-0 flex-1">
           <p className="truncate font-medium text-nq-foreground">
             {slot.memberName ?? slot.guestLabel}
@@ -687,7 +687,7 @@ function SlotRow({
             {slot.startDisplay} – {slot.endDisplay}
           </p>
         </div>
-        {!slot.claimed && onDeskClaim && !claiming ? (
+        {!slot.claimed && !slot.readOnly && onDeskClaim && !claiming ? (
           <button
             type="button"
             onClick={() => setClaiming(true)}
@@ -699,7 +699,8 @@ function SlotRow({
         ) : null}
       </div>
 
-      {claiming ? (
+      {slot.replacesGuest && <p className="text-[10px] text-nq-muted">{labels.replacementReadOnly}</p>}
+      {claiming && !slot.readOnly ? (
         <div
           data-testid={`party-slot-claim-form-${slot.claimId}`}
           className="ml-6 flex flex-col gap-1.5 rounded-md border border-nq-border/50 bg-nq-surface px-2.5 py-2"

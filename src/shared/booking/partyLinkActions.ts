@@ -19,6 +19,8 @@
  */
 
 import crypto from "crypto";
+import { groupMemberStatus, groupMemberIsReadOnly, type GroupMemberStatus } from "@/shared/booking/groupMemberStatus";
+import { loadGroupRosterRecovery } from "@/shared/booking/loadGroupRosterRecovery";
 import * as ErrorReporter from "@/shared/observability/errorReporter";
 import { createServiceRoleClient } from "@/shared/lib/supabase/serviceRole";
 import { validateGuestPhone } from "@/shared/booking/validateGuestPhone";
@@ -40,6 +42,9 @@ const TOKEN_COLLISION_RETRIES = 5;
 // ─── Public types ─────────────────────────────────────────────────
 
 export type PartyLinkSlot = {
+  memberStatus?: GroupMemberStatus;
+  readOnly?: boolean;
+  replacesGuest?: boolean;
   /** UUID of the party_link_claims row — used as claimId in claimPartySlot. */
   claimId: string;
   /** booking_id the slot refers to. */
@@ -340,6 +345,8 @@ export async function loadPartyLinkPage(
         end_time_utc,
         client_name,
         wave_number,
+        status,
+        attendance_status,
         services!bookings_service_id_fkey ( name ),
         staff!bookings_staff_id_fkey ( name )
       )
@@ -350,14 +357,24 @@ export async function loadPartyLinkPage(
 
   if (claimsErr || !claims) return null;
 
+  let recovery: Awaited<ReturnType<typeof loadGroupRosterRecovery>>;
+  try {
+    recovery = await loadGroupRosterRecovery(db, link.salon_id, new Map(claims.map(c => [c.booking_id, link.group_id])));
+  } catch {
+    return null; // Never show stale attendees as confirmed when recovery truth cannot be read.
+  }
+
   // Build slot objects — safe, no phone exposure.
   const tz = salon.timezone || "UTC";
   const slots: PartyLinkSlot[] = claims.map((c, i) => {
-    const booking = c.bookings as unknown as {
+    const replacement = recovery.get(c.booking_id);
+    const booking = (replacement?.booking ?? c.bookings) as unknown as {
       start_time_utc: string | null;
       end_time_utc: string | null;
       client_name: string | null;
       wave_number: number | null;
+      status: string | null;
+      attendance_status: string | null;
       services: { name: string } | null;
       staff: { name: string } | null;
     } | null;
@@ -365,7 +382,11 @@ export async function loadPartyLinkPage(
     const startIso = booking?.start_time_utc ?? "";
     const endIso = booking?.end_time_utc ?? "";
 
+    const memberStatus = groupMemberStatus({ status: booking?.status, attendanceStatus: booking?.attendance_status, replacement: replacement?.status });
     return {
+      memberStatus,
+      readOnly: groupMemberIsReadOnly(memberStatus, replacement?.status),
+      replacesGuest: replacement?.status === "accepted",
       claimId: c.id,
       bookingId: c.booking_id,
       serviceName: booking?.services?.name ?? "—",
@@ -374,8 +395,8 @@ export async function loadPartyLinkPage(
       endDisplay: endIso ? formatInSalonTz(endIso, tz, "shortTime") : "—",
       startUtcIso: startIso,
       endUtcIso: endIso,
-      claimed: c.claimed_at !== null,
-      claimedByName: c.member_name ?? null,
+      claimed: replacement?.status === "accepted" || c.claimed_at !== null,
+      claimedByName: replacement?.booking?.client_name ?? c.member_name ?? null,
       // bookings.client_name is "Guest N" for voice group bookings and the
       // organiser-supplied (or defaulted) name for web group bookings.
       // Falls back to a derived label only when the DB value is missing.

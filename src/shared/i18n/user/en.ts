@@ -1411,6 +1411,8 @@ export type UserMessages = {
     };
     /** Party Card strip labels (shared across Basic/Balanced/Advanced). */
     partyCard: {
+      memberStatuses: Record<"pending" | "confirmed" | "replacement_pending" | "replacement_confirmed" | "cancelled" | "declined" | "completed" | "no_show", string>;
+      replacementReadOnly: string;
       panelSummary: (n: number) => string;
       panelEmpty: string;
       emptyNext7: string;
@@ -4197,6 +4199,17 @@ export const userEn: UserMessages = {
       expand: "Open today’s NailIQ brief",
     },
     partyCard: {
+    memberStatuses: {
+      pending: "Awaiting attendance confirmation",
+      confirmed: "Confirmed",
+      replacement_pending: "Finding a replacement",
+      replacement_confirmed: "Replacement confirmed",
+      cancelled: "Cancelled",
+      declined: "Invitation declined",
+      completed: "Completed",
+      no_show: "No-show",
+    },
+    replacementReadOnly: "Previous guest replaced. Contact the salon to change this reservation.",
       panelSummary: (n: number) =>
         `${n} group booking${n !== 1 ? "s" : ""} · next 7 days`,
       panelEmpty: "No upcoming group bookings",
@@ -4211,7 +4224,7 @@ export const userEn: UserMessages = {
         `${claimed}/${total} confirmed`,
       pendingSuffix: (n: number) => `${n} pending`,
       pendingHelp:
-        "Guests who haven't confirmed their name/phone via the group link.",
+        "Guests whose attendance is not confirmed, including slots waiting for a replacement.",
       slotsCount: (n: number) => `${n} slot${n !== 1 ? "s" : ""}`,
       waveLabel: (n: number) => `Wave ${n}`,
       copyLink: "Copy group link",

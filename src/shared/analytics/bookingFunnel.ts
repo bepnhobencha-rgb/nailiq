@@ -167,7 +167,7 @@ export function analyticsPageCategory(pathname: string): AnalyticsPageCategory {
   if (/^\/(login|register|auth)(?:\/|$)/.test(pathname)) return "account";
   if (/^\/dashboard(?:\/|$)/.test(pathname)) return "dashboard";
   if (/^\/(wait|status)(?:\/|$)/.test(pathname)) return "booking_status";
-  if (/^\/(party|offer|v|manage)(?:\/|$)/.test(pathname)) return "private_action";
+  if (/^\/(party|offer|v|manage|booking)(?:\/|$)/.test(pathname)) return "private_action";
   if (/^\/[^/]+\/?$/.test(pathname)) return "public_booking";
   return "other";
 }
