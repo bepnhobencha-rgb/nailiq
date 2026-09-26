@@ -55,7 +55,7 @@ describe("late cancellation grace and approval boundary", () => {
     expect(migration).toMatch(/m\.role IN \('owner', 'admin'\)/);
     expect(migration).toContain("v_review.amount_cents");
     expect(actions).toContain("stableApprovalRequestId");
-    expect(queue).toContain("Đã duyệt đúng số tiền");
+    expect(queue).toContain("Đã duyệt. Chưa gửi lệnh thanh toán; Thu là bước riêng.");
   });
 
   it("keeps approval separate and requires a second gated collect action", () => {
@@ -71,7 +71,11 @@ describe("late cancellation grace and approval boundary", () => {
       /allowsApprovedCancellationFeeDispatch\(\)[\s\S]*dispatch_release_disabled/,
     );
     expect(queue).toContain("item.paymentStatus === \"dispatch_blocked\"");
-    expect(queue).toContain("window.confirm");
+    expect(queue).toContain("<FeeCollectionConfirmation");
+    expect(queue).toContain("onClick={() => setConfirmation({ item, amount })}");
+    expect(queue).toContain("onConfirm={() => void collectConfirmed()}");
+    expect(queue).toContain("onCancel={() => setConfirmation(null)}");
+    expect(queue).not.toContain("window.confirm");
     expect(releaseGate).toContain("NAILIQ_APPROVED_CANCELLATION_FEE_DISPATCH");
   });
 });

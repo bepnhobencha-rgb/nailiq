@@ -2,6 +2,17 @@
 
 Trạng thái: đã commit/push, mở draft PR #1430 và tạo QA Preview; chưa merge, deploy Production hoặc bật thu tiền thật.
 
+## Checkpoint tiếp tục nghiệm thu GUI
+
+- CI của `bd7fda5c628cf8e0ddaf7c4c70554e416493b37f` đã hoàn tất: **23 PASS, 2 SKIPPED theo workflow**, không còn check pending/fail. Bao gồm Settings real-auth, receptionist Chromium/mobile, non-RC, tenant isolation, migration rehearsal và Build & Typecheck.
+- Alias QA hiện trỏ deployment `dpl_7MQabi1zhsDyfonHKCtBfE5Ad4qv`, cùng commit trên. Phiên Owner synthetic trên trình duyệt vẫn hoạt động.
+- Kiểm tra hosted QA: Square Sandbox, SMS/email/reminders OFF, hai salon fee dispatch flags chưa bật. Không có thay đổi Production.
+- Bản sửa GUI: thay xác nhận native bằng Modal/Button có sẵn; xác nhận rõ loại phí, số tiền và thẻ; Cancel/Escape không dispatch, khóa đồng thời bằng ref, phân biệt lỗi trước dispatch với kết quả chưa rõ. Cả ba hàng đợi có thông báo song ngữ và không nói gate OFF nếu chưa kiểm tra. Bằng chứng Collect sau khi publish commit được cập nhật trong PR #1430.
+- Fixture mới đã import lên QA: 4 booking synthetic, 3 review CAD1, 0 payment operations lúc tạo; card receipt được xác minh bằng Square Sandbox read-only, consent synthetic. Đây không phải nghiệm thu luồng khách nhập/lưu thẻ. SQL đã rehearsal/rollback trên clone riêng, cả ba approval/claim trả đúng CAD100c và reference booking UUID.
+- Kiểm tra local của GUI: **84/84 browser cases PASS** (Chromium + WebKit iPhone 390px, EN/VI), typecheck, sequential Next build, focused security 12/12 và touched lint PASS. Safari không tự focus native button khi tap; test focus dùng keyboard Enter/Cancel, pointer/Escape kiểm tra riêng, không sửa primitive để chiều test. Bộ browser có standalone inert actions, chặn mọi request ngoài origin và kiểm tra manifest; không dùng provider/DB mock trong deployment sản phẩm. Verifier receipt có 6 offline tests, xác minh exact query trên hosted QA, kiểm tra GET payment và ListPayments theo reference để phát hiện khoản thu ngoài ledger.
+- Chỉ trong thời gian thử: hai fee environment gates bật trên đúng nhánh Preview; payment worker, webhook, outbound và card reconciliation vẫn OFF. Salon allowlist chỉ bật cho Synthetic Card Preview QA khi bắt đầu GUI; phải khôi phục OFF sau khi kiểm thử và xác minh runtime. Production không đổi.
+- Decline bằng mã thử chuyên dụng của Square chỉ là bằng chứng adapter Sandbox; chưa có bằng chứng một thẻ lưu thật trong Sandbox cho phép dựng tình huống decline tương đương trên GUI. Giữ giới hạn này rõ trong kết quả.
+
 ## Nguồn và phạm vi
 
 - Worktree riêng: `/Users/huytran/nailiq-fee-release-readiness-20260925`.
