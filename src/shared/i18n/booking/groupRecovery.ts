@@ -96,10 +96,14 @@ export function groupRecoveryMessages(language: GroupRecoveryLanguage) {
   return language === "vi" ? vi : en;
 }
 
-export function groupRecoveryError(code: string, language: GroupRecoveryLanguage): string {
+export function groupRecoveryError(
+  code: string,
+  language: GroupRecoveryLanguage,
+  context: "form" | "preview" = "form",
+): string {
   const t = groupRecoveryMessages(language);
   if (code === "different_guest_required") return t.differentGuest;
-  if (code === "invalid_input") return t.invalidPhone;
+  if (code === "invalid_input") return context === "preview" ? t.unavailable : t.invalidPhone;
   if (code === "feature_disabled" || code === "contact_salon") return t.unavailable;
   if (code.includes("expired")) return t.expired;
   if (code.includes("card") || code.includes("payment")) return t.cardRequired;

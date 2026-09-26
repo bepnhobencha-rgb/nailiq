@@ -71,7 +71,7 @@ export default function GroupReplacementAccept({ token, language, preview }: Pro
     }
   }
 
-  if (!preview.ok) return <Card padding="lg"><h1 className="text-xl font-semibold">{t.title}</h1><p role="alert" className="mt-4 text-nq-muted">{groupRecoveryError(preview.code, language)}</p></Card>;
+  if (!preview.ok) return <Card padding="lg"><h1 className="text-xl font-semibold">{t.title}</h1><p role="alert" className="mt-4 text-nq-muted">{groupRecoveryError(preview.code, language, "preview")}</p></Card>;
   if (accepted || taken || preview.state === "accepted") return (
     <Card padding="lg">
       <h1 className="text-2xl font-semibold text-nq-text" data-testid="replacement-accepted">{t.accepted}</h1>

@@ -1,6 +1,7 @@
 import { readFileSync } from "node:fs";
 import { resolve } from "node:path";
 import { describe, expect, it } from "vitest";
+import { assertReleaseSchemaContract } from "./releaseSchemaContract";
 
 const read = (file: string) => readFileSync(resolve(process.cwd(), file), "utf8");
 const migration = read(
@@ -62,7 +63,7 @@ describe("Waitlist terminal delivery truth boundary", () => {
     expect(loader).toContain('"load_waitlist_offer_delivery_truth"');
     expect(loader).not.toContain('from("waitlist_offer_delivery_outbox"');
     expect(parity).toContain('"load_waitlist_offer_delivery_truth"');
-    expect(parity).toContain("functions: 603");
+    assertReleaseSchemaContract(parity);
     for (const contract of [
       "terminal Twilio failure was still projected as provider accepted",
       "terminal Resend delivery was not projected",

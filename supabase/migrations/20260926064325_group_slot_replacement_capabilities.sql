@@ -249,12 +249,14 @@ BEGIN
  SELECT pg_get_functiondef('public.booking_management_current_group_material(uuid,uuid)'::regprocedure) INTO def;
  anchor:='WHERE b.salon_id=p_salon_id AND b.group_id=p_group_id';
  IF (length(def)-length(replace(def,anchor,'')))/length(anchor)<>1 THEN RAISE EXCEPTION 'group material anchor mismatch'; END IF;
- EXECUTE replace(def,anchor,anchor||' AND NOT public.group_slot_is_replaced_original(b.salon_id,b.id)');
+ replacement:=anchor||' AND NOT public.group_slot_is_replaced_original(b.salon_id,b.id)';
+ EXECUTE replace(def,anchor,replacement);
  SELECT pg_get_functiondef('public.booking_management_apply_group(uuid,uuid,text,jsonb)'::regprocedure) INTO def;
  anchor:='b.group_id=v_cap.group_id';
  n:=(length(def)-length(replace(def,anchor,'')))/length(anchor);
  IF n<>6 THEN RAISE EXCEPTION 'group mutation anchor mismatch: %',n; END IF;
- EXECUTE replace(def,anchor,anchor||' AND NOT public.group_slot_is_replaced_original(b.salon_id,b.id)');
+ replacement:=anchor||' AND NOT public.group_slot_is_replaced_original(b.salon_id,b.id)';
+ EXECUTE replace(def,anchor,replacement);
  SELECT pg_get_functiondef('public.update_party_booking_contact(uuid,uuid,text,text)'::regprocedure) INTO def;
  anchor:='  v_phone:=public.canonical_phone(p_member_phone);';
  IF (length(def)-length(replace(def,anchor,'')))/length(anchor)<>1 THEN RAISE EXCEPTION 'party contact anchor mismatch'; END IF;

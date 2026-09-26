@@ -52,3 +52,12 @@ Huy approved commit, push, PR and QA Preview on 2026-09-26. This report records 
 - Actual Computer Use against local Next → PostgREST → disposable database: create invite, reload, recover same link, accept, both sides reload, required-card block and group roster verified. One fresh booking; original terminal; same slot/price; no inherited card/consent; zero replacement payment operations or owner notification jobs.
 - Typecheck PASS; touched-source lint PASS (two existing warnings); complete Next webpack build PASS. Turbopack initially failed on sandbox internal-port binding; webpack is the verified build path.
 - Hosted QA Preview, CI and Production: NOT RUN for this feature. Local PASS is not release/Production proof.
+
+### Publish and hosted QA checkpoint
+
+- PR #1431 opened with initial commit `b6a14b02`; hosted Preview deployment `dpl_8Yau3evHcfkZd5NRj2r8VTSFyX3P` reached READY. Migration applied only to disposable hosted QA `osdqutwunokiielbairj`.
+- Initial CI caught the missing schema/grant inventory update and a dynamic SQL inventory guard. Follow-up pins the measured blank-CI shape (248 tables, 3824 columns, 611 functions, 1021 indexes), preserves browser grants, and verifies both new ledgers are SELECT-only for service_role with FORCE RLS. Static catalog rewrites keep their fail-closed anchor assertions.
+- Follow-up local full unit run: 7011 passed, 79 skipped; typecheck and touched-file lint passed. The first sandbox run had four localhost bind failures; all nine affected transport tests passed with localhost access restored.
+- Initial hosted Computer Use: invite creation, reload/pending, acceptance, recipient reload and sender status refresh passed using synthetic bookings. The browser exposed misleading missing-token copy, now covered by six EN/VI regressions.
+- The new named QA alias is blocked for POST by the existing stale-origin firewall fence. Testing uses the existing project Preview hostname bound by Vercel to the same QA deployment. No firewall rule or pending draft was modified. First-time Vercel authentication can discard a capability query; reopen the original synthetic link after authentication.
+- Final follow-up CI and deployment verification remain pending at this checkpoint. Production is unchanged.
