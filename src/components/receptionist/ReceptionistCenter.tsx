@@ -1,5 +1,7 @@
 "use client";
 
+import { groupFeeNeedsSafetyReview } from "@/shared/noshow/groupFeeSafety";
+
 import * as ErrorReporter from "@/shared/observability/errorReporter";
 import { Users } from "lucide-react";
 
@@ -2742,7 +2744,9 @@ function ReceptionistCenterInner({
           ? rcMessages.notify.groupFeeQueuedForReview(feeLabel)
           : r.fee.state === "waived"
             ? rcMessages.notify.groupFeeWaived
-            : rcMessages.notify.groupFeeNotApplicable;
+            : groupFeeNeedsSafetyReview(r.fee.reason)
+              ? rcMessages.notify.groupFeeSafetyBlocked
+              : rcMessages.notify.groupFeeNotApplicable;
         const notificationTruth = rcMessages.notify.groupNotificationQueued(
           r.customerNotification.sms === "queued",
           r.customerNotification.email === "queued",
@@ -5855,7 +5859,8 @@ function ReceptionistCenterInner({
                           </div>
                         </div>
                       ) : (
-                        <p>{n.groupFeeNotApplicable}</p>
+                        <p>{groupFeeNeedsSafetyReview(groupCancellationPreview.value.reason)
+                          ? n.groupFeeSafetyBlocked : n.groupFeeNotApplicable}</p>
                       )}
                     </div>
                   ) : null}

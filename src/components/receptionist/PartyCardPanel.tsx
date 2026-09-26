@@ -23,6 +23,7 @@ import {
   type DeskGroupCancellationFeeDecision,
   type DeskGroupCancellationPreview,
 } from "@/shared/dashboard/receptionistActions";
+import { groupFeeNeedsSafetyReview } from "@/shared/noshow/groupFeeSafety";
 import type { Currency } from "@/shared/lib/currencyFormat";
 import { formatCurrency } from "@/shared/lib/currencyFormat";
 import { cn } from "@/shared/lib/cn";
@@ -120,7 +121,9 @@ export function PartyCardPanel({ initialCards, slug, salonId, currencyCode, labe
           ? labels.cancelFeeQueued(amount)
           : result.fee.state === "waived"
             ? labels.cancelFeeWaivedSuccess
-            : labels.cancelFeeNotApplicable;
+            : groupFeeNeedsSafetyReview(result.fee.reason)
+              ? labels.cancelFeeSafetyBlocked
+              : labels.cancelFeeNotApplicable;
         const notificationTruth = labels.cancelNotificationQueued(
           result.customerNotification.sms === "queued",
           result.customerNotification.email === "queued",
@@ -558,7 +561,9 @@ function PartyCancelControl({
                   ) : null}
                 </div>
               </>
-            ) : labels.cancelFeeNotApplicable}
+            ) : groupFeeNeedsSafetyReview(cancellationPreview.reason)
+              ? labels.cancelFeeSafetyBlocked
+              : labels.cancelFeeNotApplicable}
           </div>
         ) : null}
         {!notificationAvailability.sms ? (

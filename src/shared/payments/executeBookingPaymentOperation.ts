@@ -550,6 +550,19 @@ export async function runAuthoritativeBookingPaymentOperation(args: {
   return { ok: false, status: "not_claimed", operationId, reason: code };
 }
 
+function parseApprovedFeeReplay(data: unknown): PaymentDispatchOutcome | null {
+  const raw = Array.isArray(data) ? data[0] : data;
+  const row = raw && typeof raw === "object" ? raw as Record<string, unknown> : null;
+  if (row?.success !== true || row.code !== "operation_replay" || row.status !== "succeeded" ||
+      typeof row.operation_id !== "string" || !row.operation_id.trim()) return null;
+  const result = row.result && typeof row.result === "object"
+    ? row.result as Record<string, unknown> : null;
+  const receipt = typeof result?.provider_payment_id === "string" ? result.provider_payment_id : null;
+  return receipt?.trim()
+    ? { ok: true, status: "succeeded", operationId: row.operation_id, providerReceipt: receipt }
+    : { ok: false, status: "unknown", operationId: row.operation_id, reason: "payment_replay_receipt_invalid" };
+}
+
 /**
  * Claims and dispatches one immutable Owner/Admin-approved late/group
  * cancellation fee. SQL owns the exact amount, card, tenant provider account,
@@ -614,23 +627,11 @@ export async function runApprovedCancellationFeePayment(args: {
     ? row.operation_id
     : null;
   const code = typeof row?.code === "string" ? row.code : "payment_not_claimed";
-  if (row?.success === true && code === "operation_replay" &&
-      row.status === "succeeded" && operationId) {
-    const result = row.result && typeof row.result === "object"
-      ? row.result as Record<string, unknown>
-      : null;
-    const receipt = typeof result?.provider_payment_id === "string"
-      ? result.provider_payment_id
-      : null;
-    return receipt
-      ? { ok: true, status: "succeeded", operationId, providerReceipt: receipt }
-      : {
-          ok: false,
-          status: "unknown",
-          operationId,
-          reason: "payment_replay_receipt_invalid",
-        };
+  if (code === "payment_replay_receipt_invalid" && operationId) {
+    return { ok: false, status: "unknown", operationId, reason: code };
   }
+  const replay = parseApprovedFeeReplay(claimed.data);
+  if (replay) return replay;
   if (code === "operation_failed" && operationId) {
     return {
       ok: false,
@@ -669,6 +670,14 @@ export async function runApprovedCancellationFeePayment(args: {
         operationId,
         reason: "payment_reconciliation_unavailable",
       };
+    }
+    // Another worker can complete while this request waits for the operation lock.
+    const completedDuringReconciliation = parseApprovedFeeReplay(reconciled.data);
+    if (completedDuringReconciliation) {
+      if (completedDuringReconciliation.operationId !== operationId) {
+        return { ok: false, status: "unknown", operationId, reason: "payment_replay_receipt_invalid" };
+      }
+      return completedDuringReconciliation;
     }
     const retry = parseClaimedBookingPaymentOperation(
       reconciled.data,

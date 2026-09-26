@@ -1,6 +1,7 @@
 "use client";
 
 import { useRef, useState } from "react";
+import { groupFeeNeedsSafetyReview } from "@/shared/noshow/groupFeeSafety";
 import { Button } from "@/components/ui/Button";
 import { Modal } from "@/components/ui/Modal";
 
@@ -17,6 +18,7 @@ export function feePaymentStatusLabel(state: string, paymentStatus: string, vi: 
 }
 
 export function feeActionError(error: string, vi: boolean): string {
+  if (groupFeeNeedsSafetyReview(error)) return vi ? "Chưa thể thu phí: chủ tiệm cần kiểm tra sự đồng ý đã lưu hoặc số tiền. Chưa gửi lệnh thanh toán." : "Fee collection blocked: saved consent or the amount needs owner review. No payment was sent.";
   if (["unauthorized", "salon_mismatch"].includes(error)) return vi ? "Bạn không có quyền thực hiện thao tác này. Hãy tải lại trang để kiểm tra phiên đăng nhập." : "You cannot perform this action. Reload to check your session.";
   if (error === "dispatch_release_disabled") return vi ? "Chức năng thu phí chưa được bật. Chưa gửi lệnh thanh toán." : "Fee collection is not enabled. No payment was sent.";
   if (error === "provider_configuration_unavailable") return vi ? "Chưa kết nối được nhà cung cấp thanh toán. Chưa gửi lệnh thu phí." : "Payment provider configuration is unavailable. No payment was sent.";
@@ -39,7 +41,7 @@ export function useFeeQueueMutation(vi: boolean, refresh: () => void) {
     try {
       const result = await action();
       setMessage(result.ok ? success : feeActionError(result.error ?? "", vi));
-      if (collection && !result.ok && ["dispatch_release_disabled", "provider_configuration_unavailable", "unauthorized", "salon_mismatch"].includes(result.error ?? "")) {
+      if (collection && !result.ok && (groupFeeNeedsSafetyReview(result.error) || ["dispatch_release_disabled", "provider_configuration_unavailable", "unauthorized", "salon_mismatch"].includes(result.error ?? ""))) {
         setUnconfirmedIds((current) => { const next = new Set(current); next.delete(id); return next; });
       }
     } catch {

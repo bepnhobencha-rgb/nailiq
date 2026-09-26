@@ -2,6 +2,7 @@
   "git": {
     "deploymentEnabled": {
       "main": false,
+      "fix/group-fee-consent-cap-20260926": false,
       "feat/group-flexible-recovery-20260925": false,
       "fix/reminder-recovery-20260925": false,
       "fix/waitlist-invite-identity-20260924": false,

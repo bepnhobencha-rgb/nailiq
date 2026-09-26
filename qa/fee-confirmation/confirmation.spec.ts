@@ -82,3 +82,20 @@ for (const lang of ["en", "vi"]) for (const kind of ["no-show", "late", "group"]
     });
   });
 }
+
+for (const lang of ["en", "vi"]) test(`${lang} group consent cap sends no payment and explains review`, async ({ page, context }, testInfo) => {
+  await page.addInitScript(l => localStorage.setItem("nailiq-user-lang", l), lang);
+  const calls = await guard(context);
+  await context.addCookies([{ name: "qa-fault", value: "consent-cap", url: origin }]);
+  await page.goto("/");
+  const queue = page.getByTestId("group-cancellation-fee-approval-queue");
+  await queue.getByRole("button", { name: /^(Collect|Thu)/ }).click();
+  await page.getByRole("dialog").getByRole("button", { name: /^(Confirm collection|Xác nhận thu)/ }).click();
+  await expect(page.getByRole("dialog")).not.toBeVisible();
+  await expect(queue.getByRole("status")).toContainText(lang === "en" ? "No payment was sent" : "Chưa gửi lệnh thanh toán");
+  await expect(queue.getByRole("status")).toContainText(lang === "en" ? "review" : "kiểm tra");
+  await expect(queue).not.toContainText(lang === "en" ? "Collected — receipt recorded" : "Đã thu phí — có biên nhận");
+  expect(calls.calls).toBe(1);
+  expect(calls.blocked).toEqual([]);
+  await page.screenshot({ path: testInfo.outputPath("group-fee-consent-cap.png"), fullPage: true });
+});

@@ -266,6 +266,51 @@ describe("runApprovedCancellationFeePayment", () => {
     },
   };
 
+  it.each(["late", "group"] as const)("returns the persisted %s receipt without provider dispatch", async (reviewKind) => {
+    const rpc = vi.fn().mockResolvedValue({ data: { success: true, code: "operation_replay",
+      status: "succeeded", operation_id: operationId, result: { provider_payment_id: "receipt-existing" } }, error: null });
+    const paymentProvider = provider();
+    const result = await runApprovedCancellationFeePayment({ db: { rpc }, salonId: claim.material.salonId,
+      reviewId, reviewKind, actorUserId, actorRole: "owner", provider: paymentProvider });
+    expect(result).toEqual({ ok: true, status: "succeeded", operationId, providerReceipt: "receipt-existing" });
+    expect(paymentProvider.chargeSavedCard).not.toHaveBeenCalled();
+    expect(rpc).toHaveBeenCalledTimes(1);
+  });
+
+  it("preserves SQL invalid-receipt uncertainty without dispatch", async () => {
+    const rpc = vi.fn().mockResolvedValue({ data: { success: false, code: "payment_replay_receipt_invalid",
+      status: "unknown", operation_id: operationId }, error: null });
+    const paymentProvider = provider();
+    const result = await runApprovedCancellationFeePayment({ db: { rpc }, salonId: claim.material.salonId,
+      reviewId, reviewKind: "group", actorUserId, actorRole: "owner", provider: paymentProvider });
+    expect(result).toMatchObject({ ok: false, status: "unknown", reason: "payment_replay_receipt_invalid" });
+    expect(paymentProvider.chargeSavedCard).not.toHaveBeenCalled();
+  });
+
+  it.each([null, "", "   ", 123])("rejects malformed successful replay receipt %s", async (receipt) => {
+    const rpc = vi.fn().mockResolvedValue({ data: { success: true, code: "operation_replay",
+      status: "succeeded", operation_id: operationId, result: { provider_payment_id: receipt } }, error: null });
+    const paymentProvider = provider();
+    const result = await runApprovedCancellationFeePayment({ db: { rpc }, salonId: claim.material.salonId,
+      reviewId, reviewKind: "group", actorUserId, actorRole: "owner", provider: paymentProvider });
+    expect(result).toMatchObject({ ok: false, status: "unknown", reason: "payment_replay_receipt_invalid" });
+    expect(paymentProvider.chargeSavedCard).not.toHaveBeenCalled();
+  });
+
+  it.each(["late", "group"] as const)("returns a %s receipt completed by a concurrent worker before reconciliation", async (reviewKind) => {
+    const rpc = vi.fn()
+      .mockResolvedValueOnce({ data: { success: false, code: "reconciliation_required", operation_id: operationId,
+        request_id: reviewId, material_fingerprint: "c".repeat(64) }, error: null })
+      .mockResolvedValueOnce({ data: [{ success: true, code: "operation_replay", status: "succeeded",
+        operation_id: operationId, result: { provider_payment_id: "receipt-existing" } }], error: null });
+    const paymentProvider = provider();
+    const result = await runApprovedCancellationFeePayment({ db: { rpc }, salonId: claim.material.salonId,
+      reviewId, reviewKind, actorUserId, actorRole: "owner", provider: paymentProvider });
+    expect(result).toEqual({ ok: true, status: "succeeded", operationId, providerReceipt: "receipt-existing" });
+    expect(paymentProvider.chargeSavedCard).not.toHaveBeenCalled();
+    expect(rpc).toHaveBeenCalledTimes(2);
+  });
+
   it("dispatches only DB-claimed exact material after the second Owner action", async () => {
     const rpc = vi.fn()
       .mockResolvedValueOnce({
@@ -311,6 +356,20 @@ describe("runApprovedCancellationFeePayment", () => {
     );
     expect(result).toMatchObject({ ok: true, status: "succeeded" });
   });
+
+  it.each(["group_fee_consent_invalid", "group_fee_amount_exceeds_cap", "group_fee_snapshot_invalid", "group_fee_consent_changed"])(
+    "does not dispatch a group fee rejected by SQL: %s", async (code) => {
+      const rpc = vi.fn().mockResolvedValue({ data: { success: false, code }, error: null });
+      const paymentProvider = provider();
+      const result = await runApprovedCancellationFeePayment({
+        db: { rpc }, salonId: claim.material.salonId, reviewId, reviewKind: "group",
+        actorUserId, actorRole: "owner", provider: paymentProvider,
+      });
+      expect(result).toMatchObject({ ok: false, status: "not_claimed", reason: code });
+      expect(paymentProvider.chargeSavedCard).not.toHaveBeenCalled();
+      expect(rpc).toHaveBeenCalledTimes(1);
+    },
+  );
 
   it("never calls a provider when SQL cannot prove the approval receipt", async () => {
     const rpc = vi.fn().mockResolvedValue({

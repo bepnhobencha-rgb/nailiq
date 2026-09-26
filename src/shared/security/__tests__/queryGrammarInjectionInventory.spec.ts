@@ -250,6 +250,7 @@ describe("query grammar injection inventory", () => {
       "20260925203046_bind_fee_provider_request_reference.sql",
       "20260925204601_bind_square_fee_webhook_customer.sql",
       "20260926064325_group_slot_replacement_capabilities.sql",
+      "20260926145844_bind_group_cancellation_fee_consent_cap.sql",
     ]);
 
     // Reviewed migration-time rewrites operate on fixed catalog function
@@ -571,6 +572,23 @@ describe("query grammar injection inventory", () => {
     ]);
     expect(patch.match(/replacement:=anchor\|\|' AND NOT public\.group_slot_is_replaced_original\(b\.salon_id,b\.id\)';/g)).toHaveLength(2);
     expect(patch).not.toMatch(/\bEXECUTE\s+(?:format\s*\(|p_|NEW\.|OLD\.)/i);
+  });
+
+  it("bounds group fee consent rewrites to fixed catalog targets and literal guards", () => {
+    const sql = fs.readFileSync(path.join(REPO, "supabase/migrations/20260926145844_bind_group_cancellation_fee_consent_cap.sql"), "utf8");
+    const patch = sql.slice(sql.indexOf("DO $patch$"), sql.indexOf("$patch$;"));
+    expect([...patch.matchAll(/pg_get_functiondef\('([^']+)'::regprocedure\)/g)].map(match => match[1])).toEqual([
+      "public.claim_approved_cancellation_fee_payment(text,uuid,uuid,uuid,text)",
+      "public.cancel_booking_group_for_desk_with_decision_truth(uuid,uuid,uuid,uuid,text,boolean,boolean,integer)",
+    ]);
+    expect([...patch.matchAll(/^\s*EXECUTE\s+([^;]+);/gm)].map(match => match[1])).toEqual(["v_def", "v_def"]);
+    expect(patch.match(/IF \(length\(v_def\)-length\(replace\(v_def,v_anchor,''\)\)\)\/length\(v_anchor\)<>1 THEN RAISE EXCEPTION/g)).toHaveLength(4);
+    expect(patch).toContain("RAISE EXCEPTION 'group consent cap requires durable provider reference migration'");
+    expect(patch).toContain("v_def:=replace(v_def,v_anchor,$newguard$");
+    expect(patch).toContain("v_def:=replace(v_def,v_anchor,$newbinding$");
+    expect(patch).toContain("v_def:=replace(v_def,v_anchor,$newreason$");
+    expect(patch).not.toMatch(/\bEXECUTE\s+(?:format\s*\(|p_|NEW\.|OLD\.)/i);
+    expect(sql).toMatch(/BEGIN;[\s\S]*COMMIT;/);
   });
 
 });
