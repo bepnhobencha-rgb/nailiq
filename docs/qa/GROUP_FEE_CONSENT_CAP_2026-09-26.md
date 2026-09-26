@@ -1,64 +1,36 @@
-# Phí hủy nhóm — bản sửa giới hạn consent, 2026-09-26
+# Phí hủy nhóm và biên nhận thu phí — 2026-09-26
 
-## Kết luận
+## Vấn đề và bản sửa
 
-**Local PASS; chưa phát hành.** Nhánh `fix/group-fee-consent-cap-20260926`, base `1ecbe7b71978a924f7ddfbb8d712f5f46adeaac1`. Thay đổi chưa commit/push. Không gọi provider, không thu tiền, không gửi SMS/email và không thay đổi Production trong lượt này.
+Nhóm synthetic CAD250 với consent CAD50 có thể sinh claim CAD200 sau khi tỷ lệ no-show thay đổi20%→5%. Migration `20260926145844_bind_group_cancellation_fee_consent_cap.sql` chặn claim mới vượt consent, số tiền đã lưu hoặc trần<=20% trên giá trị đúng phạm vi trách nhiệm. Preview lưu guard consent/card/customer/receipt/provider; claim mới kiểm tra lại binding. Legacy review thiếu guard bị chặn, không suy đoán consent hoặc sửa số tiền đã duyệt. UI EN/VI giải thích lý do bị chặn; khách vẫn hủy được.
 
-## Bằng chứng trước sửa
+Một giao dịch Square Sandbox CAD1 đã hoàn tất nhưng replay trả `booking_payment_material_invalid`: SQL kiểm tra booking đã `charged` trước khi đọc operation thành công. Migration `20260926170510_replay_approved_cancellation_fee_receipts_before_mutable_booking_checks.sql` đọc exact request sau tenant/Owner/Admin/approval checks, trước mutable eligibility; xác nhận review/material/request/amount/currency và biên nhận. Giữ thứ tự khóa review→booking→operation. Chỉ NEW operation kiểm tra thẻ/trạng thái hiện tại. Không đổi operation cũ, idempotency key hoặc chính sách reconciliation.
 
-- Production `/api/version` đọc trong lượt audit: `278bd63302bfa91d670f35fe0616f4fe04b6a92b`. PR #1431 đã merge vào main nhưng chưa chứng minh được deploy Production.
-- Hai salon `hilite-anaheim`, `hilite-studio`: salon flag approved cancellation/no-show dispatch bật, self-cancel 10%, cửa sổ24h, no-show20%. Đây là bằng chứng cấu hình DB, không phải bằng chứng provider đã thu.
-- Fee review nhóm: Anaheim0, Studio3;0 pending/approved/succeeded. Studio2 outside_fee_window và1 short_notice_grace_active. Không có lỗi thu tiền được xác minh ở ba phiếu này.
-- Lỗi tái hiện bằng synthetic: nhóm CAD250, consent CAD50, no-show lúc đầu20%. Đổi no-show hiện tại xuống5%, giữ late20% → preview và Owner-approved claim CAD200. Không gọi provider. Test hồi quy trước sửa FAIL đúng tại rate-drift.
+Executor trả receipt đã lưu khi một worker khác hoàn tất trước lúc reconciliation lấy khóa; receipt lỗi trả `unknown`, không giả thành công hay tạo charge mới. UI vẫn tách Owner duyệt và xác nhận Thu. Không bật tự động thu cho hủy nhóm trong bản sửa này.
 
-## Bản sửa local
+## Kiểm chứng theo môi trường
 
-Migration `20260926145844_bind_group_cancellation_fee_consent_cap.sql`:
+- **Existing before task:** desk whole-party cancellation → fee review → Owner approval → separate collection; payment ledger và provider idempotency đã tồn tại.
+- **Implemented locally:** consent cap/binding, EN/VI blocked reason, successful receipt replay và completion race handling.
+- **Local QA:**48 SQL assertions trên DB sạch từ migrations, transaction rollback;202 unit/payment/inventory tests; typecheck và touched-file lint. Next Webpack production build cuối PASS. Regression replay trước sửa FAIL đúng; sau sửa PASS cá nhân và nhóm. Card removal/version drift không làm mất receipt. Sai tenant/member/review binding bị chặn.
+- **Hosted Supabase QA:** cả hai migrations đã áp dụng; SQL rollback rehearsal48 assertions không có lỗi. Không có provider calls trong rehearsal.
+- **Square Sandbox:** đúng một giao dịch được Huy duyệt, CAD1, COMPLETED; read-only provider kiểm tra đúng một matching payment. Local migrated SQL + executor lưu succeeded. Replay sau sửa dùng lại receipt, zero provider calls, vẫn một operation. Đây là local SQL→Sandbox, không phải hosted dispatch hoặc tiền thật. ListPayments lần đầu chậm cập nhật, resolved bằng read-only verification.
+- **CI tại1f5650db trước replay fix:**25 checks SUCCESS,2 conditional SKIP;7030 unit PASS/79SKIP; folded migration38assertions; broad E2E +10 no-retry WebKit booking repetitions PASS. Không dùng các số này làm chứng nhận head mới.
+- **Preview tại1f5650db trước replay fix:** authenticated Computer Use: inflated group fee bị chặn; valid CAD50 vào review, duyệt và reload persist; dialog Thu hiển thị đúng tiền/card, không submit. Mỗi nhóm1review/0payments. Preview payment/card dispatch và outbound OFF. Head replay mới cần CI/Preview riêng.
+- **Deployed / Production verified:** chưa phát hành thay đổi này. Production SHA từng đọc278bd633; cần đọc lại trước rollout. Hai salon có tenant flags bật không chứng minh provider đã thu.
 
-- Không suy ra khách chấp nhận số tiền cao hơn từ tỷ lệ hiện tại. Giữ số tiền ứng viên, chặn khi vượt consent, phí đã lưu hoặc tỷ lệ<=20% trên giá trị đúng phạm vi trách nhiệm.
-- `booking_member` chỉ dùng giá trị của người tổ chức; `whole_party` dùng giá trị các lịch đang hoạt động trong nhóm.
-- Preview lưu `fee_guard` có consent amount/scope/currency/policy, timestamp/hash, hash card/customer, receipt và provider binding. Không lưu thêm card token hoặc PII.
-- Trước operation mới, kiểm tra lại guard và durable receipt. Legacy review thiếu guard bị chặn; không tự sửa số tiền đã Owner duyệt.
-- Square customer/merchant/environment phải khớp. Giữ nguyên nhánh operation hiện hữu, reconciliation và provider request reference.
-- Hủy vẫn thực hiện được khi phí bị chặn, lưu `fee_reason` trong receipt/replay. Không tự thu/miễn phí hoặc thay đổi chính sách sản phẩm.
-- Lễ tân và hàng đợi thu phí hiển thị lý do cần kiểm tra bằng EN/VI, không gọi trường hợp này là “không áp dụng phí”.
+Bằng chứng bổ sung ngoài repository: `/Users/huytran/nailiq-group-recovery-evidence-20260925/group-fee-audit/` (CI, hosted Computer Use, Square Sandbox). Secrets/private manifests không thuộc repository.
 
-Files: một migration; SQL rehearsal + workflow chạy rehearsal; helper `groupFeeSafety`; copy/fee error mapping trong hai màn lễ tân, FeeCollectionConfirmation và parser receptionistActions; unit tests, dynamic-SQL inventory và fixture trình duyệt.
+## Giới hạn phạm vi
 
-## Kiểm thử thực tế đã chạy
+- Luồng salon hủy cả nhóm và Owner/Admin thu riêng được sửa; không bổ sung public whole-party cancellation caller hoặc tự thu khi một thành viên rút khỏi nhóm.
+- Công thức phí cá nhân theo tỷ lệ hiện tại chưa được chứng nhận consent-cap đầy đủ trong task này; sửa replay cá nhân không phải chứng nhận toàn bộ chính sách đó.
+- Feature gates/provider resolution trước executor vẫn có thể chặn action khi cấu hình không sẵn sàng. Không nới gate để trả receipt; ledger remains source of truth.
+- Reconciliation hiện hữu có thể redispatch bằng cùng immutable idempotency key; không gọi đó là read-only reconciliation.
+- Không gọi Square Production, không thu khách thật, không SMS/email/call để kiểm thử.
 
-| Kiểm tra | Kết quả |
-|---|---|
-| Focused unit, fee executor, policy/action/route, EN/VI |75 PASS|
-| Dynamic SQL inventory |7 PASS|
-| Migration trên hai DB local disposable |PASS|
-| SQL integration trên DB sạch từ migration |38 assertions PASS, ROLLBACK|
-| Duplicate claim/unknown giữ1operation, original amount |PASS trong SQL|
-| Completion bằng receipt synthetic và không tạo charge thứ hai |PASS trong SQL|
-| Tenant denial và service-only ACL |PASS trong SQL|
-| Typecheck |PASS|
-| Lint touched TS/TSX |PASS|
-| Next build mặc định Turbopack |Bị môi trường chặn bind port, chưa PASS|
-| Next production build `--webpack` |PASS|
-| Chromium desktop + WebKit mobile, EN/VI, group queue |32 PASS|
+## Release và rollback
 
-DB sạch thiếu grant bootstrap auth.users của role postgres: fixture chạy bằng supabase_admin tại local; không mở rộng grant Production. RPC vẫn kiểm tra tenant/actor và bài test ACL xác nhận anon/authenticated không có EXECUTE.
+PR#1432 trên nhánh `fix/group-fee-consent-cap-20260926`. Publish batch hoàn chỉnh, chạy CI và QA Preview đúng head. Trước rollout Production phải kiểm tra SHA/schema thực tế, export3functiondefinitions (preview_booking_group_cancellation_for_desk, claim_approved_cancellation_fee_payment, cancel_booking_group_for_desk_with_decision_truth), áp dụng cap rồi replay, deploy app đúng commit với Production config. Không promote QA build chứa QA credentials.
 
-Browser dùng component production trong fixture độc lập; server actions giả, mọi off-origin request bị chặn. Đây là UI QA local, **không phải Hosted Preview hay Square Sandbox E2E**. Chưa chạy lại full suite, race đa kết nối hay provider sandbox trong bản sửa này. Chưa chứng minh thu tiền thật.
-
-## Giới hạn và việc tiếp theo
-
-- Sửa đường salon hủy cả nhóm → Owner/Admin duyệt → xác nhận Thu riêng. Chưa bổ sung public whole-party cancellation; SQL nội bộ đó vẫn chưa có TS caller và chưa tạo group fee review.
-- Không thay đổi việc một thành viên tự hủy chỉ phần của mình hoặc tạo quyền thu tiền từ người khác.
-- Công thức cá nhân có cùng mẫu dùng tỷ lệ hiện tại: cần audit/fix riêng trước kết luận toàn bộ phí hủy đã hoàn chỉnh.
-- Bản sửa chỉ chặn NEW claims; không viết lại operation đã gửi/unknown. Việc xác minh booking trước nhánh replay là hành vi cũ, không đổi trong scope này.
-- Review cũ thiếu guard sẽ cần xử lý thủ công, không được backfill consent suy đoán. Guard failure vẫn lưu reason nhưng chưa có màn exception chuyên biệt.
-- Huy đã duyệt commit/push/PR và QA Preview cho bản sửa mới ngày2026-09-26; sau đó CI/Preview + Square sandbox mới kết luận đủ điều kiện phát hành. Không dùng approval PR1431 cho thay đổi này.
-
-## Rollback
-
-1. Trước rollout được duyệt, export `pg_get_functiondef` của3RPC: preview_booking_group_cancellation_for_desk, claim_approved_cancellation_fee_payment, cancel_booking_group_for_desk_with_decision_truth.
-2. Nếu cần dừng thu, dùng release/tenant dispatch gate theo phê duyệt của Owner; lưu ý gate cancellation hiện dùng chung với hủy cá nhân. Giữ toàn bộ ledger, approval và operation đang đối soát.
-3. Ưu tiên forward fix. Nếu restore3functiondefinitions cũ, phải giữ collection tắt vì bản cũ mở lại lỗi tăng tiền. Không xóa fee_guard/receipts, không đổi material/idempotency key hoặc phát lại yêu cầu chưa rõ kết quả.
-
-Trạng thái: Existing before task=desk approval/collect flow; Implemented locally=cap/binding/disclosure; QA tested=local; Preview verified=chưa; Deployed=chưa; Production verified=chỉ audit read-only ở trên.
+Nếu cần rollback: ngừng collection bằng dispatch gate, giữ ledger/approval/receipts và đối soát operation đã gửi. Ưu tiên forward fix. Restore code/function cũ chỉ khi collection tắt vì mở lại cap/replay bug. Không xóa ledger, đổi idempotency/material hoặc gửi lại payment chưa rõ kết quả.

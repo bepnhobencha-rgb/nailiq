@@ -148,8 +148,18 @@ BEGIN
  PERFORM pg_temp.assert_true((SELECT status='succeeded' AND amount_cents=5000 FROM public.booking_payment_operations WHERE id=(claim->>'operation_id')::uuid),'success receipt persists original CAD50');
  PERFORM pg_temp.assert_true((SELECT payment_status='succeeded' FROM public.booking_group_cancellation_fee_reviews WHERE id=review),'review projects successful synthetic receipt');
  replay:=pg_temp.claim_fee(review);
- PERFORM pg_temp.assert_true(replay->>'code' IS DISTINCT FROM 'claimed','completed fee cannot create another charge');
+ PERFORM pg_temp.assert_true(replay->>'code'='operation_replay' AND replay->>'operation_id'=claim->>'operation_id' AND replay#>>'{result,provider_payment_id}'='qa-synthetic-group-payment','completed fee returns exact successful receipt');
+ UPDATE public.bookings SET noshow_card_id=NULL,noshow_consent_at=NULL,customer_transition_version=customer_transition_version+1 WHERE id='fc260926-0000-4000-8000-000000000010';
+ replay:=pg_temp.claim_fee(review);
+ PERFORM pg_temp.assert_true(replay->>'code'='operation_replay' AND replay#>>'{result,provider_payment_id}'='qa-synthetic-group-payment','successful replay survives subsequent card removal and version change');
+ PERFORM pg_temp.assert_true((SELECT attempt_count=1 FROM public.booking_payment_operations WHERE id=(claim->>'operation_id')::uuid),'successful replay does not increment provider attempts');
+ PERFORM pg_temp.assert_true(public.claim_approved_cancellation_fee_payment('group',review,'fc260926-0000-4000-8000-000000000008','fc260926-0000-4000-8000-000000000004','owner')->>'success'='false','successful receipt is inaccessible cross tenant');
+ PERFORM pg_temp.assert_true(public.claim_approved_cancellation_fee_payment('group',review,'fc260926-0000-4000-8000-000000000001','fc260926-0000-4000-8000-000000000008','owner')->>'success'='false','successful receipt is inaccessible to non member');
  PERFORM pg_temp.assert_true((SELECT count(*)=1 FROM public.booking_payment_operations WHERE salon_id='fc260926-0000-4000-8000-000000000001'),'successful lifecycle has one operation only');
+ UPDATE public.booking_payment_operations SET material_json=jsonb_set(material_json,'{cancel_preview,review_id}',to_jsonb(gen_random_uuid()::text)) WHERE id=(claim->>'operation_id')::uuid;
+ replay:=pg_temp.claim_fee(review);
+ PERFORM pg_temp.assert_true(replay->>'code'='operation_conflict','successful receipt cannot be replayed against a mismatched review binding');
+
 END $completion$;
 ROLLBACK TO approved;
 UPDATE public.bookings SET noshow_consent_meta=jsonb_set(noshow_consent_meta,'{policyVersion}',to_jsonb('nsp_'||repeat('b',64))) WHERE id='fc260926-0000-4000-8000-000000000010';
@@ -158,4 +168,23 @@ ROLLBACK TO approved;
 SELECT pg_temp.assert_true(public.claim_approved_cancellation_fee_payment('group',(cancel_result->>'review_id')::uuid,'fc260926-0000-4000-8000-000000000008','fc260926-0000-4000-8000-000000000004','owner')->>'success'='false','cross tenant claim denied') FROM group_fee_probe;
 SELECT pg_temp.assert_true((SELECT count(*)=0 FROM public.booking_payment_operations WHERE salon_id='fc260926-0000-4000-8000-000000000001'),'denied claims created zero operations');
 SELECT pg_temp.assert_true(NOT has_function_privilege('anon','public.claim_approved_cancellation_fee_payment(text,uuid,uuid,uuid,text)','execute') AND NOT has_function_privilege('authenticated','public.preview_booking_group_cancellation_for_desk(uuid,uuid,uuid)','execute'),'browser cannot execute privileged fee functions');
+ROLLBACK TO seeded;
+UPDATE public.salons SET feature_flags='{"approved_cancellation_fee_dispatch":true}' WHERE id='fc260926-0000-4000-8000-000000000001';
+DO $late_replay$
+DECLARE review uuid:=gen_random_uuid(); approval uuid:=gen_random_uuid(); claim jsonb; done jsonb; replay jsonb;
+BEGIN
+ UPDATE public.bookings SET group_id=NULL,is_party_member=false,is_group_organizer=false WHERE id='fc260926-0000-4000-8000-000000000010';
+ UPDATE public.bookings SET status='cancelled',customer_transition_version=1 WHERE id='fc260926-0000-4000-8000-000000000010';
+ SELECT id INTO review FROM public.booking_late_cancellation_fee_reviews WHERE booking_id='fc260926-0000-4000-8000-000000000010' AND cancellation_occurrence_version=1;
+ done:=public.decide_late_cancellation_fee_review(review,'fc260926-0000-4000-8000-000000000001','fc260926-0000-4000-8000-000000000004','owner',approval,'charge');
+ PERFORM pg_temp.assert_true(done->>'success'='true','late fee approval succeeds');
+ claim:=public.claim_approved_cancellation_fee_payment('late',review,'fc260926-0000-4000-8000-000000000001','fc260926-0000-4000-8000-000000000004','owner');
+ PERFORM pg_temp.assert_true(claim->>'code'='claimed','late fee claimed once: '||coalesce(claim->>'code','null'));
+ done:=public.complete_booking_payment_operation((claim->>'operation_id')::uuid,(claim->>'attempt_token')::uuid,'succeeded','COMPLETED','qa-synthetic-late-payment',NULL,NULL);
+ PERFORM pg_temp.assert_true(done->>'success'='true','late fee completed');
+ UPDATE public.bookings SET noshow_card_id=NULL,noshow_consent_at=NULL,customer_transition_version=customer_transition_version+1 WHERE id='fc260926-0000-4000-8000-000000000010';
+ replay:=public.claim_approved_cancellation_fee_payment('late',review,'fc260926-0000-4000-8000-000000000001','fc260926-0000-4000-8000-000000000004','owner');
+ PERFORM pg_temp.assert_true(replay->>'code'='operation_replay' AND replay->>'operation_id'=claim->>'operation_id' AND replay#>>'{result,provider_payment_id}'='qa-synthetic-late-payment','late successful replay returns exact receipt after mutable state changes');
+ PERFORM pg_temp.assert_true((SELECT count(*)=1 AND bool_and(attempt_count=1) FROM public.booking_payment_operations WHERE salon_id='fc260926-0000-4000-8000-000000000001'),'late replay neither creates nor redispatches payment');
+END $late_replay$;
 ROLLBACK;
