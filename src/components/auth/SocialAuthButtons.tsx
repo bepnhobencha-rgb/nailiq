@@ -8,6 +8,10 @@ import {
   useSyncExternalStore,
   useTransition,
 } from "react";
+import {
+  cancellationFeeReturnPath,
+  withCancellationFeeReturnPath,
+} from "@/shared/auth/cancellationFeeReturnPath";
 import { Button } from "@/components/ui/Button";
 import { Input } from "@/components/ui/Input";
 import { getUserMessages } from "@/shared/i18n/user";
@@ -56,6 +60,7 @@ type Mode = "login" | "register";
 type Layout = "compact" | "open";
 
 type Props = {
+  returnTo?: string | null;
   mode: Mode;
   layout?: Layout;
   /** Only honored when `layout="open"`. */
@@ -66,22 +71,24 @@ const EMAIL_RE = /^\S+@\S+\.\S+$/;
 const MIN_PASSWORD_LEN = 8;
 const noopSubscribe = () => () => {};
 
-function authCallbackUrl(): string {
+function authCallbackUrl(next: string | null): string {
   const siteUrl =
     typeof process !== "undefined"
       ? process.env.NEXT_PUBLIC_SITE_URL?.replace(/\/$/, "")
       : "";
-  return siteUrl ? `${siteUrl}/auth/callback` : "/auth/callback";
+  return withCancellationFeeReturnPath(siteUrl ? `${siteUrl}/auth/callback` : "/auth/callback", next);
 }
 
 export function SocialAuthButtons({
   mode,
+  returnTo = null,
   layout = "compact",
   enablePassword = false,
 }: Props) {
   // Source of truth = the EN/VI toggle in the marketing nav and the auth
   // shell. Previously this read `useBrowserLanguage`, which caused mixed
   // EN/VI strings on `/register` for VI-locale browsers.
+  const next = cancellationFeeReturnPath(returnTo);
   const { language } = useUserLanguage();
   const t = useMemo(() => getUserMessages(language).auth, [language]);
 
@@ -163,7 +170,7 @@ export function SocialAuthButtons({
         const supabase = createClient();
         const { error: oauthErr } = await supabase.auth.signInWithOAuth({
           provider: "google",
-          options: { redirectTo: authCallbackUrl() },
+          options: { redirectTo: authCallbackUrl(next) },
         });
         if (oauthErr) {
           setError(oauthErr.message ?? t.googleSigninFailed);
@@ -196,7 +203,9 @@ export function SocialAuthButtons({
     startTransition(async () => {
       let result: Awaited<ReturnType<typeof sendEmailMagicLink>>;
       try {
-        result = await sendEmailMagicLink(normalized);
+        result = next
+          ? await sendEmailMagicLink(normalized, next)
+          : await sendEmailMagicLink(normalized);
       } catch {
         // A proxy rejection or lost response never reaches the action's typed
         // result. Preserve the draft; do not replay an uncertain email request.
@@ -261,11 +270,11 @@ export function SocialAuthButtons({
         return;
       }
       if (kind === "signin" || result.status === "signed_in") {
-        // Full navigation to /register/setup: the new session cookie is sent with
-        // the next browser request, so the server can read it correctly.
-        // /register/setup handles all cases: no salon → wizard, existing salon →
-        // dashboard redirect.  Using router.push races with cookie propagation.
-        window.location.assign("/register/setup");
+        // Full navigation sends the new session cookie before the destination
+        // rechecks authorization. Keep the exact fee review when supplied;
+        // normal sign-in retains the existing onboarding/dashboard resolution.
+        // Using router.push races with cookie propagation.
+        window.location.assign(next ?? "/register/setup");
         return;
       }
       setSignUpConfirmationDelivery(result.delivery);

@@ -1,6 +1,10 @@
 import { createServerClient } from "@supabase/ssr";
 import { authCookieOptions } from "@/shared/lib/supabase/authCookieOptions";
 import { NextResponse, type NextRequest } from "next/server";
+import {
+  cancellationFeeReturnPath,
+  withCancellationFeeReturnPath,
+} from "@/shared/auth/cancellationFeeReturnPath";
 import { dashboardPathForRole } from "@/shared/lib/salonMemberRole";
 import { resolveRoleAndSlugForUser } from "@/shared/lib/salonMembership";
 import { createServiceRoleClient } from "@/shared/lib/supabase/serviceRole";
@@ -27,13 +31,14 @@ export const runtime = "nodejs";
 export async function GET(request: NextRequest) {
   const url = new URL(request.url);
   const code = url.searchParams.get("code");
+  const next = cancellationFeeReturnPath(url.searchParams.get("next"));
   // QR invite token passed via redirectTo → /auth/callback?invite=TOKEN
   const inviteToken = url.searchParams.get("invite");
   const hasProviderError =
     url.searchParams.has("error_description") || url.searchParams.has("error");
 
   if (hasProviderError) {
-    const dest = new URL("/login", request.url);
+    const dest = new URL(withCancellationFeeReturnPath("/login", next), request.url);
     // The login page accepts stable error codes, not provider-supplied text.
     // Keep details out of the redirect URL and show the localized retry message.
     dest.searchParams.set("error", "session");
@@ -41,7 +46,7 @@ export async function GET(request: NextRequest) {
   }
 
   if (!code) {
-    return NextResponse.redirect(new URL("/login?error=session", request.url));
+    return NextResponse.redirect(new URL(withCancellationFeeReturnPath("/login?error=session", next), request.url));
   }
 
   // Collect cookies from exchangeCodeForSession so we can attach them
@@ -91,7 +96,7 @@ export async function GET(request: NextRequest) {
     } else {
       console.error("[auth/callback] exchangeCodeForSession", exchangeErr);
     }
-    const dest = new URL("/login", request.url);
+    const dest = new URL(withCancellationFeeReturnPath("/login", next), request.url);
     dest.searchParams.set(
       "error",
       isMissingPkceVerifier
@@ -107,7 +112,7 @@ export async function GET(request: NextRequest) {
     data: { user },
   } = await supabase.auth.getUser();
   if (!user) {
-    return NextResponse.redirect(new URL("/login?error=session", request.url));
+    return NextResponse.redirect(new URL(withCancellationFeeReturnPath("/login?error=session", next), request.url));
   }
 
   let resolved = await resolveRoleAndSlugForUser(supabase, user.id);
@@ -167,6 +172,9 @@ export async function GET(request: NextRequest) {
       userAgent: request.headers.get("user-agent"),
     });
   }
+
+  // Safe navigation hint only. The page rechecks target-salon membership/role.
+  if (resolved && next) dest = new URL(next, request.url);
 
   const response = NextResponse.redirect(dest);
   for (const { name, value, options } of pendingCookies) {
