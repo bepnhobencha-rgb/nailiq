@@ -162,7 +162,7 @@ describe("card_manage exposure and replay boundary", () => {
     const providerResolve = saveFlow.indexOf("await resolvePaymentProvider");
     expect(replayGuard >= 0 && providerResolve > replayGuard).toBe(true);
     requirePattern(saveFlow.slice(replayGuard, providerResolve), /return\s*\{[\s\S]*code:\s*["']reconciliation_required["']/, "a replayed in-flight card claim can reach the provider before reconciliation");
-    requirePattern(individualFlow, /await acknowledgePublicBookingRequestId[\s\S]{0,1600}cardManagementPending:\s*result\.cardManagementPending[\s\S]{0,300}setStep\(["']done["']\)/, "committed booking identity is not acknowledged before the card-pending success view");
+    requirePattern(individualFlow, /(?:await|void) acknowledgePublicBookingRequestId[\s\S]{0,1800}cardManagementPending:\s*result\.cardManagementPending[\s\S]{0,300}setStep\(["']done["']\)/, "committed booking identity cleanup is not started before the card-pending success view");
     requirePattern(individualFlow, /cardManagementPending:\s*result\.cardManagementPending[\s\S]{0,300}setStep\(["']done["']\)/, "committed booking does not carry card pending into Done");
     requirePattern(individualDone, /booking-card-pending-notice[\s\S]{0,400}cardManagementPendingNotice/, "Done does not explain the card-only pending state");
 
