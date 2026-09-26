@@ -70,6 +70,14 @@ export async function GET(request: Request) {
     brand: !isRsvpPreview && preview.willCharge ? preview.cardBrand : null,
     currency: preview.currency,
     salonSlug: inspected.inspection.booking.salonSlug,
+    // Explicit allowlist from the validated capability; never return contact,
+    // internal context, or the full inspection object to the browser.
+    booking: {
+      salonName: inspected.inspection.booking.salonName,
+      serviceName: inspected.inspection.booking.serviceName,
+      startTimeUtc: inspected.inspection.booking.startTimeUtc,
+      salonTimezone: inspected.inspection.booking.salonTimezone,
+    },
   });
 }
 

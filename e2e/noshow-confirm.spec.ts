@@ -81,18 +81,20 @@ test.describe("No-Show — One-Tap Confirm", () => {
     await page.getByRole("button", { name: /yes, confirm my appointment/i }).click();
     await expect(page.getByText(/appointment confirmed/i)).toBeVisible({ timeout: 10_000 });
 
-    // Try again — token is now used, page renders "Link Unavailable" heading +
-    // an error message. Use the h1 heading as the anchor to avoid strict-mode
-    // violations when multiple elements contain the same substring.
+    // A consumed capability is not proof of the appointment's current status.
+    // Explain recovery without offering another confirmation or claiming success.
     await page.goto(`/booking/confirm?token=${tokenId}`);
-    await expect(page.getByRole("heading", { name: /link unavailable/i }).first()).toBeVisible({ timeout: 10_000 });
+    await expect(page.getByRole("heading", { name: "Link already used", exact: true })).toBeVisible({ timeout: 10_000 });
+    await expect(page.getByRole("status")).toContainText("current status");
+    await expect(page.getByRole("button", { name: /yes, confirm my appointment/i })).toHaveCount(0);
+    await expect(page.getByRole("heading", { name: /appointment confirmed/i })).toHaveCount(0);
   });
 
   test("missing token shows error", async ({ page }) => {
     await page.goto("/booking/confirm");
-    // "Link Unavailable" h1 is the authoritative signal — avoids strict-mode
-    // violations from matching both the heading and the detail paragraph.
-    await expect(page.getByRole("heading", { name: /link unavailable/i }).first()).toBeVisible({ timeout: 10_000 });
+    await expect(page.getByRole("heading", { name: "Check your appointment link", exact: true })).toBeVisible({ timeout: 10_000 });
+    await expect(page.getByRole("status")).toContainText("complete link");
+    await expect(page.getByRole("button", { name: /yes, confirm my appointment/i })).toHaveCount(0);
   });
 
   test("mobile confirm flow", async ({ page }) => {

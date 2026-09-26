@@ -8,6 +8,7 @@ import {
   stableBookingManagementRequestId,
 } from "@/shared/booking/bookingManagementRequestId";
 import { formatBookingManagementTime } from "@/shared/booking/bookingManagementTime";
+import { bookingManagementLinkMessage } from "@/shared/booking/bookingManagementLinkMessage";
 
 type Booking = {
   status: string;
@@ -163,20 +164,12 @@ function ConfirmedView({ booking }: { booking: Booking }) {
 }
 
 function ErrorView({ code }: { code: string }) {
-  const messages: Record<string, string> = {
-    missing_token: "This confirmation link is invalid.",
-    invalid_token: "This confirmation link is invalid.",
-    token_invalid: "This link has expired or is no longer available.",
-    action_mismatch: "This link cannot confirm an appointment.",
-    already_confirmed: "This appointment is already confirmed.",
-    management_unavailable: "This link is temporarily unavailable. Please contact the salon.",
-    invalid_management_response: "This link is temporarily unavailable. Please contact the salon.",
-  };
+  const message = bookingManagementLinkMessage(code);
   return (
     <Shell>
       <div className="text-center">
-        <h1 className="text-xl font-semibold text-white">Link Unavailable</h1>
-        <p className="mt-3 text-sm text-nq-muted">{messages[code] ?? "Unable to confirm this appointment."}</p>
+        <h1 className="text-xl font-semibold text-white">{message.title}</h1>
+        <p role="status" className="mt-3 text-sm text-nq-muted">{message.message}</p>
       </div>
     </Shell>
   );
