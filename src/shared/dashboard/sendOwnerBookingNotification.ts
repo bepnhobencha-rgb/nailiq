@@ -1279,10 +1279,24 @@ export async function sendOwnerBookingNotification(
     const style = EVENT_STYLE[event];
     const origin = getEmailOrigin();
     const slug = salon.slug?.trim() ?? "";
-    const dashboardUrl = slug ? `${origin}/dashboard/${slug}` : origin;
+    const dashboardUrl = slug ? `${origin}/dashboard/${encodeURIComponent(slug)}` : origin;
     const settingsUrl = slug
-      ? `${origin}/dashboard/${slug}/settings`
+      ? `${origin}/dashboard/${encodeURIComponent(slug)}/settings`
       : origin;
+
+    // This is an authenticated review link, never a payment capability. Opening
+    // an email (including a mail scanner prefetch) cannot approve or charge.
+    const isCancellationReview = event === "cancel" && Boolean(slug);
+    const actionUrl = isCancellationReview
+      ? `${origin}/dashboard/${encodeURIComponent(slug)}/cancellation-fee/${encodeURIComponent(bookingId)}`
+      : dashboardUrl;
+    const actionLabel = isCancellationReview
+      ? "Review cancellation fee · Xử lý phí hủy"
+      : "Open dashboard · Mở bảng điều khiển";
+    const confirmationNotice = isCancellationReview
+      ? "Opening this link does not charge the customer. Review the fee and confirm before collecting. · Mở liên kết không thu tiền khách. Hãy kiểm tra phí và xác nhận trước khi thu."
+      : null;
+    const actionHref = esc(actionUrl).replace(/"/g, "&quot;");
 
     // Appointment date/time split for a prominent, glanceable time block.
     const dateStr = b.start_time_utc
@@ -1431,14 +1445,15 @@ export async function sendOwnerBookingNotification(
         </tr></table>
         <table role="presentation" width="100%" cellpadding="0" cellspacing="0" style="font-size:14px">${detailHtml}</table>
         <table role="presentation" cellpadding="0" cellspacing="0" style="margin:22px 0 2px"><tr>
-          <td style="border-radius:10px;background:#D4AF37"><a href="${dashboardUrl}" style="display:inline-block;padding:12px 24px;color:#0B0C10;font-size:14px;font-weight:700;text-decoration:none">Open dashboard · Mở bảng điều khiển →</a></td>
+          <td style="border-radius:10px;background:#D4AF37"><a href="${actionHref}" style="display:inline-block;padding:12px 24px;color:#0B0C10;font-size:14px;font-weight:700;text-decoration:none">${esc(actionLabel)} →</a></td>
         </tr></table>
+        ${confirmationNotice ? `<p style="color:#6b7280;font-size:13px;margin:12px 0 0">${esc(confirmationNotice)}</p>` : ""}
       </td>
     </tr></table>
     <table role="presentation" width="100%" cellpadding="0" cellspacing="0"><tr>
       <td style="text-align:center;padding:18px 24px 4px">
         <p style="color:#9ca3af;font-size:12px;margin:0 0 4px">Manager email alerts for ${esc(salonName)} · Thông báo quản lý</p>
-        <p style="color:#9ca3af;font-size:12px;margin:0"><a href="${settingsUrl}" style="color:#6b7280;text-decoration:underline">Manage alerts · Cài đặt</a></p>
+        <p style="color:#9ca3af;font-size:12px;margin:0"><a href="${esc(settingsUrl).replace(/"/g, "&quot;")}" style="color:#6b7280;text-decoration:underline">Manage alerts · Cài đặt</a></p>
         <p style="color:#c4c7cc;font-size:11px;margin:12px 0 0">Powered by <span style="color:#9ca3af;font-weight:700">NailIQ</span></p>
       </td>
     </tr></table>
@@ -1469,7 +1484,10 @@ export async function sendOwnerBookingNotification(
           ]
         : [`Time / Giờ: ${fmt(b.start_time_utc)}`]),
       "",
-      `Open dashboard: ${dashboardUrl}`,
+      isCancellationReview
+        ? `${actionLabel}: ${actionUrl}`
+        : `Open dashboard: ${dashboardUrl}`,
+      ...(confirmationNotice ? [confirmationNotice] : []),
     ];
     const text = textLines.join("\n");
 

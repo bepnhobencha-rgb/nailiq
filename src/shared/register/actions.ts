@@ -2,6 +2,7 @@
 
 import { randomUUID } from "node:crypto";
 import { cookies } from "next/headers";
+import { withCancellationFeeReturnPath } from "@/shared/auth/cancellationFeeReturnPath";
 import {
   NAILQ_DEMO_SLUG_COOKIE,
   NAILQ_DEMO_SLUG_COOKIE_MAX_AGE_S,
@@ -662,6 +663,7 @@ export async function verifyLoginOtp(
  */
 export async function sendEmailMagicLink(
   emailRaw: string,
+  returnTo?: string | null,
 ): Promise<SendRegisterOtpResult> {
   const email = emailRaw.trim().toLowerCase();
   if (!email || !email.includes("@") || email.length > 254) {
@@ -695,7 +697,7 @@ export async function sendEmailMagicLink(
     const { error } = await supabase.auth.signInWithOtp({
       email,
       options: {
-        emailRedirectTo: redirectTo,
+        emailRedirectTo: withCancellationFeeReturnPath(redirectTo, returnTo),
         shouldCreateUser: true,
       },
     });

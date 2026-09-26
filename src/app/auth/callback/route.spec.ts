@@ -157,6 +157,42 @@ describe("OAuth and email-link callback session boundary", () => {
     expect(response.cookies.get("sb-auth-token")?.value).toBe("signed-session");
   });
 
+  it.each([false, true])("returns an authenticated member to the exact fee page (picker=%s)", async (needsPicker) => {
+    installAuthClient();
+    resolveRoleAndSlugForUser.mockResolvedValue({ slug: "another-salon", role: "owner", needsPicker });
+    const next = "/dashboard/test-salon/cancellation-fee/4378c3c6-f485-4ab4-9cb2-2011e82f5d66";
+    const response = await GET(new NextRequest(`https://www.nailiq.ca/auth/callback?code=code&next=${encodeURIComponent(next)}`));
+    expect(response.headers.get("location")).toBe(`https://www.nailiq.ca${next}`);
+    expect(response.cookies.get("sb-auth-token")?.value).toBe("signed-session");
+  });
+
+  it("does not use a fee navigation hint as membership authorization", async () => {
+    installAuthClient();
+    resolveRoleAndSlugForUser.mockResolvedValue(null);
+    createServiceRoleClient.mockReturnValue({ rpc: vi.fn().mockResolvedValue({ data: 0 }) });
+    const next = "/dashboard/test-salon/cancellation-fee/4378c3c6-f485-4ab4-9cb2-2011e82f5d66";
+    const response = await GET(new NextRequest(`https://www.nailiq.ca/auth/callback?code=code&next=${encodeURIComponent(next)}`));
+    expect(response.headers.get("location")).toBe("https://www.nailiq.ca/register/setup");
+  });
+
+  it.each(["//evil.example", "https://evil.example", "/api/booking/cancel-action", "/dashboard/test-salon?charge=1"])("rejects callback open redirect %s", async (next) => {
+    installAuthClient();
+    resolveRoleAndSlugForUser.mockResolvedValue({ slug: "test-salon", role: "owner", needsPicker: false });
+    const response = await GET(new NextRequest(`https://www.nailiq.ca/auth/callback?code=code&next=${encodeURIComponent(next)}`));
+    expect(response.headers.get("location")).toBe("https://www.nailiq.ca/dashboard/test-salon");
+  });
+
+  it("preserves a safe destination after a PKCE error without granting a session", async () => {
+    installAuthClient({ exchangeError: { code: "pkce_code_verifier_not_found", message: "missing" } });
+    const next = "/dashboard/test-salon/cancellation-fee/4378c3c6-f485-4ab4-9cb2-2011e82f5d66";
+    const response = await GET(new NextRequest(`https://www.nailiq.ca/auth/callback?code=code&next=${encodeURIComponent(next)}`));
+    const location = new URL(response.headers.get("location")!);
+    expect(location.pathname).toBe("/login");
+    expect(location.searchParams.get("next")).toBe(next);
+    expect(location.searchParams.get("error")).toBe("pkce_restart");
+    expect(response.cookies.getAll()).toHaveLength(0);
+  });
+
   it("fails visibly and does not set a session cookie when PKCE state is missing", async () => {
     const { getUser } = installAuthClient({
       exchangeError: {

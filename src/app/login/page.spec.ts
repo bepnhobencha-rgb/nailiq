@@ -14,6 +14,14 @@ describe("login callback feedback allowlist", () => {
     readAuthPlatformFlags.mockResolvedValue({ smsEnabled: false, emailEnabled: true });
   });
 
+  it("passes only an allowlisted fee destination into login", async () => {
+    const next = "/dashboard/test-salon/cancellation-fee/4378c3c6-f485-4ab4-9cb2-2011e82f5d66";
+    const valid = await LoginPage({ searchParams: Promise.resolve({ next }) });
+    expect(valid.props.returnTo).toBe(next);
+    const invalid = await LoginPage({ searchParams: Promise.resolve({ next: "//evil.example" }) });
+    expect(invalid.props.returnTo).toBeNull();
+  });
+
   it.each([
     ["link_session_expired", "link_session_expired"],
     ["pkce_restart", "pkce_restart"],

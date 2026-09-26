@@ -64,6 +64,7 @@ vi.mock("@/components/ai/ManagerBriefingChat", () => ({
   ManagerBriefingChat: () => "MANAGER_BRIEFING_CHAT",
 }));
 
+import CancellationFeePage from "@/app/dashboard/[slug]/cancellation-fee/[bookingId]/page";
 import SalonSettingsPage from "@/app/dashboard/[slug]/settings/page";
 import NailTryOnSetupPage from "@/app/dashboard/[slug]/setup/nail-tryon/page";
 import ManagerBriefingPage from "@/app/dashboard/[slug]/setup/manager-briefing/page";
@@ -195,6 +196,41 @@ describe("salon admin deep-link role matrix", () => {
     },
   );
 
+  it.each(["owner", "admin"] as const)(
+    "allows a same-salon %s through the cancellation fee route's authoritative loader",
+    async (role) => {
+      mocks.getDashboardWriteClient.mockResolvedValue(routeContext(role));
+      await expect(CancellationFeePage({
+        params: Promise.resolve({ slug: "qa-salon", bookingId: "fc260927-0000-4000-8000-000000000010" }),
+      })).resolves.toMatchObject({ props: { data: { ok: true, salonId: "salon-1" } } });
+      expect(mocks.getDashboardWriteClient).toHaveBeenCalledExactlyOnceWith("qa-salon");
+      expect(mocks.createServiceRoleClient).toHaveBeenCalledOnce();
+    },
+  );
+
+  it.each(["senior", "receptionist", "nail_tech"] as const)(
+    "rejects %s cancellation fee deep-links before a service-role read",
+    async (role) => {
+      mocks.getDashboardWriteClient.mockResolvedValue(routeContext(role));
+      await expect(CancellationFeePage({
+        params: Promise.resolve({ slug: "qa-salon", bookingId: "fc260927-0000-4000-8000-000000000010" }),
+      })).rejects.toThrow("NOT_FOUND");
+      expect(mocks.createServiceRoleClient).not.toHaveBeenCalled();
+    },
+  );
+
+  it.each(["anonymous", "cross-tenant", "demo"])(
+    "rejects %s cancellation fee deep-links before a service-role read",
+    async (context) => {
+      mocks.getDashboardWriteClient.mockResolvedValue(context === "demo"
+        ? { ...routeContext("owner"), kind: "demo" } : null);
+      await expect(CancellationFeePage({
+        params: Promise.resolve({ slug: "qa-salon", bookingId: "fc260927-0000-4000-8000-000000000010" }),
+      })).rejects.toThrow("NOT_FOUND");
+      expect(mocks.createServiceRoleClient).not.toHaveBeenCalled();
+    },
+  );
+
   it("rejects a non-nail owner before any Try-On service-role read", async () => {
     mocks.getDashboardWriteClient.mockResolvedValue(routeContext("owner"));
     mocks.requireReleaseFeatureEnabled.mockResolvedValue({
@@ -296,6 +332,7 @@ describe("dashboard route authorization inventory", () => {
       "activity/page.tsx",
       "ai/page.tsx",
       "approvals/page.tsx",
+      "cancellation-fee/[bookingId]/page.tsx",
       "combos/page.tsx",
       "disputes/page.tsx",
       "import/page.tsx",
@@ -345,6 +382,7 @@ describe("dashboard route authorization inventory", () => {
       'ctx.role === "owner"',
       '["owner", "admin", "manager"].includes(ctx.role)',
       "loadGoLiveReadiness(slug)",
+      "loadCancellationFeeEmailReview(slug, bookingId)",
       "loadGuidedBookingPreview(slug)",
       "loadPromotionsData(slug)",
       "redirect(`/dashboard/${slug}/setup/staff`)",

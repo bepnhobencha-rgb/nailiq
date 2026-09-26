@@ -18,6 +18,9 @@ export function feePaymentStatusLabel(state: string, paymentStatus: string, vi: 
 }
 
 export function feeActionError(error: string, vi: boolean): string {
+  if (["review_not_waivable", "review_not_pending", "idempotency_mismatch"].includes(error)) return vi ? "Phiếu phí đã được xử lý hoặc đang thay đổi. Hãy tải lại để kiểm tra quyết định đã lưu trước khi thao tác tiếp." : "This fee has already been handled or is changing. Reload to check the recorded decision before proceeding.";
+  if (error === "review_changed") return vi ? "Thông tin khoản phí đã thay đổi. Hãy tải lại và kiểm tra số tiền, thẻ trước khi xác nhận." : "The fee details changed. Reload and check the amount and card before confirming.";
+  if (error === "review_not_collectible") return vi ? "Khoản phí hiện không thể thu. Hãy tải lại để xem trạng thái mới nhất." : "This fee cannot currently be collected. Reload to check its latest status.";
   if (groupFeeNeedsSafetyReview(error)) return vi ? "Chưa thể thu phí: chủ tiệm cần kiểm tra sự đồng ý đã lưu hoặc số tiền. Chưa gửi lệnh thanh toán." : "Fee collection blocked: saved consent or the amount needs owner review. No payment was sent.";
   if (["unauthorized", "salon_mismatch"].includes(error)) return vi ? "Bạn không có quyền thực hiện thao tác này. Hãy tải lại trang để kiểm tra phiên đăng nhập." : "You cannot perform this action. Reload to check your session.";
   if (error === "dispatch_release_disabled") return vi ? "Chức năng thu phí chưa được bật. Chưa gửi lệnh thanh toán." : "Fee collection is not enabled. No payment was sent.";
@@ -60,10 +63,11 @@ export function useFeeQueueMutation(vi: boolean, refresh: () => void) {
 }
 
 export function FeeCollectionConfirmation({
-  isOpen, amount, cardBrand, cardLast4, kind, vi, busy, onCancel, onConfirm,
+  isOpen, amount, cardBrand, cardLast4, kind, vi, busy, onCancel, onConfirm, approveBeforeCollect = false,
 }: {
   isOpen: boolean; amount: string; cardBrand: string; cardLast4: string; kind: FeeKind;
   vi: boolean; busy: boolean; onCancel: () => void; onConfirm: () => void;
+  approveBeforeCollect?: boolean;
 }) {
   const fee = kind === "no-show" ? (vi ? "Phí no-show" : "No-show fee")
     : kind === "late" ? (vi ? "Phí hủy trễ" : "Late cancellation fee")
@@ -83,7 +87,9 @@ export function FeeCollectionConfirmation({
     <div className="space-y-3 text-sm text-nq-text">
       <p className="font-semibold">{fee} · {amount}</p>
       <p>{kind === "group" ? (vi ? "Thẻ người tổ chức" : "Organizer card") : (vi ? "Thẻ đã lưu" : "Saved card")}: {cardBrand} •••• {cardLast4}</p>
-      <p className="text-nq-muted">{vi ? "Xác nhận sẽ gửi yêu cầu thu đúng số tiền này tới nhà cung cấp thanh toán. Đây là bước thu tiền, riêng với bước duyệt phí." : "Confirming sends this exact charge to the payment provider. This collects payment separately from fee approval."}</p>
+      <p className="text-nq-muted">{approveBeforeCollect
+        ? vi ? "Xác nhận sẽ ghi nhận bạn duyệt khoản phí này, sau đó gửi yêu cầu thu đúng số tiền trên từ thẻ đã lưu. Chỉ báo đã thu khi có kết quả thành công." : "Confirming records your approval, then requests this exact amount from the saved card. Collection is confirmed only after a successful result."
+        : vi ? "Xác nhận sẽ gửi yêu cầu thu đúng số tiền này tới nhà cung cấp thanh toán. Đây là bước thu tiền, riêng với bước duyệt phí." : "Confirming sends this exact charge to the payment provider. This collects payment separately from fee approval."}</p>
       {busy ? <p role="status">{vi ? "Đang xử lý — vui lòng chờ kết quả." : "Processing — please wait for the result."}</p> : null}
     </div>
   </Modal>;

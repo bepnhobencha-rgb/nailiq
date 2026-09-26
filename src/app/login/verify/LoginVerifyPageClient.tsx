@@ -10,6 +10,10 @@ import {
   useState,
   useTransition,
 } from "react";
+import {
+  cancellationFeeReturnPath,
+  withCancellationFeeReturnPath,
+} from "@/shared/auth/cancellationFeeReturnPath";
 import { Button } from "@/components/ui/Button";
 import { RegisterStepShell } from "@/components/register/RegisterStepShell";
 import { cn } from "@/shared/lib/cn";
@@ -22,13 +26,15 @@ import { verifyLoginOtp } from "@/shared/register/actions";
 const OTP_LEN = 6;
 const emptyDigits = () => Array.from({ length: OTP_LEN }, () => "");
 
-type Props = { demoMode: boolean };
+type Props = { demoMode: boolean; returnTo?: string | null };
 
-export function LoginVerifyPageClient({ demoMode: _demoMode }: Props) {
+export function LoginVerifyPageClient({ demoMode: _demoMode, returnTo = null }: Props) {
   // demoMode currently unused on /login/verify; kept on the prop list so
   // server pages don't need a separate signature for the two verify routes.
   void _demoMode;
   const router = useRouter();
+  const next = cancellationFeeReturnPath(returnTo);
+  const loginUrl = withCancellationFeeReturnPath("/login", next);
   const { language } = useUserLanguage();
   const t = useMemo(() => getUserMessages(language).login, [language]);
   const [digits, setDigits] = useState(emptyDigits);
@@ -51,12 +57,12 @@ export function LoginVerifyPageClient({ demoMode: _demoMode }: Props) {
     if (typeof window === "undefined") return;
     const stored = window.sessionStorage.getItem(REG_SESSION_PHONE_DIGITS_KEY);
     if (!stored) {
-      router.replace("/login");
+      router.replace(loginUrl);
       return;
     }
     // eslint-disable-next-line react-hooks/set-state-in-effect -- one-shot session-storage hydration
     setPhoneDigits(stored);
-  }, [router]);
+  }, [router, loginUrl]);
 
   const code = useMemo(() => digits.join(""), [digits]);
 
@@ -105,11 +111,11 @@ export function LoginVerifyPageClient({ demoMode: _demoMode }: Props) {
           // Use location.assign (full navigation) so the demo-slug cookie set
           // by the server action is guaranteed to reach the next request —
           // router.push does a client-side prefetch that races the Set-Cookie.
-          window.location.assign(dashboardPathForRole(res.slug, res.role));
+          window.location.assign(next ?? dashboardPathForRole(res.slug, res.role));
           return;
         }
         if (res.next === "picker") {
-          router.push("/choose-salon");
+          window.location.assign(next ?? "/choose-salon");
           return;
         }
         // next: "setup" means phone has no salon — login should reject this.
@@ -121,7 +127,7 @@ export function LoginVerifyPageClient({ demoMode: _demoMode }: Props) {
       phoneDigits,
       code,
       rememberDevice,
-      router,
+      next,
       t.errorNetwork,
       t.verifyErrorExpired,
       t.verifyErrorInvalid,
@@ -197,7 +203,7 @@ export function LoginVerifyPageClient({ demoMode: _demoMode }: Props) {
       </form>
 
       <p className="mt-6 text-center text-sm text-nq-muted">
-        <Link href="/login" className="text-nq-primary hover:underline">
+        <Link href={loginUrl} className="text-nq-primary hover:underline">
           {t.verifyChangePhone}
         </Link>
       </p>

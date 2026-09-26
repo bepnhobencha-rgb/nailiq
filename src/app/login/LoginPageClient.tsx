@@ -3,6 +3,10 @@
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { useCallback, useMemo, useState, useTransition } from "react";
+import {
+  cancellationFeeReturnPath,
+  withCancellationFeeReturnPath,
+} from "@/shared/auth/cancellationFeeReturnPath";
 import { SocialAuthButtons } from "@/components/auth/SocialAuthButtons";
 import { DemoOtpModal } from "@/components/register/DemoOtpModal";
 import { RegisterStepShell } from "@/components/register/RegisterStepShell";
@@ -21,6 +25,7 @@ import {
 } from "@/shared/register/phone";
 
 type Props = {
+  returnTo?: string | null;
   demoMode: boolean;
   /** When false the SMS path is bypassed — check emailEnabled for fallback. */
   smsEnabled: boolean;
@@ -35,6 +40,7 @@ type Props = {
 };
 
 export function LoginPageClient({
+  returnTo = null,
   demoMode,
   smsEnabled,
   emailEnabled,
@@ -43,6 +49,8 @@ export function LoginPageClient({
   authError = null,
 }: Props) {
   const router = useRouter();
+  const next = cancellationFeeReturnPath(returnTo);
+  const verifyUrl = withCancellationFeeReturnPath("/login/verify", next);
   const { language } = useUserLanguage();
   const t = useMemo(() => getUserMessages(language), [language]);
 
@@ -136,10 +144,10 @@ export function LoginPageClient({
           setDemoCode(result.code);
           return;
         }
-        router.push("/login/verify");
+        router.push(verifyUrl);
       });
     },
-    [phoneRaw, router, t.login.errorNetwork, t.register.phoneDigitsInvalid],
+    [phoneRaw, router, verifyUrl, t.login.errorNetwork, t.register.phoneDigitsInvalid],
   );
 
   // ── Branch 3: sign-in temporarily unavailable ─────────────────────────────
@@ -165,7 +173,7 @@ export function LoginPageClient({
         {confirmEmailBanner}
         {authErrorBanner}
         {passwordResetBanner}
-        <SocialAuthButtons mode="login" layout="open" enablePassword={true} />
+        <SocialAuthButtons returnTo={next} mode="login" layout="open" enablePassword={true} />
         <p className="mt-6 text-center text-sm text-nq-muted">
           {t.login.noSalonPrefix}
           <Link
@@ -192,7 +200,7 @@ export function LoginPageClient({
         onDismiss={() => setDemoCode(null)}
         onContinue={() => {
           setDemoCode(null);
-          router.push("/login/verify");
+          router.push(verifyUrl);
         }}
       />
 
@@ -256,7 +264,7 @@ export function LoginPageClient({
         </p>
       </form>
 
-      {demoMode ? null : <SocialAuthButtons mode="login" />}
+      {demoMode ? null : <SocialAuthButtons returnTo={next} mode="login" />}
 
       <p className="mt-6 text-center text-sm text-nq-muted">
         {t.login.noSalonPrefix}

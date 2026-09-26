@@ -22,6 +22,10 @@ import * as ErrorReporter from "@/shared/observability/errorReporter";
 import { createServerClient, type CookieOptions } from "@supabase/ssr";
 import { authCookieOptions } from "@/shared/lib/supabase/authCookieOptions";
 import { NextResponse, type NextRequest } from "next/server";
+import {
+  cancellationFeeReturnPath,
+  withCancellationFeeReturnPath,
+} from "@/shared/auth/cancellationFeeReturnPath";
 import { NAILQ_DEMO_SLUG_COOKIE } from "@/shared/lib/demoDashboardCookie";
 import {
   isRouteOrUnder,
@@ -605,6 +609,8 @@ export async function proxy(request: NextRequest) {
     if (!exempt) {
       const url = new URL("/login", request.url);
       url.searchParams.set("notice", "confirm-email");
+      const feeReturnPath = cancellationFeeReturnPath(pathname);
+      if (feeReturnPath) url.searchParams.set("next", feeReturnPath);
       const redirect = NextResponse.redirect(url);
       return applyCookiesFrom(redirect, supabaseResponse);
     }
@@ -635,6 +641,14 @@ export async function proxy(request: NextRequest) {
 
     // Rule 1: Logged-in with salon cannot access /register or /login
     if (hasSalon && (pathname === "/register" || pathname === "/login")) {
+      const feeReturnPath = cancellationFeeReturnPath(request.nextUrl.searchParams.get("next"));
+      if (feeReturnPath) {
+        // Navigation only: the destination owns exact tenant + Owner/Admin checks.
+        return applyCookiesFrom(
+          NextResponse.redirect(new URL(feeReturnPath, request.url)),
+          supabaseResponse,
+        );
+      }
       const { data: salon } = await supabase
         .from("salons")
         .select("slug")
@@ -666,7 +680,9 @@ export async function proxy(request: NextRequest) {
 
   // Unauthenticated guards
   if (!user && isRouteOrUnder(pathname, "/dashboard")) {
-    const redirect = NextResponse.redirect(new URL("/login", request.url));
+    const redirect = NextResponse.redirect(new URL(
+      withCancellationFeeReturnPath("/login", pathname), request.url,
+    ));
     return applyCookiesFrom(redirect, supabaseResponse);
   }
 
