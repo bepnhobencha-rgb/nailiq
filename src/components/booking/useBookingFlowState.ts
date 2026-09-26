@@ -1902,7 +1902,10 @@ export function useBookingFlowState(
         smsConsent: smsConsent || undefined,
         paidDeposit,
       });
-      await acknowledgePublicBookingRequestId(
+      // The booking is committed. Local request-ID cleanup is best-effort and
+      // can wait indefinitely for a browser Web Lock; never hold the success
+      // screen (or invite a second submission) while it finishes.
+      void acknowledgePublicBookingRequestId(
         bookingRequestMaterialForAttempt,
         bookingRequestIdForAttempt,
       );
@@ -1913,16 +1916,20 @@ export function useBookingFlowState(
         ? new URLSearchParams(window.location.search).get("tryon")
         : null;
       if (tryonSessionId) {
-        try {
-          await fetch("/api/nail-tryon/attach", {
-            method: "POST",
-            headers: { "content-type": "application/json" },
-            body: JSON.stringify({ sessionId: tryonSessionId, bookingId: result.bookingId }),
-          });
-        } catch (e) {
-          // Booking success must never be rolled back by a preview attachment.
-          console.error("[booking] nail try-on attach failed", e);
-        }
+        // Optional preview attachment must not delay the committed booking's
+        // success screen when its network request stalls.
+        void (async () => {
+          try {
+            await fetch("/api/nail-tryon/attach", {
+              method: "POST",
+              headers: { "content-type": "application/json" },
+              body: JSON.stringify({ sessionId: tryonSessionId, bookingId: result.bookingId }),
+            });
+          } catch (e) {
+            // Booking success must never be rolled back by a preview attachment.
+            console.error("[booking] nail try-on attach failed", e);
+          }
+        })();
       }
       setBookingResult({
         bookingId: result.bookingId,
