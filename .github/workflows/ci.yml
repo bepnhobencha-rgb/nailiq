@@ -101,6 +101,30 @@ jobs:
           path: test-results/
           retention-days: 14
 
+  group-recovery:
+    name: Group replacement recovery browser
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-node@v6
+        with:
+          node-version: '20'
+          cache: 'npm'
+      - run: npm ci
+      - run: npx playwright install --with-deps chromium webkit
+      - name: Build isolated group fixture (no provider or database)
+        run: npx next build qa/group-recovery --webpack
+        env:
+          NEXT_TELEMETRY_DISABLED: '1'
+      - name: Verify replacement recovery in English and Vietnamese
+        run: npx playwright test -c qa/group-recovery/playwright.config.ts
+      - uses: actions/upload-artifact@v7
+        if: always()
+        with:
+          name: group-recovery-results
+          path: test-results/group-recovery*
+          retention-days: 14
+
   password-reset-form:
     name: Password reset form browser
     runs-on: ubuntu-latest

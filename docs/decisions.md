@@ -1,5 +1,15 @@
 # Architectural Decisions
 
+## 2026-09-26 — Member replacement preserves identity and payment authority
+
+**Status:** implemented locally, default OFF; no hosted Preview or Production release.
+
+Use a separate one-use capability derived from the member-own management authority. Acceptance atomically replaces capacity with a fresh booking identity while retaining the terminal original and a durable receipt. Never transfer saved cards, consent, provider/customer bindings or notifications. Existing group consent cannot authorize an individual member cancellation fee.
+
+First phase excludes protected/deposit/verification-required and complex bookings, organizers and replacement chains. Party roster remains read-only for accepted replacements. Canonical group mutations exclude only a proven superseded original, not ordinary terminal members. A separate writes-OFF switch retains read/history during rollback. See `docs/qa/GROUP_FLEXIBLE_RECOVERY_2026-09-26.md` for acceptance and rollout boundaries.
+
+---
+
 This file logs significant architectural and operational decisions for nailiq.
 Newest entries on top.
 

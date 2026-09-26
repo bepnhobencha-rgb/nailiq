@@ -1631,6 +1631,17 @@ export const userVi: UserMessages = {
       expand: "Mở báo cáo NailIQ hôm nay",
     },
     partyCard: {
+    memberStatuses: {
+      pending: "Chờ xác nhận tham gia",
+      confirmed: "Đã xác nhận",
+      replacement_pending: "Đang tìm người thay",
+      replacement_confirmed: "Người thay đã xác nhận",
+      cancelled: "Đã hủy",
+      declined: "Đã từ chối lời mời",
+      completed: "Đã hoàn thành",
+      no_show: "Vắng mặt",
+    },
+    replacementReadOnly: "Khách cũ đã được thay thế. Liên hệ salon để thay đổi lịch hẹn này.",
       panelSummary: (n: number) => `${n} booking nhóm · 7 ngày tới`,
       panelEmpty: "Không có booking nhóm sắp tới",
       emptyNext7: "Không có booking nhóm trong 7 ngày tới.",
@@ -1642,7 +1653,7 @@ export const userVi: UserMessages = {
       confirmedProgress: (claimed: number, total: number) =>
         `${claimed}/${total} đã xác nhận`,
       pendingSuffix: (n: number) => `${n} chưa xác nhận`,
-      pendingHelp: "Khách chưa xác nhận tên/số điện thoại qua link nhóm.",
+      pendingHelp: "Khách chưa xác nhận tham gia, gồm cả chỗ đang tìm người thay.",
       slotsCount: (n: number) => `${n} chỗ`,
       waveLabel: (n: number) => `Đợt ${n}`,
       copyLink: "Sao chép link nhóm",

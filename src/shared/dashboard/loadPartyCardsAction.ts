@@ -13,6 +13,7 @@
  *   - estimatedRevenueCents is null unless ALL slots have a price_cents value.
  */
 
+import { loadGroupRosterRecovery } from "@/shared/booking/loadGroupRosterRecovery";
 import * as ErrorReporter from "@/shared/observability/errorReporter";
 import { createServiceRoleClient } from "@/shared/lib/supabase/serviceRole";
 import { getDashboardWriteClient } from "@/shared/dashboard/setupActions";
@@ -104,6 +105,7 @@ export async function loadPartyCardsAction(
         client_name,
         wave_number,
         status,
+        attendance_status,
         services!bookings_service_id_fkey ( name ),
         staff!bookings_staff_id_fkey ( name )
       )
@@ -119,19 +121,27 @@ export async function loadPartyCardsAction(
     return { ok: true, cards: [] };
   }
 
+  let recovery: Awaited<ReturnType<typeof loadGroupRosterRecovery>>;
+  try {
+    recovery = await loadGroupRosterRecovery(db, salonId, new Map(claims.flatMap(c => {
+      const link = partyLinkMap.get(c.party_link_id);
+      return link ? [[c.booking_id, link.group_id] as const] : [];
+    })), now);
+  } catch { return { ok: false, error: "server_error" }; }
+
   // 5. Filter to date window and group by party_link_id.
   const claimsByLink = new Map<string, RawClaim[]>();
   for (const raw of claims) {
-    const b = raw.bookings as unknown as {
+    const replacement = recovery.get(raw.booking_id);
+    const b = (replacement?.booking ?? raw.bookings) as unknown as {
       start_time_utc: string | null;
       status: string | null;
     } | null;
     const startIso = b?.start_time_utc;
     if (!startIso) continue;
 
-    // Skip cancelled bookings — a fully-cancelled party then yields no claims
-    // in-window and drops off the strip entirely.
-    if (b?.status === "cancelled") continue;
+    // Retain cancelled members for truthful mixed-party rosters; empty active
+    // groups are omitted after counting authoritative member states.
 
     const startMs = new Date(startIso).getTime();
     if (startMs < windowStart.getTime() || startMs >= windowEnd.getTime()) {
@@ -143,9 +153,10 @@ export async function loadPartyCardsAction(
       id: raw.id,
       party_link_id: raw.party_link_id,
       booking_id: raw.booking_id,
-      member_name: raw.member_name,
+      member_name: replacement?.booking?.client_name ?? raw.member_name,
+      replacement: replacement?.status,
       claimed_at: raw.claimed_at,
-      bookings: raw.bookings as unknown as RawClaim["bookings"],
+      bookings: (replacement?.booking ?? raw.bookings) as unknown as RawClaim["bookings"],
     });
     claimsByLink.set(raw.party_link_id, list);
   }
@@ -173,7 +184,8 @@ export async function loadPartyCardsAction(
     const pl = partyLinkMap.get(partyLinkId);
     if (!pl || linkClaims.length === 0) continue;
     const pendingCount = changeReqCountMap.get(partyLinkId) ?? 0;
-    cards.push(buildPartyCard(pl, linkClaims, tz, now, pendingCount));
+    const card = buildPartyCard(pl, linkClaims, tz, now, pendingCount);
+    if (card.totalSlots > 0) cards.push(card);
   }
 
   cards.sort((a, b) => a.groupStartUtcIso.localeCompare(b.groupStartUtcIso));

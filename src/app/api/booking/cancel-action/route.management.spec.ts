@@ -111,6 +111,33 @@ describe("cancel management runtime behavior", () => {
     expect(mocks.after).not.toHaveBeenCalled();
   });
 
+  it.each(["pending", "confirmed"])("discloses member %s attendance without organizer fee authority", async (attendanceStatus) => {
+    mocks.inspect.mockResolvedValue({
+      ok: true,
+      inspection: {
+        ...inspection.inspection,
+        scopeKind: "member_own",
+        context: { groupId: "group-qa" },
+        booking: { salonSlug: "qa-salon", attendanceStatus },
+      },
+    });
+    const response = await GET(new Request(`https://nailiq.test/api/booking/cancel-action?token=${TOKEN}`));
+    expect(await response.json()).toMatchObject({
+      ok: true, willCharge: false, feeCents: 0, last4: null, brand: null,
+      groupMemberAction: attendanceStatus === "confirmed" ? "cancel_attendance" : "decline_invitation",
+    });
+    expect(mocks.cancel).not.toHaveBeenCalled();
+  });
+
+  it("does not grant a member cancellation fee even if its receipt wording changes", async () => {
+    mocks.cancel.mockResolvedValue({ ok: true, result: {
+      ...committed, groupId: "group-qa", scopeKind: "member_own", rsvpSemantic: null,
+      promotedWaitlist: null,
+    } });
+    const response = await POST(postRequest());
+    expect(await response.json()).toMatchObject({ ok: true, feeStatus: "not_applicable", feeCents: 0, feeCharged: false });
+  });
+
   it("fails cross-origin POST before capability, charge, or provider-adjacent work", async () => {
     const response = await POST(postRequest("https://evil.test"));
     expect(response.status).toBe(403);

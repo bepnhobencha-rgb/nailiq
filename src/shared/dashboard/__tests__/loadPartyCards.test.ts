@@ -106,6 +106,7 @@ function makeClaim(overrides: {
   service?: string;
   staff?: string;
   wave_number?: number;
+  attendance_status?: "pending" | "confirmed";
 } = {}): RawClaim {
   const start = overrides.start ?? "2026-06-01T17:00:00Z";
   const end = overrides.end ?? "2026-06-01T17:40:00Z";
@@ -121,6 +122,8 @@ function makeClaim(overrides: {
       price_cents: overrides.price_cents !== undefined ? overrides.price_cents : 2500,
       client_name: overrides.client_name ?? "Guest 1",
       wave_number: overrides.wave_number ?? 1,
+      status: "confirmed",
+      attendance_status: overrides.attendance_status ?? "pending",
       services: { name: overrides.service ?? "Classic Manicure" },
       staff: { name: overrides.staff ?? "Liam" },
     },
@@ -145,11 +148,11 @@ test("window end is 8 days from start (covers all of day 7)", () => {
 
 // ─── buildPartyCard — slot counting ──────────────────────────────
 
-test("claimedCount and pendingCount are correct", () => {
+test("attendance-confirmed and pending counts are correct", () => {
   const link = makeLink();
   const claims = [
-    makeClaim({ member_name: "Alice", claimed_at: NOW.toISOString() }),
-    makeClaim({ member_name: "Bob", claimed_at: NOW.toISOString() }),
+    makeClaim({ member_name: "Alice", claimed_at: NOW.toISOString(), attendance_status: "confirmed" }),
+    makeClaim({ member_name: "Bob", claimed_at: NOW.toISOString(), attendance_status: "confirmed" }),
     makeClaim({ member_name: null, claimed_at: null }),
     makeClaim({ member_name: null, claimed_at: null }),
   ];
@@ -159,11 +162,11 @@ test("claimedCount and pendingCount are correct", () => {
   assertEqual(card.totalSlots, 4, "4 total");
 });
 
-test("all claimed → pendingCount is 0", () => {
+test("all attendance-confirmed → pendingCount is 0", () => {
   const link = makeLink();
   const claims = [
-    makeClaim({ claimed_at: NOW.toISOString() }),
-    makeClaim({ claimed_at: NOW.toISOString() }),
+    makeClaim({ claimed_at: NOW.toISOString(), attendance_status: "confirmed" }),
+    makeClaim({ claimed_at: NOW.toISOString(), attendance_status: "confirmed" }),
   ];
   const card = buildPartyCard(link, claims, TZ, NOW);
   assertEqual(card.pendingCount, 0);
@@ -227,7 +230,7 @@ test("estimatedRevenueCents is null for empty slot list", () => {
 test("PartyCard slots do NOT contain member_phone", () => {
   const link = makeLink();
   const claims = [
-    makeClaim({ member_name: "Alice", claimed_at: NOW.toISOString() }),
+    makeClaim({ member_name: "Alice", claimed_at: NOW.toISOString(), attendance_status: "confirmed" }),
   ];
   const card = buildPartyCard(link, claims, TZ, NOW);
   const slot = card.slots[0];
@@ -266,7 +269,7 @@ test("unclaimed slots have null memberName (UI shows Guest N)", () => {
   const link = makeLink();
   const claims = [
     makeClaim({ member_name: null, claimed_at: null }),
-    makeClaim({ member_name: "Hana", claimed_at: NOW.toISOString() }),
+    makeClaim({ member_name: "Hana", claimed_at: NOW.toISOString(), attendance_status: "confirmed" }),
   ];
   const card = buildPartyCard(link, claims, TZ, NOW);
   // Unclaimed slot (first by start time) → memberName null
@@ -399,7 +402,7 @@ test("buildPartyCard with no claims returns empty groupStartDisplay", () => {
 test("buildPartyCard returns a valid card when party link and claims exist", () => {
   const link = makeLink();
   const claims = [
-    makeClaim({ start: "2026-06-01T17:00:00Z", member_name: "Alice", claimed_at: new Date().toISOString() }),
+    makeClaim({ start: "2026-06-01T17:00:00Z", member_name: "Alice", claimed_at: NOW.toISOString(), attendance_status: "confirmed" }),
     makeClaim({ start: "2026-06-01T17:40:00Z", member_name: null, claimed_at: null }),
   ];
   const card = buildPartyCard(link, claims, TZ, NOW);

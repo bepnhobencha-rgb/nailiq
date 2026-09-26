@@ -209,6 +209,9 @@ import { execFileSync } from "node:child_process";
  * four deny policies, twelve functions, one trigger and eighteen indexes.
  * Verified against an independently rebuilt 508-migration prefix and the
  * complete 522-migration candidate; no browser grants were added.
+ * The 20260926064325 group-slot recovery migration adds two SELECT-only
+ * service tables, 21 columns, eight functions and nine indexes. Blank CI
+ * measured these additions; browser grants, policies and triggers are unchanged.
  * Refresh these
  * with each schema-changing forward migration — they
  * are a tripwire, not a spec.
@@ -216,7 +219,7 @@ import { execFileSync } from "node:child_process";
 const RELEASE_SHAPE = {
   // +1 PII-free Twilio terminal-receipt inbox.
   // +25 private TurnIQ policy, ledger, replay, group, check-in, offline, and rollout tables.
-  tables: 246,
+  tables: 248,
   // +2 from 20260815190000_add_salon_closure_notice.sql: closure_notice
   // added to both salons (base table) and public_salon_profiles (view) —
   // both count as columns in information_schema.
@@ -285,7 +288,7 @@ const RELEASE_SHAPE = {
   // Production-parity restoration 20260908014241 adds the five-column
   // public_booking_resource_catalog view. information_schema.columns counts
   // view columns as well as base-table columns.
-  columns: 3803,
+  columns: 3824,
   // The upsell migration replaces two legacy member-write policies with one
   // service-role-only immutable claim policy. The staff-lifecycle hardening
   // removes the browser DELETE policy so hard deletion cannot bypass the
@@ -372,7 +375,7 @@ const RELEASE_SHAPE = {
   // +2 from 20260925202830/20260925204601: gated fee reconciliation
   // discovery and customer-bound Square webhook; legacy RPCs remain.
   // +1 from 20260925220858: ready-ID fee claims after configuration preflight.
-  functions: 603,
+  functions: 611,
   // +4 pending-receipt correlation triggers across notification/staff INSERT
   // and provider-SID transitions.
   // +1 V1 terminal-booking policy trigger.
@@ -431,7 +434,7 @@ const RELEASE_SHAPE = {
   // +14 bulk email primary, unique, claim, delivery, timeline, and FK indexes.
   // +3 controlled dispatch actor and cohort/status indexes.
   // +2 R10 active authority/source-claim indexes.
-  indexes: 1012,
+  indexes: 1021,
 } as const;
 
 /**
@@ -452,8 +455,14 @@ const CARD_RECOVERY_SERVICE_READ_TABLES = [
   "retired_booking_create_requests",
 ] as const;
 
+const GROUP_RECOVERY_SERVICE_READ_TABLES = [
+  "group_slot_replacements",
+  "group_slot_replacement_revocations",
+] as const;
+
 const CRITICAL_TABLES = [
   ...CARD_RECOVERY_SERVICE_READ_TABLES,
+  ...GROUP_RECOVERY_SERVICE_READ_TABLES,
   "salons",
   "bookings",
   "staff",
@@ -990,6 +999,14 @@ const CRITICAL_FUNCTIONS = [
   "square_card_prior_attempts_terminal",
   "bind_booking_existing_card_receipt",
   "pause_tenant_if_payment_grace_expired",
+  "group_slot_replacement_fingerprint",
+  "group_slot_replacement_eligible",
+  "inspect_group_slot_recovery",
+  "start_group_slot_replacement",
+  "revoke_group_slot_replacement",
+  "inspect_group_slot_replacement",
+  "accept_group_slot_replacement",
+  "group_slot_is_replaced_original",
 ] as const;
 
 const dbUrl = process.env.DB_URL;
@@ -1092,7 +1109,7 @@ function main() {
   // three more service-role-only tables. The production-parity resource
   // catalog adds one narrow public view reachable by all three API roles; its
   // five-column projection is separately pinned by the P0-03 boundary tests.
-  const GRANTS = { anon: 57, authenticated: 79, service_role: 234 } as const;
+  const GRANTS = { anon: 57, authenticated: 79, service_role: 236 } as const;
   for (const [role, want] of Object.entries(GRANTS)) {
     const got = num(
       `select count(distinct table_name) from (
@@ -1117,8 +1134,8 @@ function main() {
     );
   }
 
-  console.log("\n── Card recovery and retired request SELECT-only boundary ──\n");
-  for (const table of CARD_RECOVERY_SERVICE_READ_TABLES) {
+  console.log("\n── Recovery and retired request SELECT-only boundary ──\n");
+  for (const table of [...CARD_RECOVERY_SERVICE_READ_TABLES, ...GROUP_RECOVERY_SERVICE_READ_TABLES]) {
     const browserReachable = num(
       `select count(*) from information_schema.role_column_grants
         where table_schema='public' and table_name='${table}'
@@ -1142,11 +1159,16 @@ function main() {
       `select count(*) from pg_class c join pg_namespace n on n.oid=c.relnamespace
         where n.nspname='public' and c.relname='${table}' and c.relrowsecurity`,
     );
+    const requiresForcedRls = GROUP_RECOVERY_SERVICE_READ_TABLES.some((name) => name === table);
+    const forcedRls = num(
+      `select count(*) from pg_class c join pg_namespace n on n.oid=c.relnamespace
+        where n.nspname='public' and c.relname='${table}' and c.relforcerowsecurity`,
+    );
     const ok = browserReachable === 0 && serviceGrants === "SELECT"
-      && serviceColumnWrites === 0 && rls === 1;
+      && serviceColumnWrites === 0 && rls === 1 && (!requiresForcedRls || forcedRls === 1);
     if (!ok) failed = true;
     console.log(`  ${ok ? "✓" : "✗"} ${table}` + (ok ? ""
-      : `   ← browser=${browserReachable}, service=${serviceGrants}, column_writes=${serviceColumnWrites}, rls=${rls}`));
+      : `   ← browser=${browserReachable}, service=${serviceGrants}, column_writes=${serviceColumnWrites}, rls=${rls}, force_rls=${forcedRls}`));
   }
 
   console.log("\n── No-show fee and card-delivery service-only boundary ──\n");

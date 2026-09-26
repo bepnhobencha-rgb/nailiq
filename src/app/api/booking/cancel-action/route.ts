@@ -70,6 +70,9 @@ export async function GET(request: Request) {
     brand: !isRsvpPreview && preview.willCharge ? preview.cardBrand : null,
     currency: preview.currency,
     salonSlug: inspected.inspection.booking.salonSlug,
+    groupMemberAction: isRsvpPreview
+      ? inspected.inspection.booking.attendanceStatus === "confirmed" ? "cancel_attendance" : "decline_invitation"
+      : null,
   });
 }
 
@@ -99,7 +102,9 @@ export async function POST(request: Request) {
   const result = await cancelBookingWithManagementCapability({ tokenId, requestId });
   if (!result.ok) return json(result, errorStatus(result.code));
   const committed = result.result;
-  const isRsvpDecline = committed.groupId !== null && committed.rsvpSemantic === "decline" &&
+  // Individual group attendance never grants authority to charge the organizer.
+  // Keep this boundary independent of the receipt's RSVP wording.
+  const isRsvpDecline = committed.groupId !== null &&
     (committed.scopeKind === "member_own" || committed.scopeKind === "organizer_own");
   const preview = committed.cancelPreview;
   if (!preview) {

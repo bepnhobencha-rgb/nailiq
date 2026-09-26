@@ -1,6 +1,6 @@
 "use client";
 
-import { useCallback, useEffect, useState } from "react";
+import { useCallback, useEffect, useRef, useState } from "react";
 import { useSearchParams } from "next/navigation";
 import {
   acknowledgeBookingManagementRequest,
@@ -8,6 +8,7 @@ import {
   stableBookingManagementRequestId,
 } from "@/shared/booking/bookingManagementRequestId";
 import { isCommittedCancellationPaymentPending } from "@/shared/payments/paymentOutagePresentation";
+import { GroupReplacementOptions } from "@/components/booking/GroupReplacementOptions";
 
 type Preview = {
   ok: boolean;
@@ -21,6 +22,7 @@ type Preview = {
   brand?: string | null;
   currency?: string;
   salonSlug?: string | null;
+  groupMemberAction?: "cancel_attendance" | "decline_invitation" | null;
 };
 
 type CancelResponse = {
@@ -48,6 +50,12 @@ function fmtMoney(cents: number, currency: string): string {
 export default function CancelBookingPage() {
   const searchParams = useSearchParams();
   const token = searchParams?.get("token") ?? "";
+  const language = searchParams?.get("lang") === "vi" ? "vi" : "en";
+  const cancelInFlight = useRef(false);
+  const [replacementAccepted, setReplacementAccepted] = useState(false);
+  const onReplacementStatus = useCallback((status: "available" | "pending" | "accepted" | "unavailable") => {
+    setReplacementAccepted(status === "accepted");
+  }, []);
   const [state, setState] = useState<
     "preview" | "idle" | "loading" | "done" | "error" | "blocked" | "payment_pending"
   >(token ? "preview" : "error");
@@ -130,7 +138,9 @@ export default function CancelBookingPage() {
   }, [applyCommittedCancellation, applyCommittedPaymentPending, token]);
 
   async function handleCancel() {
+    if (cancelInFlight.current || replacementAccepted) return;
     if (!token) { setState("error"); setCode("missing_token"); return; }
+    cancelInFlight.current = true;
     setState("loading");
 
     try {
@@ -156,6 +166,8 @@ export default function CancelBookingPage() {
     } catch {
       setState("error");
       setCode("server_error");
+    } finally {
+      cancelInFlight.current = false;
     }
   }
 
@@ -192,11 +204,6 @@ export default function CancelBookingPage() {
               <span className="text-amber-300/80">
                 Đã tính phí huỷ trễ {fmtMoney(feeCharged.cents, feeCharged.currency)}{" "}
                 vào thẻ đã lưu.
-              </span>
-              <br />
-              <span className="mt-1 block text-emerald-300/90">
-                💚 If we rebook your spot, we&apos;ll refund this automatically. ·
-                Nếu chúng tôi lấp được chỗ, phí sẽ được hoàn lại tự động.
               </span>
             </p>
           )}
@@ -299,8 +306,9 @@ export default function CancelBookingPage() {
     return (
       <Shell>
         <div className="text-center">
-          <h1 className="text-xl font-semibold text-white">Unable to Cancel</h1>
-          <p className="mt-3 text-sm text-nq-muted">{errorMessages[code] ?? "An unexpected error occurred."}</p>
+          <h1 className="text-xl font-semibold text-white">{replacementAccepted ? "Replacement confirmed / Đã có người thay" : "Unable to Cancel"}</h1>
+          {!replacementAccepted && <p className="mt-3 text-sm text-nq-muted">{errorMessages[code] ?? "An unexpected error occurred."}</p>}
+          {token && <GroupReplacementOptions token={token} language={language} onStatusChange={onReplacementStatus} />}
         </div>
       </Shell>
     );
@@ -310,17 +318,29 @@ export default function CancelBookingPage() {
   const feeStr = willCharge
     ? fmtMoney(preview!.feeCents!, preview!.currency ?? "USD")
     : "";
-  const cardStr = preview?.last4
-    ? `${preview.brand ? `${preview.brand} ` : ""}•••• ${preview.last4}`
-    : "your card on file";
 
   return (
     <Shell>
       <div className="text-center">
-        <h1 className="text-2xl font-semibold text-white">Cancel Appointment</h1>
+        <h1 className="text-2xl font-semibold text-white">
+          {replacementAccepted ? "Replacement confirmed / Đã có người thay"
+            : preview?.groupMemberAction === "decline_invitation" ? "Decline invitation / Từ chối lời mời"
+            : "Cancel Appointment / Hủy lịch hẹn"}
+        </h1>
         <p className="mt-3 text-sm text-nq-muted">
-          Are you sure you want to cancel your appointment?
+          {replacementAccepted ? "The rest of the group keeps their appointments. / Nhóm còn lại vẫn giữ lịch."
+            : "Review the options below before confirming. / Xem các lựa chọn trước khi xác nhận."}
         </p>
+
+        {preview?.groupMemberAction && <GroupReplacementOptions token={token} language={language} onStatusChange={onReplacementStatus} />}
+
+        {preview?.groupMemberAction && !replacementAccepted && (
+          <p className="mt-4 rounded-xl border border-nq-border p-3 text-sm text-nq-muted">
+            This action changes only your attendance. No fee is authorized for this individual group cancellation; no card is charged here.
+            <br />
+            Chỉ thay đổi việc tham gia của bạn. Chính sách hiện tại chưa cho phép thu phí hủy riêng thành viên này; không trừ tiền tại đây.
+          </p>
+        )}
 
         {willCharge && (
           <div className="mt-5 rounded-xl border border-amber-500/40 bg-amber-500/10 px-4 py-3 text-left">
@@ -328,11 +348,10 @@ export default function CancelBookingPage() {
               ⚠ Late-cancellation fee / Phí huỷ trễ
             </p>
             <p className="mt-1 text-sm text-amber-200/90">
-              Because this is a late cancellation, a fee of <b>{feeStr}</b> will be
-              charged to {cardStr}.
+              A possible late-cancellation fee of <b>{feeStr}</b> requires salon Owner/Admin review. Confirming cancellation does not charge your card.
             </p>
             <p className="mt-1 text-sm text-amber-200/70">
-              Vì huỷ sát giờ hẹn, phí <b>{feeStr}</b> sẽ được tính vào thẻ đã lưu.
+              Phí hủy trễ dự kiến <b>{feeStr}</b> cần được chủ tiệm hoặc quản trị viên duyệt. Xác nhận hủy không tự trừ tiền.
             </p>
             {preview?.policyLockedByReschedule && (
               <p className="mt-2 text-xs text-amber-200/80">
@@ -342,15 +361,10 @@ export default function CancelBookingPage() {
                 vẫn được giữ.
               </p>
             )}
-            <p className="mt-2 border-t border-amber-500/20 pt-2 text-xs text-emerald-300/90">
-              💚 If we rebook your spot from the waitlist, this fee is refunded
-              automatically. · Nếu chúng tôi lấp được chỗ của bạn, phí sẽ được
-              hoàn lại tự động.
-            </p>
           </div>
         )}
 
-        <div className="mt-8 flex flex-col gap-3">
+        {!replacementAccepted && <div className="mt-8 flex flex-col gap-3">
           <button
             onClick={handleCancel}
             disabled={state === "loading"}
@@ -358,9 +372,9 @@ export default function CancelBookingPage() {
           >
             {state === "loading"
               ? "Cancelling…"
-              : willCharge
-                ? `Cancel & pay ${feeStr}`
-                : "Yes, cancel my appointment"}
+              : preview?.groupMemberAction === "decline_invitation"
+                ? "Decline invitation / Từ chối lời mời"
+                : "Confirm cancellation / Xác nhận hủy"}
           </button>
           <button
             onClick={() => window.history.back()}
@@ -368,7 +382,7 @@ export default function CancelBookingPage() {
           >
             Keep my appointment
           </button>
-        </div>
+        </div>}
       </div>
     </Shell>
   );

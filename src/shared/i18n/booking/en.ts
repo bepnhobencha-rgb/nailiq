@@ -660,6 +660,17 @@ export const bookingEn = {
 
   /** Strings used on the public /party/[token] page. */
   partyPage: {
+    memberStatuses: {
+      pending: "Awaiting attendance confirmation",
+      confirmed: "Confirmed",
+      replacement_pending: "Finding a replacement",
+      replacement_confirmed: "Replacement confirmed",
+      cancelled: "Cancelled",
+      declined: "Invitation declined",
+      completed: "Completed",
+      no_show: "No-show",
+    },
+    replacementReadOnly: "Previous guest replaced. Contact the salon to change this reservation.",
     errCardContactReview: "Your appointment is still reserved. Please contact the salon to change the phone number while card protection is linked.",
     /** Page header */
     invited: "You're invited!",

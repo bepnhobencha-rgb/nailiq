@@ -249,6 +249,7 @@ describe("query grammar injection inventory", () => {
       "20260913131209_scope_booking_crm_mutation_authority.sql",
       "20260925203046_bind_fee_provider_request_reference.sql",
       "20260925204601_bind_square_fee_webhook_customer.sql",
+      "20260926064325_group_slot_replacement_capabilities.sql",
     ]);
 
     // Reviewed migration-time rewrites operate on fixed catalog function
@@ -554,4 +555,22 @@ describe("query grammar injection inventory", () => {
       expect(block.indexOf("RAISE EXCEPTION")).toBeLessThan(block.indexOf("EXECUTE "));
     }
   });
+  it("bounds replacement migration rewrites to fixed catalog targets and checked literal anchors", () => {
+    const sql = fs.readFileSync(path.join(REPO, "supabase/migrations/20260926064325_group_slot_replacement_capabilities.sql"), "utf8");
+    const patch = sql.slice(sql.indexOf("DO $patch$"), sql.indexOf("$patch$;"));
+    expect([...patch.matchAll(/pg_get_functiondef\('([^']+)'::regprocedure\)/g)].map(match => match[1])).toEqual([
+      "public.booking_management_current_group_material(uuid,uuid)",
+      "public.booking_management_apply_group(uuid,uuid,text,jsonb)",
+      "public.update_party_booking_contact(uuid,uuid,text,text)",
+    ]);
+    expect(patch).toContain("RAISE EXCEPTION 'group material anchor mismatch'");
+    expect(patch).toContain("IF n<>6 THEN RAISE EXCEPTION 'group mutation anchor mismatch: %'");
+    expect(patch).toContain("RAISE EXCEPTION 'party contact anchor mismatch'");
+    expect([...patch.matchAll(/^\s*EXECUTE\s+([^;]+);/gm)].map(match => match[1])).toEqual([
+      "replace(def,anchor,replacement)", "replace(def,anchor,replacement)", "replace(def,anchor,replacement)",
+    ]);
+    expect(patch.match(/replacement:=anchor\|\|' AND NOT public\.group_slot_is_replaced_original\(b\.salon_id,b\.id\)';/g)).toHaveLength(2);
+    expect(patch).not.toMatch(/\bEXECUTE\s+(?:format\s*\(|p_|NEW\.|OLD\.)/i);
+  });
+
 });

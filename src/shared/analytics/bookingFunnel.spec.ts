@@ -11,6 +11,10 @@ import {
 } from "@/shared/analytics/bookingFunnel";
 
 describe("privacy-safe booking analytics", () => {
+  it("classifies replacement capabilities as private actions without token detail", () => {
+    expect(analyticsPageCategory("/booking/replace")).toBe("private_action");
+    expect(analyticsPageCategory("/booking/cancel")).toBe("private_action");
+  });
   afterEach(() => {
     vi.unstubAllGlobals();
   });

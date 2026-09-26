@@ -18,16 +18,18 @@ import { expect } from "vitest";
 // Fee delivery adds two service-only RPCs: gated reconciliation discovery and
 // customer-bound Square payment webhook. Fresh blank CI measured 602 functions;
 // configuration-preflight fee discovery adds one service-only RPC (603 total).
+// Group-slot recovery adds two SELECT-only service tables, 21 columns, eight
+// functions and nine indexes, measured by both blank CI migration jobs.
 // This is the local release contract, not a claim about Production's schema.
 const EXPECTED_RELEASE_SHAPE = {
-  tables: 246,
-  columns: 3803,
+  tables: 248,
+  columns: 3824,
   policies: 225,
-  functions: 603,
+  functions: 611,
   triggers: 169,
-  indexes: 1012,
+  indexes: 1021,
 };
-const EXPECTED_GRANTS = { anon: 57, authenticated: 79, service_role: 234 };
+const EXPECTED_GRANTS = { anon: 57, authenticated: 79, service_role: 236 };
 
 function numericObject(source: string, name: string): Record<string, number> {
   const file = ts.createSourceFile("check-schema-parity.ts", source, ts.ScriptTarget.Latest, true);
