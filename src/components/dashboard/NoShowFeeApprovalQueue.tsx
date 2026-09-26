@@ -10,6 +10,8 @@ import {
   type NoShowFeeReviewQueueItem,
 } from "@/shared/noshow/noShowFeeApprovalActions";
 
+import { FeeCollectionConfirmation, feePaymentStatusLabel, useFeeQueueMutation } from "./FeeCollectionConfirmation";
+
 function formatTime(isoUtc: string): string {
   try {
     return new Date(isoUtc).toLocaleString("en-US", {
@@ -49,59 +51,32 @@ function NoShowFeeApprovalQueueContent({
 }) {
   const router = useRouter();
   const { language } = useUserLanguage();
-  const [pendingId, setPendingId] = useState<string | null>(null);
-  const [message, setMessage] = useState<string | null>(null);
   const vi = language === "vi";
+  const [confirmation, setConfirmation] = useState<{ item: NoShowFeeReviewQueueItem; amount: string } | null>(null);
+  const { pendingId, message, unconfirmedIds, run } = useFeeQueueMutation(vi, () => router.refresh());
 
   async function request(item: NoShowFeeReviewQueueItem) {
-    setPendingId(item.decisionId);
-    setMessage(null);
-    const result = await requestNoShowFeeReview(slug, {
-      salonId,
-      decisionId: item.decisionId,
-    });
-    setPendingId(null);
-    setMessage(result.ok
-      ? vi ? "Đã tạo phiếu để Owner duyệt." : "Owner review created."
-      : result.error);
-    if (result.ok) router.refresh();
+    await run(item.decisionId, () => requestNoShowFeeReview(slug, { salonId, decisionId: item.decisionId }),
+      vi ? "Đã tạo phiếu để Owner duyệt." : "Owner review created.");
   }
 
   async function decide(item: NoShowFeeReviewQueueItem, action: "charge" | "waive") {
-    if (!item.reviewId) return;
-    setPendingId(item.reviewId);
-    setMessage(null);
-    const result = await decideNoShowFeeReview(slug, {
-      salonId,
-      reviewId: item.reviewId,
-      action,
-    });
-    setPendingId(null);
-    setMessage(result.ok
-      ? action === "charge"
-        ? vi ? "Đã duyệt. Chưa gửi lệnh thu tiền; cổng phát hành vẫn đang tắt." : "Approved. No payment was sent; release dispatch remains off."
-        : vi ? "Đã miễn phí và lưu biên nhận." : "Waived with an immutable receipt."
-      : result.error);
-    if (result.ok) router.refresh();
+    const reviewId = item.reviewId;
+    if (!reviewId) return;
+    await run(reviewId, () => decideNoShowFeeReview(slug, { salonId, reviewId, action }),
+      action === "charge"
+        ? vi ? "Đã duyệt. Chưa gửi lệnh thanh toán; Thu là bước riêng." : "Approved. No payment was sent. Collection is a separate step."
+        : vi ? "Đã miễn phí và lưu biên nhận." : "Waived with a receipt.");
   }
 
-  async function dispatch(item: NoShowFeeReviewQueueItem, amount: string) {
-    if (!item.reviewId) return;
-    const confirmed = window.confirm(vi
-      ? `Xác nhận thu ${amount} từ ${item.cardBrand} •••• ${item.cardLast4}. Square sẽ xử lý tiền thật. Thao tác này chống thu trùng.`
-      : `Confirm a real ${amount} charge to ${item.cardBrand} •••• ${item.cardLast4}. Square will process real money. Duplicate charges are blocked.`);
-    if (!confirmed) return;
-    setPendingId(item.reviewId);
-    setMessage(null);
-    const result = await dispatchApprovedNoShowFee(slug, {
-      salonId,
-      reviewId: item.reviewId,
-    });
-    setPendingId(null);
-    setMessage(result.ok
-      ? vi ? `Đã thu thành công ${amount}; đã lưu biên nhận Square.` : `${amount} collected; Square receipt recorded.`
-      : result.error);
-    router.refresh();
+  async function collectConfirmed() {
+    if (!confirmation?.item.reviewId) return;
+    const { item, amount } = confirmation;
+    const reviewId = item.reviewId!;
+    const accepted = await run(reviewId, () => dispatchApprovedNoShowFee(slug, {
+      salonId, reviewId,
+    }), vi ? `Đã thu thành công ${amount}; đã lưu biên nhận.` : `${amount} collected; provider receipt recorded.`, true);
+    if (accepted) setConfirmation(null);
   }
 
   return (
@@ -116,7 +91,7 @@ function NoShowFeeApprovalQueueContent({
       </p>
       <div className="mt-3 space-y-3">
         {items.map((item) => {
-          const busy = pendingId === (item.reviewId ?? item.decisionId);
+          const busy = pendingId !== null;
           const amount = new Intl.NumberFormat(vi ? "vi-VN" : "en-CA", {
             style: "currency",
             currency: item.currency,
@@ -151,11 +126,11 @@ function NoShowFeeApprovalQueueContent({
                       {vi ? "Miễn phí" : "Waive"}
                     </button>
                   </>
-                ) : item.state === "approved_charge" && item.paymentStatus === "dispatch_blocked" ? (
+                ) : item.state === "approved_charge" && item.paymentStatus === "dispatch_blocked" && !unconfirmedIds.has(item.reviewId ?? "") ? (
                   <button
                     type="button"
                     disabled={busy}
-                    onClick={() => void dispatch(item, amount)}
+                    onClick={() => setConfirmation({ item, amount })}
                     className="min-h-11 rounded-lg bg-nq-warning px-3 py-1.5 text-xs font-bold text-black disabled:cursor-not-allowed disabled:opacity-50"
                   >
                     {vi ? `Thu ngay ${amount}` : `Collect ${amount} now`}
@@ -166,7 +141,9 @@ function NoShowFeeApprovalQueueContent({
                   </button>
                 ) : item.state !== "ready_to_request" ? (
                   <span className="rounded-full border border-nq-border px-2 py-1 text-xs text-nq-muted">
-                    {item.state} · {item.paymentStatus}
+                    {unconfirmedIds.has(item.reviewId ?? "") && item.paymentStatus === "dispatch_blocked"
+                      ? vi ? "Kết quả chưa rõ — tải lại để kiểm tra" : "Result unconfirmed — reload to check"
+                      : feePaymentStatusLabel(item.state, item.paymentStatus, vi)}
                   </span>
                 ) : null}
               </div>
@@ -175,6 +152,17 @@ function NoShowFeeApprovalQueueContent({
         })}
       </div>
       {message ? <p className="mt-3 text-xs text-nq-muted" role="status">{message}</p> : null}
+      <FeeCollectionConfirmation
+        isOpen={confirmation !== null}
+        amount={confirmation?.amount ?? ""}
+        cardBrand={confirmation?.item.cardBrand ?? ""}
+        cardLast4={confirmation?.item.cardLast4 ?? ""}
+        kind="no-show"
+        vi={vi}
+        busy={pendingId !== null}
+        onCancel={() => setConfirmation(null)}
+        onConfirm={() => void collectConfirmed()}
+      />
     </section>
   );
 }

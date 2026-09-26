@@ -88,8 +88,12 @@ describe("no-show fee approval boundary", () => {
 
   it("keeps approval and real-money dispatch as two explicit Owner/Admin actions", () => {
     expect(queue).toContain("dispatchApprovedNoShowFee");
-    expect(queue).toContain("window.confirm");
-    expect(queue).toContain("Square will process real money");
+    expect(queue).toContain("<FeeCollectionConfirmation");
+    expect(queue).toContain("onClick={() => setConfirmation({ item, amount })}");
+    expect(queue).toContain("onConfirm={() => void collectConfirmed()}");
+    expect(queue).toContain("onCancel={() => setConfirmation(null)}");
+    expect(queue).not.toContain("window.confirm");
+    expect(queue).toContain("Collection is a separate step.");
     expect(queue).toContain("Collect ${amount} now");
     expect(queue).toContain("Reconciling — do not retry");
   });

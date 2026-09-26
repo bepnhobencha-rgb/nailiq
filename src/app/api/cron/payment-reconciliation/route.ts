@@ -8,6 +8,7 @@ import {
   type ClaimedPublicDepositPaymentOperation,
 } from "@/shared/payments/bookingPaymentOperations";
 import { dispatchClaimedBookingPaymentOperation } from "@/shared/payments/executeBookingPaymentOperation";
+import { claimReadyFeePaymentReconciliations, preflightFeePaymentReconciliation, preflightProviderForClaim } from "@/shared/payments/preflightFeePaymentReconciliation";
 import { derivePublicDepositFinalizeToken } from "@/shared/payments/publicDepositFinalizeCapability";
 import { toProviderMinorAmount } from "@/shared/payments/providerMinorUnits";
 import { reconcileSquareHostedDepositClaim } from "@/shared/integrations/square/deposits";
@@ -17,6 +18,7 @@ import { runTrackedCron } from "@/shared/security/cronRunHistory";
 import { reconcileBookingCardSaveOperations } from "@/shared/booking/reconcileBookingCardSaveOperations";
 import { reconcileBookingCardContinuations } from "@/shared/booking/reconcileBookingCardContinuations";
 import {
+  allowsApprovedCancellationFeeDispatch,
   allowsApprovedNoShowChargeDispatch,
   v1AllowsCustomerPaymentGateway,
 } from "@/shared/release/v1IntegrationScope";
@@ -179,6 +181,22 @@ export async function GET(request: NextRequest) {
       }, { status: workerOk ? 200 : 503 });
     }
     const db = createServiceRoleClient();
+    // Pass release scope into discovery, before SQL leases rows or increments
+    // attempts. The RPC also filters fee salons by their current allowlist.
+    const operationKinds = ["deposit_charge", "deposit_refund"];
+    const feeScopes: Parameters<typeof preflightFeePaymentReconciliation>[1] = [];
+    if (v1AllowsCustomerPaymentGateway()) {
+      operationKinds.push("noshow_refund", "late_cancel_refund");
+    }
+    if (v1AllowsCustomerPaymentGateway() || allowsApprovedNoShowChargeDispatch()) {
+      feeScopes.push({ kind: "noshow_charge", ...(allowsApprovedNoShowChargeDispatch()
+        ? { purpose: "approved_no_show_charge" as const } : {}) });
+    }
+    if (v1AllowsCustomerPaymentGateway() || allowsApprovedCancellationFeeDispatch()) {
+      feeScopes.push({ kind: "late_cancel_charge", ...(allowsApprovedCancellationFeeDispatch()
+        ? { purpose: "approved_cancellation_fee" as const } : {}) });
+    }
+    const feePreflight = await preflightFeePaymentReconciliation(db, feeScopes);
     const squareEnvironment = process.env.SQUARE_PUBLIC_DEPOSIT_RECONCILIATION_ENVIRONMENT;
     const squareDiscoveryEnabled = squareEnvironment === "sandbox" || squareEnvironment === "production";
     let squareDiscovered: { data: unknown; error: unknown } = { data: [], error: null };
@@ -205,22 +223,27 @@ export async function GET(request: NextRequest) {
     }
     let discovered: { data: unknown; error: unknown };
     try {
-      discovered = await db.rpc("discover_due_booking_payment_reconciliations", {
+      discovered = await db.rpc("discover_due_enabled_booking_payment_reconciliations" as never, {
+        p_operation_kinds: operationKinds,
         p_limit: 25,
-      });
+      } as never);
     } catch {
       discovered = { data: null, error: new Error("discovery_unavailable") };
     }
     if (discovered.error || !Array.isArray(discovered.data)) {
       return NextResponse.json({ ok: false, code: "discovery_unavailable" }, { status: 503 });
     }
+    // Preserve the existing shared 25-operation budget after splitting fees
+    // into a configuration-preflighted claim path.
+    await claimReadyFeePaymentReconciliations(db, feePreflight, Math.max(0, 25 - discovered.data.length));
     const dueOperations = [
       ...(squareDiscovered.data as unknown[]),
       ...discovered.data,
+      ...feePreflight.claims,
     ];
     let processed = 0;
     let succeeded = 0;
-    let unresolved = 0;
+    let unresolved = feePreflight.unresolved;
     for (const value of dueOperations) {
       const item = record(value);
       const operationKind = typeof item?.operation_kind === "string"
@@ -293,7 +316,10 @@ export async function GET(request: NextRequest) {
       }
       const approvedNoShowReconciliation = operationKind === "noshow_charge" &&
         allowsApprovedNoShowChargeDispatch();
-      if (!v1AllowsCustomerPaymentGateway() && !approvedNoShowReconciliation && [
+      const approvedCancellationReconciliation = operationKind === "late_cancel_charge" &&
+        allowsApprovedCancellationFeeDispatch();
+      if (!v1AllowsCustomerPaymentGateway() && !approvedNoShowReconciliation &&
+          !approvedCancellationReconciliation && [
         "noshow_charge",
         "late_cancel_charge",
         "noshow_refund",
@@ -318,11 +344,20 @@ export async function GET(request: NextRequest) {
         unresolved += 1;
         continue;
       }
+      const feeCharge = operationKind === "noshow_charge" || operationKind === "late_cancel_charge";
+      const readyProvider = feeCharge ? preflightProviderForClaim(feePreflight, claim) : null;
+      if (feeCharge && !readyProvider) {
+        unresolved += 1;
+        continue;
+      }
       const result = await dispatchClaimedBookingPaymentOperation({
         db: db as never,
         claim,
+        ...(readyProvider ? { provider: readyProvider } : {}),
         ...(approvedNoShowReconciliation
           ? { providerPurpose: "approved_no_show_charge" as const }
+          : approvedCancellationReconciliation
+            ? { providerPurpose: "approved_cancellation_fee" as const }
           : {}),
       });
       if (result.ok) succeeded += 1;
@@ -334,6 +369,10 @@ export async function GET(request: NextRequest) {
     processed += continuationResult.processed;
     unresolved += continuationResult.errors;
     const reconciliationDetails = {
+      ...(feeScopes.length ? { feePreflight: {
+        unresolved: feePreflight.unresolved,
+        scanLimitReached: feePreflight.scanLimitReached,
+      } } : {}),
       ...(cardWorkerEnabled ? { card: cardResult } : {}),
       ...(continuationWorkerEnabled ? { continuation: continuationResult } : {}),
     };

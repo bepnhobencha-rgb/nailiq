@@ -369,7 +369,10 @@ const RELEASE_SHAPE = {
   // +1 R11 service-only atomic expired-grace pause with audit.
   // +1 P1-01 service-only Waitlist terminal-delivery truth projection.
   // +5 P1-05 trial entitlement, booking/write, and charge-boundary functions.
-  functions: 600,
+  // +2 from 20260925202830/20260925204601: gated fee reconciliation
+  // discovery and customer-bound Square webhook; legacy RPCs remain.
+  // +1 from 20260925220858: ready-ID fee claims after configuration preflight.
+  functions: 603,
   // +4 pending-receipt correlation triggers across notification/staff INSERT
   // and provider-SID transitions.
   // +1 V1 terminal-booking policy trigger.
@@ -816,6 +819,8 @@ const CRITICAL_FUNCTIONS = [
   "resume_public_deposit_customer_confirmation",
   "bind_public_deposit_payment_operation",
   "discover_due_booking_payment_reconciliations",
+  "discover_due_enabled_booking_payment_reconciliations",
+  "discover_due_ready_fee_payment_reconciliations",
   "discover_due_public_square_deposit_reconciliations",
   "discover_due_unbound_deposit_compensations",
   "claim_due_unbound_deposit_refund",
@@ -969,6 +974,7 @@ const CRITICAL_FUNCTIONS = [
   "claim_approved_cancellation_fee_payment",
   "sync_approved_cancellation_fee_payment_outcome",
   "record_square_payment_webhook_event",
+  "record_square_payment_webhook_event_bound",
   "load_public_group_sequence_readiness",
   "resolve_public_group_sequence_quote",
   "quote_public_group_booking_sequences",

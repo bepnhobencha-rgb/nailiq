@@ -11,6 +11,8 @@ import {
 } from "@/shared/noshow/lateCancellationFeeApprovalActions";
 import { dispatchApprovedCancellationFee } from "@/shared/noshow/cancellationFeeDispatchActions";
 
+import { FeeCollectionConfirmation, feePaymentStatusLabel, useFeeQueueMutation } from "./FeeCollectionConfirmation";
+
 function formatUtcMinute(iso: string): string {
   const date = new Date(iso);
   return Number.isFinite(date.getTime())
@@ -30,54 +32,27 @@ export function LateCancellationFeeApprovalQueue({
   const router = useRouter();
   const { language } = useUserLanguage();
   const vi = language === "vi";
-  const [pendingId, setPendingId] = useState<string | null>(null);
-  const [message, setMessage] = useState<string | null>(null);
+  const [confirmation, setConfirmation] = useState<{ item: LateCancellationFeeReviewQueueItem; amount: string } | null>(null);
+  const { pendingId, message, unconfirmedIds, run } = useFeeQueueMutation(vi, () => router.refresh());
   if (items.length === 0) return null;
 
-  async function decide(
-    item: LateCancellationFeeReviewQueueItem,
-    action: "charge" | "waive",
-  ) {
-    setPendingId(item.reviewId);
-    setMessage(null);
-    const result = await decideLateCancellationFeeReview(slug, {
-      salonId,
-      reviewId: item.reviewId,
-      action,
-    });
-    setPendingId(null);
-    setMessage(result.ok
-      ? action === "charge"
-        ? vi
-          ? "Đã duyệt đúng số tiền. Chưa gửi lệnh thu; bước tiền vẫn bị khóa."
-          : "Exact amount approved. No payment was sent; dispatch remains blocked."
-        : vi
-          ? "Đã miễn phí và lưu biên nhận bất biến."
-          : "Fee waived with an immutable receipt."
-      : result.error);
-    if (result.ok) router.refresh();
+  async function decide(item: LateCancellationFeeReviewQueueItem, action: "charge" | "waive") {
+    const reviewId = item.reviewId;
+    if (!reviewId) return;
+    await run(reviewId, () => decideLateCancellationFeeReview(slug, { salonId, reviewId, action }),
+      action === "charge"
+        ? vi ? "Đã duyệt. Chưa gửi lệnh thanh toán; Thu là bước riêng." : "Approved. No payment was sent. Collection is a separate step."
+        : vi ? "Đã miễn phí và lưu biên nhận." : "Waived with a receipt.");
   }
 
-  async function collect(
-    item: LateCancellationFeeReviewQueueItem,
-    amount: string,
-  ) {
-    const confirmed = window.confirm(vi
-      ? `Thu đúng ${amount} từ thẻ •••• ${item.cardLast4}? Hành động này có thể chuyển tiền thật.`
-      : `Collect exactly ${amount} from card •••• ${item.cardLast4}? This may move real money.`);
-    if (!confirmed) return;
-    setPendingId(item.reviewId);
-    setMessage(null);
-    const result = await dispatchApprovedCancellationFee(slug, {
-      salonId,
-      reviewId: item.reviewId,
-      reviewKind: "late",
-    });
-    setPendingId(null);
-    setMessage(result.ok
-      ? vi ? "Đã thu phí và nhận biên nhận nhà cung cấp." : "Fee collected with a provider receipt."
-      : result.error);
-    router.refresh();
+  async function collectConfirmed() {
+    if (!confirmation?.item.reviewId) return;
+    const { item, amount } = confirmation;
+    const reviewId = item.reviewId!;
+    const accepted = await run(reviewId, () => dispatchApprovedCancellationFee(slug, {
+      salonId, reviewId, reviewKind: "late",
+    }), vi ? `Đã thu thành công ${amount}; đã lưu biên nhận.` : `${amount} collected; provider receipt recorded.`, true);
+    if (accepted) setConfirmation(null);
   }
 
   return (
@@ -95,7 +70,7 @@ export function LateCancellationFeeApprovalQueue({
       </p>
       <div className="mt-3 space-y-3">
         {items.map((item) => {
-          const busy = pendingId === item.reviewId;
+          const busy = pendingId !== null;
           const amount = new Intl.NumberFormat(vi ? "vi-VN" : "en-CA", {
             style: "currency",
             currency: item.currency,
@@ -142,18 +117,20 @@ export function LateCancellationFeeApprovalQueue({
                     </Button>
                   </>
                 ) : item.state === "approved_charge" &&
-                    item.paymentStatus === "dispatch_blocked" ? (
+                    item.paymentStatus === "dispatch_blocked" && !unconfirmedIds.has(item.reviewId ?? "") ? (
                   <Button
                     size="md"
                     variant="secondary"
                     loading={busy}
-                    onClick={() => void collect(item, amount)}
+                    onClick={() => setConfirmation({ item, amount })}
                   >
                     {vi ? `Thu ${amount}` : `Collect ${amount}`}
                   </Button>
                 ) : (
                   <span className="rounded-full border border-nq-border px-2 py-1 text-xs text-nq-muted">
-                    {item.state} · {item.paymentStatus}
+                    {unconfirmedIds.has(item.reviewId ?? "") && item.paymentStatus === "dispatch_blocked"
+                      ? vi ? "Kết quả chưa rõ — tải lại để kiểm tra" : "Result unconfirmed — reload to check"
+                      : feePaymentStatusLabel(item.state, item.paymentStatus, vi)}
                   </span>
                 )}
               </div>
@@ -164,6 +141,17 @@ export function LateCancellationFeeApprovalQueue({
       {message ? (
         <p className="mt-3 text-xs text-nq-muted" role="status">{message}</p>
       ) : null}
+      <FeeCollectionConfirmation
+        isOpen={confirmation !== null}
+        amount={confirmation?.amount ?? ""}
+        cardBrand={confirmation?.item.cardBrand ?? ""}
+        cardLast4={confirmation?.item.cardLast4 ?? ""}
+        kind="late"
+        vi={vi}
+        busy={pendingId !== null}
+        onCancel={() => setConfirmation(null)}
+        onConfirm={() => void collectConfirmed()}
+      />
     </section>
   );
 }

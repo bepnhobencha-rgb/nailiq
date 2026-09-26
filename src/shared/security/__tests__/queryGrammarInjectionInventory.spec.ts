@@ -91,6 +91,7 @@ describe("query grammar injection inventory", () => {
       "src/shared/booking/cardProtectionExceptionActions.ts": 1,
       "src/shared/dashboard/availabilityEngine.ts": 2,
       "src/shared/groupbooking/agentLateDecline.ts": 1,
+      "src/shared/payments/preflightFeePaymentReconciliation.ts": 2,
       "src/shared/superadmin/agentCertificationActions.ts": 1,
       "src/shared/superadmin/auditLogActions.ts": 1,
       "src/shared/superadmin/releaseReviewEmail.ts": 1,
@@ -104,6 +105,7 @@ describe("query grammar injection inventory", () => {
       "src/shared/ai/lessons.ts",
       "src/shared/dashboard/availabilityEngine.ts",
       "src/shared/dashboard/availabilityEngine.ts",
+      "src/shared/payments/preflightFeePaymentReconciliation.ts",
       "src/shared/superadmin/agentCertificationActions.ts",
       "src/shared/superadmin/auditLogActions.ts",
       "src/shared/superadmin/releaseReviewEmail.ts",
@@ -163,6 +165,19 @@ describe("query grammar injection inventory", () => {
     expect(auditLogs.indexOf("if (cursor !== null && !decoded)")).toBeLessThan(
       auditLogs.indexOf("createServiceRoleClient()"),
     );
+    const feePreflight = fs.readFileSync(
+      path.join(REPO, "src/shared/payments/preflightFeePaymentReconciliation.ts"),
+      "utf8",
+    );
+    // Only a server-generated ISO timestamp enters the reviewed due-state
+    // grammar. Tenant IDs, provider material and user input use typed filters.
+    expect(feePreflight).toContain("const now = new Date().toISOString()");
+    for (const call of templated.filter((item) =>
+      item.file === "src/shared/payments/preflightFeePaymentReconciliation.ts")) {
+      const template = unwrapExpression(call.argument) as ts.TemplateExpression;
+      expect(template.templateSpans.map((span) => span.expression.getText(call.sourceFile)))
+        .toEqual(["now", "now", "now", "now"]);
+    }
   });
 
   it("has no PostgREST filter call that accepts a raw grammar operator", () => {
@@ -232,7 +247,22 @@ describe("query grammar injection inventory", () => {
       "20260913034721_scope_booking_otp_channel_authority.sql",
       "20260913130949_require_sms_for_phone_bound_incentives.sql",
       "20260913131209_scope_booking_crm_mutation_authority.sql",
+      "20260925203046_bind_fee_provider_request_reference.sql",
+      "20260925204601_bind_square_fee_webhook_customer.sql",
     ]);
+
+    // Reviewed migration-time rewrites operate on fixed catalog function
+    // identities and literal anchors. No request data builds executable SQL.
+    for (const filename of [
+      "20260925203046_bind_fee_provider_request_reference.sql",
+      "20260925204601_bind_square_fee_webhook_customer.sql",
+    ]) {
+      const source = fs.readFileSync(path.join(migrationRoot, filename), "utf8");
+      expect(source).toContain("pg_get_functiondef('public.");
+      expect(source).toContain("prerequisite drift");
+      expect(source).toContain("<> 1 THEN");
+      expect(source).toMatch(/BEGIN;[\s\S]*COMMIT;/);
+    }
 
     const sequenceCardPolicy = fs.readFileSync(
       path.join(

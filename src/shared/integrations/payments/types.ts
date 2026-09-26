@@ -53,6 +53,16 @@ export interface RefundResult {
 export interface PaymentProvider {
   readonly kind: PaymentProviderKind;
 
+  /** Pure local identity check against the already-resolved configuration.
+   * Allows workers to reject stale account bindings before leasing an operation. */
+  assertPaymentIdentity?(input: {
+    providerAccountId?: string;
+    providerLocationId?: string | null;
+    providerEnvironment?: "sandbox" | "production" | null;
+    providerCurrency?: string;
+    providerAccountFingerprint?: string;
+  }): void;
+
   /** Match/create the customer and save a tokenized card on file — NO charge.
    *  `sourceToken` is the client tokenization result (Square Web Payments SDK
    *  nonce / Stripe PaymentMethod or SetupIntent). */

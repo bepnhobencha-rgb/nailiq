@@ -215,3 +215,17 @@ describe("parseClaimedPublicDepositPaymentOperation", () => {
     })).toBeNull();
   });
 });
+
+
+describe("durable fee request metadata", () => {
+  it("accepts the new booking-bound reference and preserves legacy absence", () => {
+    expect(parseBookingPaymentOperationMaterial({ ...base, provider_request_reference: bookingId }, "noshow_charge"))
+      .toMatchObject({ providerRequestReference: bookingId });
+    expect(parseBookingPaymentOperationMaterial(base, "noshow_charge"))
+      .not.toHaveProperty("providerRequestReference");
+  });
+  it.each(["booking:" + bookingId, salonId, "", 123])("rejects invalid or foreign reference %s", (reference) => {
+    expect(parseBookingPaymentOperationMaterial({ ...base, provider_request_reference: reference }, "noshow_charge"))
+      .toBeNull();
+  });
+});

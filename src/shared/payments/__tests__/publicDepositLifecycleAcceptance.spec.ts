@@ -111,7 +111,7 @@ describe("public deposit crash/replay lifecycle acceptance", () => {
   });
 
   it("runs a generic due reconciliation worker without blind redispatch", () => {
-    expect(runtimeSource).toMatch(/discover_due_booking_payment_reconciliations/);
+    expect(runtimeSource).toMatch(/discover_due_enabled_booking_payment_reconciliations/);
     expect(runtimeSource).toMatch(/claim_booking_payment_operation_reconciliation/);
     expect(runtimeSource).toMatch(/dispatchClaimedBookingPaymentOperation/);
   });
