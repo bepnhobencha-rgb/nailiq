@@ -203,7 +203,9 @@ export function SocialAuthButtons({
     startTransition(async () => {
       let result: Awaited<ReturnType<typeof sendEmailMagicLink>>;
       try {
-        result = await sendEmailMagicLink(normalized, next);
+        result = next
+          ? await sendEmailMagicLink(normalized, next)
+          : await sendEmailMagicLink(normalized);
       } catch {
         // A proxy rejection or lost response never reaches the action's typed
         // result. Preserve the draft; do not replay an uncertain email request.
