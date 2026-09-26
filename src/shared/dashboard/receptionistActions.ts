@@ -2303,7 +2303,7 @@ export async function cancelDeskGroup(
   | {
       ok: true;
       cancelledCount: number;
-      fee: { state: string; amountCents: number; currency: string };
+      fee: { state: string; amountCents: number; currency: string; reason?: string };
       customerNotification: {
         sms: "queued" | "not_requested";
         email: "queued" | "not_requested";
@@ -2345,6 +2345,7 @@ export async function cancelDeskGroup(
   let feeState = "not_applicable";
   let feeCents = 0;
   let feeCurrency = "CAD";
+  let feeReason: string | undefined;
 
   if (memberActorId) {
     const serviceDb = createServiceRoleClient();
@@ -2401,6 +2402,7 @@ export async function cancelDeskGroup(
     feeState = String(row.fee_state ?? "not_applicable");
     feeCents = Number(row.fee_cents ?? 0);
     feeCurrency = String(row.fee_currency ?? "CAD");
+    feeReason = typeof row.fee_reason === "string" ? row.fee_reason : undefined;
   } else {
     const { data: cancelled, error: upErr } = await ctx.supabase
       .from("bookings")
@@ -2442,7 +2444,7 @@ export async function cancelDeskGroup(
   return {
     ok: true,
     cancelledCount: ids.length,
-    fee: { state: feeState, amountCents: feeCents, currency: feeCurrency },
+    fee: { state: feeState, amountCents: feeCents, currency: feeCurrency, reason: feeReason },
     customerNotification: {
       sms: notifySms ? "queued" : "not_requested",
       email: notifyEmail ? "queued" : "not_requested",

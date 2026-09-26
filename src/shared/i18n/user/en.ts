@@ -1458,6 +1458,7 @@ export type UserMessages = {
       cancelFeeReview: string;
       cancelFeeWaive: string;
       cancelFeeNotApplicable: string;
+      cancelFeeSafetyBlocked: string;
       cancelSmsDisabled: string;
       cancelFeeQueued: (amount: string) => string;
       cancelFeeWaivedSuccess: string;
@@ -1878,6 +1879,7 @@ export type UserMessages = {
       groupFeeQueuedForReview: (amount: string) => string;
       groupFeeWaived: string;
       groupFeeNotApplicable: string;
+      groupFeeSafetyBlocked: string;
       groupSmsDisabledWarning: string;
       groupNotificationQueued: (sms: boolean, email: boolean) => string;
       groupCancelSuccess: (n: number, fee: string, notification: string) => string;
@@ -4256,6 +4258,7 @@ export const userEn: UserMessages = {
       cancelFeeReview: "Cancel and send for review",
       cancelFeeWaive: "Cancel and waive fee",
       cancelFeeNotApplicable: "No cancellation fee applies.",
+      cancelFeeSafetyBlocked: "Fee collection blocked: saved consent or the amount needs owner review. No payment was sent.",
       cancelSmsDisabled: "SMS is OFF. The organizer will not receive a text.",
       cancelFeeQueued: (amount) => `${amount} queued for owner/admin review; not charged.`,
       cancelFeeWaivedSuccess: "Fee waived; no charge.",
@@ -4653,6 +4656,7 @@ export const userEn: UserMessages = {
       groupFeeQueuedForReview: (amount) => `${amount} queued for owner/admin review; not charged.`,
       groupFeeWaived: "Fee waived; no charge.",
       groupFeeNotApplicable: "No cancellation fee applies.",
+      groupFeeSafetyBlocked: "Fee collection blocked: saved consent or the amount needs owner review. No payment was sent.",
       groupSmsDisabledWarning: "SMS is OFF for this salon. The customer will not receive a text unless SMS is enabled before this action.",
       groupNotificationQueued: (sms, email) => {
         const channels = [sms ? "SMS" : null, email ? "email" : null].filter(Boolean);

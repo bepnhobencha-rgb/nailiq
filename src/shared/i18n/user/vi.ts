@@ -1684,6 +1684,7 @@ export const userVi: UserMessages = {
       cancelFeeReview: "Huỷ và gửi duyệt phí",
       cancelFeeWaive: "Huỷ và miễn phí",
       cancelFeeNotApplicable: "Không áp dụng phí huỷ.",
+      cancelFeeSafetyBlocked: "Chưa thể thu phí: chủ tiệm cần kiểm tra sự đồng ý đã lưu hoặc số tiền. Chưa gửi lệnh thanh toán.",
       cancelSmsDisabled: "SMS đang OFF. Người tổ chức sẽ không nhận tin nhắn.",
       cancelFeeQueued: (amount) => `${amount} đã xếp hàng chờ chủ/admin duyệt; chưa thu tiền.`,
       cancelFeeWaivedSuccess: "Đã miễn phí; không thu tiền.",
@@ -2078,6 +2079,7 @@ export const userVi: UserMessages = {
       groupFeeQueuedForReview: (amount) => `${amount} đã xếp hàng chờ chủ/admin duyệt; chưa thu tiền.`,
       groupFeeWaived: "Đã miễn phí; không thu tiền.",
       groupFeeNotApplicable: "Không áp dụng phí huỷ.",
+      groupFeeSafetyBlocked: "Chưa thể thu phí: chủ tiệm cần kiểm tra sự đồng ý đã lưu hoặc số tiền. Chưa gửi lệnh thanh toán.",
       groupSmsDisabledWarning: "SMS của salon đang OFF. Khách sẽ không nhận tin nhắn nếu chưa bật SMS trước thao tác này.",
       groupNotificationQueued: (sms, email) => {
         const channels = [sms ? "SMS" : null, email ? "email" : null].filter(Boolean);

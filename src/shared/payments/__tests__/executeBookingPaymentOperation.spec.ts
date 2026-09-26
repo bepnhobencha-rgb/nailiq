@@ -312,6 +312,20 @@ describe("runApprovedCancellationFeePayment", () => {
     expect(result).toMatchObject({ ok: true, status: "succeeded" });
   });
 
+  it.each(["group_fee_consent_invalid", "group_fee_amount_exceeds_cap", "group_fee_snapshot_invalid", "group_fee_consent_changed"])(
+    "does not dispatch a group fee rejected by SQL: %s", async (code) => {
+      const rpc = vi.fn().mockResolvedValue({ data: { success: false, code }, error: null });
+      const paymentProvider = provider();
+      const result = await runApprovedCancellationFeePayment({
+        db: { rpc }, salonId: claim.material.salonId, reviewId, reviewKind: "group",
+        actorUserId, actorRole: "owner", provider: paymentProvider,
+      });
+      expect(result).toMatchObject({ ok: false, status: "not_claimed", reason: code });
+      expect(paymentProvider.chargeSavedCard).not.toHaveBeenCalled();
+      expect(rpc).toHaveBeenCalledTimes(1);
+    },
+  );
+
   it("never calls a provider when SQL cannot prove the approval receipt", async () => {
     const rpc = vi.fn().mockResolvedValue({
       data: { success: false, code: "approval_receipt_mismatch" },
