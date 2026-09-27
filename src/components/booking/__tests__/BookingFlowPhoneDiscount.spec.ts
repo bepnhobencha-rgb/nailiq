@@ -41,6 +41,7 @@ vi.mock("react", async (original) => {
 });
 
 vi.mock("next/navigation", () => ({ useRouter: () => ({ replace: vi.fn(), refresh: vi.fn() }) }));
+vi.mock("@/components/booking/bookingConfetti", () => ({ fireBookingConfetti: vi.fn() }));
 vi.mock("@/shared/release/v1IntegrationScope", () => ({ v1AllowsNoShowCardOnFile: () => true }));
 vi.mock("@/shared/noshow/resolveNoShowCardRequirement", () => ({ resolveNoShowCardRequirement: mocks.requirement }));
 vi.mock("@/shared/booking/submitPublicBooking", () => ({ quotePublicBooking: mocks.quote, submitPublicBooking: mocks.submit, BookingConflictError: class extends Error {}, BookingPricingChangedError: class extends Error {} }));
@@ -52,6 +53,7 @@ import { bookingEn } from "@/shared/i18n/booking/en";
 import type { BookingSalonMeta, BookingStaffItem } from "@/shared/booking/loadBookingServices";
 import type { BookingServiceItem, BookingComboItem } from "@/shared/booking/catalog";
 import type { PublicBookingPricingQuote } from "@/shared/booking/publicBookingPricing";
+import type { BookingResult } from "@/shared/booking/submitPublicBooking";
 import type { PaidPublicDeposit } from "@/shared/payments/publicDepositTypes";
 
 const salonId="11111111-1111-4111-8111-111111111111";
@@ -131,6 +133,51 @@ afterEach(()=>{
 });
 
 describe("individual phone offer intent and payment safety",()=>{
+  it("shows a committed booking without waiting for best-effort request ID cleanup",async()=>{
+    await confirm();
+    const result: BookingResult={
+      bookingId:"99999999-9999-4999-8999-999999999999",serviceName:"Synthetic Service",
+      startTimeUtc:baseQuote.startTimeUtc,endTimeUtc:baseQuote.endTimeUtc,status:"confirmed",
+      price_cents:5000,staffName:"Synthetic Staff",addonServiceName:null,addonPriceCents:null,
+      addons:[],servicePriceCents:5000,subtotalCents:5000,taxCents:0,totalCents:5000,
+      currency:"CAD",discountLines:[],pricing:baseQuote,cardManagementToken:null,
+      cardManagementRecoveryHref:null,cardManagementPending:false,
+      confirmationDelivery:{sms:"not_requested",email:"not_requested"},
+    };
+    mocks.submit.mockResolvedValueOnce(result);
+    // A browser Web Lock can remain pending after the server has committed.
+    mocks.acknowledge.mockImplementationOnce(()=>new Promise<void>(()=>{}));
+
+    await render().onConfirm();
+
+    const state=render();
+    expect(mocks.submit).toHaveBeenCalledOnce();
+    expect(mocks.acknowledge).toHaveBeenCalledOnce();
+    expect(state.step).toBe("done");
+    expect(state.bookingResult?.bookingId).toBe(result.bookingId);
+    expect(state.submitting).toBe(false);
+  },2000);
+  it("shows a committed booking even if optional Try-On attachment remains pending",async()=>{
+    await confirm();
+    (window.location as {search:string}).search="?tryon=aaaaaaaa-aaaa-4aaa-8aaa-aaaaaaaaaaaa";
+    mocks.submit.mockResolvedValueOnce({
+      bookingId:"99999999-9999-4999-8999-999999999999",serviceName:"Synthetic Service",
+      startTimeUtc:baseQuote.startTimeUtc,endTimeUtc:baseQuote.endTimeUtc,status:"confirmed",
+      price_cents:5000,staffName:"Synthetic Staff",addonServiceName:null,addonPriceCents:null,
+      addons:[],servicePriceCents:5000,subtotalCents:5000,taxCents:0,totalCents:5000,
+      currency:"CAD",discountLines:[],pricing:baseQuote,cardManagementToken:null,
+      cardManagementRecoveryHref:null,cardManagementPending:false,
+      confirmationDelivery:{sms:"not_requested",email:"not_requested"},
+    } satisfies BookingResult);
+    vi.mocked(fetch).mockImplementationOnce(()=>new Promise<Response>(()=>{}));
+
+    await render().onConfirm();
+
+    const state=render();
+    expect(fetch).toHaveBeenCalledWith("/api/nail-tryon/attach",expect.objectContaining({method:"POST"}));
+    expect(state.step).toBe("done");
+    expect(state.submitting).toBe(false);
+  },2000);
   it("keeps OTP-off email guests at full price until an explicit SMS choice and requote; never auto-submits",async()=>{
     initialSession=null;
     let state=await confirm();
