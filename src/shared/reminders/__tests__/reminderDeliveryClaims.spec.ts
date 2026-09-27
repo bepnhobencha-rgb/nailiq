@@ -85,6 +85,8 @@ describe("reminderDeliveryClaims", () => {
     expect(
       classifyReminderProviderResult({ ok: false, error: "twilio_400" }, "sms"),
     ).toMatchObject({ status: "failed" });
+    expect(classifyReminderProviderResult({ ok: false, error: "email_opt_out_lookup_unavailable" }, "email"))
+      .toMatchObject({ status: "failed", providerMessageId: null });
     expect(
       classifyReminderProviderResult({ ok: false, error: "fetch failed" }, "sms"),
     ).toMatchObject({ status: "unknown" });

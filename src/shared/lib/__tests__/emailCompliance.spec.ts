@@ -32,6 +32,7 @@ vi.mock("@/shared/lib/supabase/serviceRole", () => ({
 import {
   complianceFooterHtml,
   isEmailSuppressed,
+  optionalEmailOptOutStatus,
   transactionalEmailSuppressionReason,
 } from "../emailCompliance";
 
@@ -114,6 +115,8 @@ describe("isEmailSuppressed", () => {
     await expect(
       isEmailSuppressed("client@example.com"),
     ).resolves.toBe(true);
+    await expect(optionalEmailOptOutStatus("client@example.com"))
+      .resolves.toBe("lookup_unavailable");
   });
 
   it("fails closed when the service-role client throws", async () => {
@@ -122,6 +125,8 @@ describe("isEmailSuppressed", () => {
     await expect(
       isEmailSuppressed("client@example.com"),
     ).resolves.toBe(true);
+    await expect(optionalEmailOptOutStatus("client@example.com"))
+      .resolves.toBe("lookup_unavailable");
   });
 });
 

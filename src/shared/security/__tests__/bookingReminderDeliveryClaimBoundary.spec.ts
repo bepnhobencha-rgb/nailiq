@@ -69,6 +69,16 @@ describe("MQA-0180 atomic booking reminder delivery boundary", () => {
     expect(parity).toContain('"complete_booking_reminder_delivery"');
   });
 
+  it("rehearses a retryable pre-provider failure and one durable receipt in CI", () => {
+    const rehearsal = read("scripts/security/rehearse-booking-reminder-delivery-claims.sql");
+    const workflow = read(".github/workflows/migration-history-rehearsal.yml");
+    expect(rehearsal).toContain("c.provider_message_id IS NULL");
+    expect(rehearsal).toContain("v_original_claim_id");
+    expect(rehearsal).toContain("retry created a duplicate or lost the accepted receipt");
+    expect(rehearsal).toContain("ROLLBACK;");
+    expect(workflow).toContain("-f scripts/security/rehearse-booking-reminder-delivery-claims.sql");
+  });
+
   it("materializes accepted SMS correlation before callback receipt handling", () => {
     const route = read("src/app/api/cron/reminders/route.ts");
     expect(receiptMigration).toContain("booking_reminder_delivery_claims_sms_sid_unique");

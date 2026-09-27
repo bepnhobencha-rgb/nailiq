@@ -25,7 +25,7 @@ vi.mock("@/shared/lib/resend", () => ({
 vi.mock("@/shared/lib/emailCompliance", () => ({
   complianceFooterHtml: () => "",
   listUnsubscribeHeaders: () => ({}),
-  isEmailSuppressed: async () => false,
+  optionalEmailOptOutStatus: async () => "not_suppressed",
 }));
 
 import { sendReminderEmail } from "@/shared/noshow/sendReminderEmail";

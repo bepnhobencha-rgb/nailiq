@@ -48,7 +48,15 @@ describe.each(["24h", "3h"] as const)("reminder %s runtime without network or re
     vi.stubEnv("CRON_SECRET", "synthetic-local-cron");
     network = vi.fn(() => { throw new Error("Network forbidden in runtime QA"); });
     vi.stubGlobal("fetch", network);
-    update = vi.fn(() => ({ eq: vi.fn().mockResolvedValue({ error: null }) }));
+    update = vi.fn(() => {
+      const result = {
+        eq: vi.fn(), in: vi.fn().mockResolvedValue({ error: null }),
+        then: (resolve: (value: { error: null }) => unknown) =>
+          Promise.resolve(resolve({ error: null })),
+      };
+      result.eq.mockReturnValue(result);
+      return result;
+    });
     booking = { ...structuredClone(fixture), start_time_utc: kind === "24h"
       ? "2026-09-26T00:00:00.000Z" : "2026-09-25T03:00:00.000Z" };
     recoveryClaims = [];
@@ -182,6 +190,43 @@ describe.each(["24h", "3h"] as const)("reminder %s runtime without network or re
     await invoke();
     expect(mocks.email).not.toHaveBeenCalled();
     expect(update).toHaveBeenCalledOnce();
+  });
+  it("keeps a group member retryable when their opt-out lookup is unavailable", async () => {
+    booking.group_id = "synthetic-group";
+    booking.is_group_organizer = true;
+    extraBookings = [{ ...structuredClone(booking), id: "synthetic-member",
+      client_email: "member@example.invalid", is_group_organizer: false }];
+    mocks.email.mockImplementation(async (input: Record<string, unknown>) =>
+      "organizerEmail" in input
+        ? { ok: true, messageId: "synthetic-organizer-receipt" }
+        : { ok: false, error: "email_opt_out_lookup_unavailable" });
+
+    const response = await invoke();
+    expect(response.status).toBe(200);
+    expect(mocks.email).toHaveBeenCalledTimes(2);
+    expect(mocks.complete).toHaveBeenCalledWith(expect.objectContaining({
+      status: "failed", errorCode: "delivery_preflight_or_rejection_failed",
+    }));
+    expect(update).not.toHaveBeenCalled();
+    expect(await response.json()).toMatchObject({ errors: 1 });
+  });
+  it("settles a confirmed group-member opt-out before marking the group complete", async () => {
+    booking.group_id = "synthetic-group";
+    booking.is_group_organizer = true;
+    extraBookings = [{ ...structuredClone(booking), id: "synthetic-member",
+      client_email: "member@example.invalid", is_group_organizer: false }];
+    mocks.email.mockImplementation(async (input: Record<string, unknown>) =>
+      "organizerEmail" in input
+        ? { ok: true, messageId: "synthetic-organizer-receipt" }
+        : { ok: true, suppressed: true, suppressionReason: "email_opt_out" });
+
+    const response = await invoke();
+    expect(response.status).toBe(200);
+    expect(mocks.complete).toHaveBeenCalledWith(expect.objectContaining({
+      status: "suppressed", errorCode: "delivery_suppressed:email_opt_out",
+    }));
+    expect(update).toHaveBeenCalledOnce();
+    expect(await response.json()).toMatchObject({ errors: 0 });
   });
   it("rejects unauthorized requests before any database or provider work", async () => {
     const response = await GET(new Request("http://localhost/api/cron/reminders"));

@@ -94,6 +94,7 @@ describe("Resend customer delivery truth boundary", () => {
     for (const contract of [
       "confirmation delivery truth failed",
       "reminder delivery truth/projection failed",
+      "changed reminder callback rewrote a durable receipt",
       "transition complaint/suppression/projection failed",
       "exact replay was not idempotent",
       "customer delivery truth tables became directly reachable",

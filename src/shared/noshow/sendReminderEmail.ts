@@ -1,6 +1,6 @@
 import { createTextBackgroundAnthropicClient } from "@/shared/ai/anthropicProviderPolicy";
 import { getResendClient, getResendFrom } from "@/shared/lib/resend";
-import { complianceFooterHtml, listUnsubscribeHeaders, isEmailSuppressed } from "@/shared/lib/emailCompliance";
+import { complianceFooterHtml, listUnsubscribeHeaders, optionalEmailOptOutStatus } from "@/shared/lib/emailCompliance";
 import { emailExperienceTags } from "@/shared/lib/emailExperienceRegistry";
 import { reminderSendDeadlinePassed } from "@/shared/reminders/reminderSchedule";
 import {
@@ -372,7 +372,11 @@ export async function sendGroupReminderEmail(
   const resend = getResendClient();
   if (!resend) return { ok: false, error: "resend_not_configured" };
 
-  if (await isEmailSuppressed(input.organizerEmail)) {
+  const organizerOptOut = await optionalEmailOptOutStatus(input.organizerEmail);
+  if (organizerOptOut === "lookup_unavailable") {
+    return { ok: false, error: "email_opt_out_lookup_unavailable" };
+  }
+  if (organizerOptOut === "suppressed") {
     return {
       ok: true,
       suppressed: true,
@@ -440,7 +444,11 @@ export async function sendReminderEmail(
   }
 
   // Reminders are optional/relationship mail → honour unsubscribe.
-  if (await isEmailSuppressed(input.clientEmail)) {
+  const clientOptOut = await optionalEmailOptOutStatus(input.clientEmail);
+  if (clientOptOut === "lookup_unavailable") {
+    return { ok: false, error: "email_opt_out_lookup_unavailable" };
+  }
+  if (clientOptOut === "suppressed") {
     return {
       ok: true,
       suppressed: true,

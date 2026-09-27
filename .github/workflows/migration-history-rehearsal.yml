@@ -20,6 +20,7 @@ on:
       - "scripts/security/check-staff-action-notification-outbox-boundary.sql"
       - "scripts/security/rehearse-resend-owner-delivery-truth.sql"
       - "scripts/security/rehearse-resend-customer-delivery-truth.sql"
+      - "scripts/security/rehearse-booking-reminder-delivery-claims.sql"
       - "scripts/security/rehearse-booking-otp-delivery-truth.sql"
       - "scripts/security/rehearse-registered-email-delivery-truth.sql"
       - "scripts/security/rehearse-group-booking-sequence-quote.sql"
@@ -254,6 +255,8 @@ jobs:
             -f scripts/security/rehearse-resend-owner-delivery-truth.sql
           psql "$DB_URL" -v ON_ERROR_STOP=1 -q \
             -f scripts/security/rehearse-resend-customer-delivery-truth.sql
+          psql "$DB_URL" -v ON_ERROR_STOP=1 -q \
+            -f scripts/security/rehearse-booking-reminder-delivery-claims.sql
           psql "$DB_URL" -v ON_ERROR_STOP=1 -q \
             -f scripts/security/rehearse-booking-otp-delivery-truth.sql
           psql "$DB_URL" -v ON_ERROR_STOP=1 -q \

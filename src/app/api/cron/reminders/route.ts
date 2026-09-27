@@ -419,7 +419,6 @@ export async function GET(req: Request) {
       if (reminderSendDeadlinePassed(memberDeadline)) {
         errors++; retryableMemberFailure = true; continue;
       }
-      if (await import("@/shared/lib/emailCompliance").then((mod) => mod.isEmailSuppressed(m.email!))) continue;
       const { sendReminderEmail } = await import("@/shared/noshow/sendReminderEmail");
       const memberBooking: BookingRow = {
         ...booking,

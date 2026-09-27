@@ -37,6 +37,22 @@ function body(overrides: { ref?: string; to?: string[]; qa?: boolean } = {}) {
   });
 }
 
+function reminderBody() {
+  const event = JSON.parse(body()) as {
+    data: { tags: Record<string, string> };
+  };
+  event.data.tags = {
+    nailiq_email: "booking_reminder",
+    nailiq_audience: "customer",
+    nailiq_flow: "customer_booking",
+    nailiq_claim_kind: "reminder",
+    nailiq_claim: "44444444-4444-4444-8444-444444444444",
+    nailiq_env: "qa",
+    nailiq_qa_ref: ref,
+  };
+  return JSON.stringify(event);
+}
+
 function signed(raw: string, options: { time?: string; id?: string; key?: Buffer } = {}) {
   const time = options.time ?? timestamp;
   const id = options.id ?? "evt_synthetic_waitlist_signature";
@@ -98,6 +114,63 @@ describe("Resend QA route with real SDK signature verification", () => {
     });
     expect(JSON.stringify(mocks.rpc.mock.calls)).not.toContain(recipient);
     expect(JSON.stringify(mocks.rpc.mock.calls)).not.toContain("Private synthetic subject");
+  });
+
+  it("writes both registered and reminder receipts for one signed QA callback", async () => {
+    const raw = reminderBody();
+    const result = await POST(signed(raw));
+    expect(result.status).toBe(200);
+    expect(mocks.rpc.mock.calls.map(([name]) => name)).toEqual([
+      "record_resend_registered_email_delivery_event",
+      "record_resend_customer_delivery_event",
+    ]);
+    expect(mocks.rpc.mock.calls[1]?.[1]).toMatchObject({
+      p_claim_kind: "reminder",
+      p_claim_id: "44444444-4444-4444-8444-444444444444",
+      p_provider_event_id: "evt_synthetic_waitlist_signature",
+      p_recipient_fingerprint: createHash("sha256").update(recipient).digest("hex"),
+      p_payload_fingerprint: createHash("sha256").update(raw).digest("hex"),
+    });
+    expect(JSON.stringify(mocks.rpc.mock.calls)).not.toContain(recipient);
+  });
+
+  it("retries the reminder receipt after a partial registered-receipt commit", async () => {
+    const raw = reminderBody();
+    mocks.rpc
+      .mockResolvedValueOnce({ data: { success: true, code: "event_applied" }, error: null })
+      .mockResolvedValueOnce({ data: null, error: { message: "synthetic db outage" } })
+      .mockResolvedValueOnce({ data: { success: true, code: "event_replay" }, error: null })
+      .mockResolvedValueOnce({ data: { success: true, code: "event_applied" }, error: null });
+
+    const first = await POST(signed(raw));
+    expect(first.status).toBe(503);
+    const retry = await POST(signed(raw));
+    expect(retry.status).toBe(200);
+    expect(mocks.rpc.mock.calls.map(([name]) => name)).toEqual([
+      "record_resend_registered_email_delivery_event",
+      "record_resend_customer_delivery_event",
+      "record_resend_registered_email_delivery_event",
+      "record_resend_customer_delivery_event",
+    ]);
+    expect(mocks.rpc.mock.calls[1]?.[1]).toEqual(mocks.rpc.mock.calls[3]?.[1]);
+  });
+
+  it("rejects a newly signed conflicting replay before touching the reminder ledger", async () => {
+    const original = reminderBody();
+    const changed = original.replace("Private synthetic subject", "Changed synthetic subject");
+    mocks.rpc
+      .mockResolvedValueOnce({ data: { success: true, code: "event_applied" }, error: null })
+      .mockResolvedValueOnce({ data: { success: true, code: "event_applied" }, error: null })
+      .mockResolvedValueOnce({ data: { success: false, code: "event_conflict" }, error: null });
+
+    expect((await POST(signed(original))).status).toBe(200);
+    expect((await POST(signed(changed))).status).toBe(409);
+    expect(mocks.rpc.mock.calls.map(([name]) => name)).toEqual([
+      "record_resend_registered_email_delivery_event",
+      "record_resend_customer_delivery_event",
+      "record_resend_registered_email_delivery_event",
+    ]);
+    expect(mocks.rpc.mock.calls[0]?.[1]).not.toEqual(mocks.rpc.mock.calls[2]?.[1]);
   });
 
   it("rejects modified body bytes even when the original signature was valid", async () => {
