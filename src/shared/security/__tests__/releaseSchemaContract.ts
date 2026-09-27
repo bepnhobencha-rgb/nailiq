@@ -21,15 +21,17 @@ import { expect } from "vitest";
 // Group-slot recovery adds two SELECT-only service tables, 21 columns, eight
 // functions and nine indexes, measured by both blank CI migration jobs.
 // This is the local release contract, not a claim about Production's schema.
+// Card-retry email adds one service-only receipt table, ten columns, two
+// invoker RPCs and three indexes. Browser-role reachability does not change.
 const EXPECTED_RELEASE_SHAPE = {
-  tables: 248,
-  columns: 3824,
+  tables: 249,
+  columns: 3834,
   policies: 225,
-  functions: 611,
+  functions: 613,
   triggers: 169,
-  indexes: 1021,
+  indexes: 1024,
 };
-const EXPECTED_GRANTS = { anon: 57, authenticated: 79, service_role: 236 };
+const EXPECTED_GRANTS = { anon: 57, authenticated: 79, service_role: 237 };
 
 function numericObject(source: string, name: string): Record<string, number> {
   const file = ts.createSourceFile("check-schema-parity.ts", source, ts.ScriptTarget.Latest, true);

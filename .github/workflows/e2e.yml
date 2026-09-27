@@ -628,7 +628,7 @@ jobs:
         # result and a separate report without replacing the main shard report.
         run: >-
           npx playwright test e2e/booking.spec.ts
-          --grep 'Complete booking end-to-end$'
+          --grep 'Complete booking end-to-end$|Committed booking success does not wait for a held request-ID Web Lock$'
           --project=mobile --repeat-each=10 --retries=0 --reporter=list,html,json
           --output=test-results/booking-submit-webkit
         env:

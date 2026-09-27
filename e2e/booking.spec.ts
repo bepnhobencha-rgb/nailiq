@@ -78,6 +78,78 @@ test.describe("Booking Flow", () => {
     });
   });
 
+  test("Committed booking success does not wait for a held request-ID Web Lock", async ({ page, browserName }) => {
+    test.skip(browserName !== "webkit", "The historical post-commit stall occurred in mobile WebKit");
+    await withBookingSubmissionDiagnostics(page, test.info(), async () => {
+      await gotoBookingServiceStep(page, testSlug);
+      await page.locator('[data-testid="service-tile-select"]').first().click();
+      await page.getByRole("button", { name: "Continue" }).first().click();
+      await page.locator('[data-testid="staff-item"]').first().click();
+      await page.getByRole("button", { name: "Continue" }).first().click();
+      await selectAvailableBookingDate(page);
+      await page.getByRole("button", { name: "Continue" }).first().click();
+      await page.locator('[data-testid="time-slot"]:not([disabled])').first().click();
+      await advanceBookingStep(
+        page.getByRole("group", { name: "Choose a time" }),
+        page.getByTestId("booking-info-name"),
+      );
+      await page.getByTestId("booking-info-name").fill("Test Client");
+      await page.getByRole("button", { name: "Continue" }).first().click();
+      await acceptSmsConsentIfPresented(page);
+
+      const confirm = page.getByTestId("confirm-booking-btn");
+      await expect(confirm).toBeEnabled();
+      const requestLockHandle = await page.waitForFunction(() => {
+        const keys = Object.keys(localStorage).filter((key) =>
+          key.startsWith("nailiq:public-booking-request:v2:"),
+        );
+        return keys.length === 1 ? keys[0] : null;
+      }, undefined, { timeout: 15_000 });
+      const lockName = await requestLockHandle.jsonValue() as string;
+      await requestLockHandle.dispose();
+
+      // Reproduce the browser-side stall from the failed CI trace without
+      // modifying booking requests or the synthetic salon. Old code awaited
+      // this lock after the server committed and never showed Success.
+      const acquired = await page.evaluate(async (name) => {
+        if (!navigator.locks || !name) return false;
+        let markAcquired = (): void => undefined;
+        const acquiredPromise = new Promise<void>((resolve) => { markAcquired = resolve; });
+        let release = (): void => undefined;
+        const heldPromise = new Promise<void>((resolve) => { release = resolve; });
+        const qaWindow = window as Window & {
+          __releaseBookingQaLock?: () => void;
+          __bookingQaLockHeld?: boolean;
+        };
+        qaWindow.__releaseBookingQaLock = release;
+        void navigator.locks.request(name, async () => {
+          qaWindow.__bookingQaLockHeld = true;
+          markAcquired();
+          await heldPromise;
+          qaWindow.__bookingQaLockHeld = false;
+        }).catch(() => undefined);
+        await acquiredPromise;
+        return true;
+      }, lockName);
+      expect(acquired, "Web Locks must be available in this WebKit run").toBe(true);
+
+      try {
+        await confirm.click();
+        await expect(page.getByTestId("booking-success")).toBeVisible({ timeout: 15_000 });
+        await expect(page.getByText(/all set/i)).toBeVisible();
+        expect(await page.evaluate(() =>
+          (window as Window & { __bookingQaLockHeld?: boolean }).__bookingQaLockHeld,
+        )).toBe(true);
+      } finally {
+        await page.evaluate(() => {
+          const qaWindow = window as Window & { __releaseBookingQaLock?: () => void };
+          qaWindow.__releaseBookingQaLock?.();
+          delete qaWindow.__releaseBookingQaLock;
+        }).catch(() => undefined);
+      }
+    });
+  });
+
   test("Time step lists slots for a future day", async ({ page }) => {
     await gotoBookingServiceStep(page, testSlug);
     await page.locator('[data-testid="service-tile-select"]').first().click();
