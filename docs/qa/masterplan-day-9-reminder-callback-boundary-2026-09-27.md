@@ -331,6 +331,30 @@ nối; kết quả dưới đây thay thế kết luận hosted QA trước đó
   có ROLLBACK**: PASS; hậu kiểm 0 fixture và function QA cũ vẫn nguyên.
 - Focused unit/security tests: 21/21 PASS; migration-history audit exit 0,
   không có version trùng hoặc Production-only version; `git diff --check`
-  PASS. Chưa áp migration lâu dài lên QA hay Production, chưa sửa 5 receipt
-  lịch sử, chưa gọi cron/provider hoặc gửi thông báo. Bản sửa local cần được
+  PASS. Tại thời điểm rehearsal ban đầu chưa áp migration lâu dài lên QA;
+  trạng thái sau khi áp được ghi ở mục dưới. Production và 5 receipt lịch sử
+  vẫn chưa sửa; không gọi cron/provider hoặc gửi thông báo. Bản sửa cần được
   review và kiểm tra full CI trên đúng head trước bất kỳ rollout nào.
+
+## QA disposable — áp migration và hậu kiểm
+
+- Sau khi được duyệt, áp riêng migration function trên Supabase QA
+  `uhpzafoiifupyypkcwln` qua công cụ migration: `success=true`. Công cụ ghi
+  version QA `20260928025438`, name chứa version file
+  `20260928024301_allow_own_customer_email_projection_terminal_callbacks`;
+  đây là khác biệt tên/version của môi trường QA, **không phải** bằng chứng
+  migration đã được áp lên Production.
+- Rehearsal `rehearse-resend-customer-delivery-truth.sql` chạy trên function
+  đã áp: PASS, toàn bộ fixture nằm trong giao dịch `BEGIN`/`ROLLBACK`.
+  Hậu kiểm riêng fixture: 0 salon, 0 booking, 0 customer event và 0
+  registered event của bài test. QA có dữ liệu synthetic khác của các bài
+  test khác; không dọn hay thay đổi chúng.
+- Function QA sau áp: owner `postgres`, `SECURITY DEFINER`, ACL chỉ
+  `postgres=X/postgres`; `anon`, `authenticated`, `service_role` đều không
+  có quyền `EXECUTE` trực tiếp. Security advisors trước/sau giữ cùng số
+  findings theo nhóm (76 INFO RLS no policy, 13 WARN anon definer,
+  7 WARN authenticated definer, 1 WARN leaked password protection); không
+  suy các findings có sẵn là do migration này.
+- Sau khi publish vào PR #1435, vẫn cần đọc full CI và Preview đúng head mới.
+  Actual provider callback, Production và sửa 5 receipt lịch sử đều
+  **chưa được chứng minh**.
