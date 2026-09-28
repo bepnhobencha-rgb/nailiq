@@ -1,6 +1,6 @@
 # NailIQ — Go-Live and Incident Runbook
 
-_Last updated: 2026-09-16. Owner: NailIQ release operator._
+_Last updated: 2026-09-28. Owner: NailIQ release operator._
 
 This runbook is the production boundary for NailIQ. A green pull request proves
 the candidate in CI; it does not prove that Production has the required schema
@@ -27,10 +27,16 @@ look green.
 ### RELEASE-1 — Freeze and identify
 
 1. Record the candidate branch and full SHA.
-2. Record the current Production SHA from `https://www.nailiq.ca/api/version`.
+2. Read `https://www.nailiq.ca/api/version` and record its identity exactly as
+   returned. A CLI/sourceless deployment may return `dpl_…` rather than a Git
+   SHA; never relabel that deployment ID as a source commit. Recover the current
+   source SHA only from its contemporaneous clean-checkout deployment receipt.
+   If no such receipt exists, mark the current source SHA **not proven**.
 3. Confirm the worktree is clean and the candidate checks are green.
-4. List every migration added since the current Production SHA and identify its
-   application compatibility boundary.
+4. Compare the Production migration ledger with the candidate's reviewed
+   migration set and identify every pending migration and its application
+   compatibility boundary. If the current Production source SHA is unproven,
+   do not infer the migration delta from a Git diff alone.
 5. Confirm a rollback candidate and the schema compatibility of that rollback.
 
 ### RELEASE-2 — Apply schema first
@@ -60,10 +66,40 @@ Deploy or promote the exact reviewed SHA manually. Record the deployment ID,
 URL, start/ready timestamps and previous rollback candidate. Do not deploy from
 a dirty checkout or a different SHA.
 
+For a new CLI deployment, create a source-to-deployment receipt **at deployment
+time**, not retrospectively:
+
+1. In the isolated candidate checkout, run
+   `node scripts/release/source-receipt.mjs --expected-sha <full-reviewed-SHA> --expected-project-id prj_1yP37n3CAzbk5BaXizY5TWcOa7gV`
+   and retain its JSON output. It checks the repository root, full commit SHA,
+   tree hash, clean tracked/untracked state and linked NailIQ Vercel project;
+   it refuses a dirty or mismatched checkout. Stop if it fails. This is only a
+   **predeploy** receipt, not proof of what Vercel received.
+2. After the separately authorized deploy, retain the exact CLI invocation and
+   output together with the source SHA, tree hash, UTC time, operator, Vercel
+   project/target, deployment URL/ID and preceding rollback deployment. For a
+   source deploy, pass `--meta nailiqSourceSha=<full-candidate-SHA>` from the
+   predeploy receipt so the deployment carries a second, queryable identifier.
+   This metadata is an operator assertion; it does not independently prove the
+   uploaded source.
+3. Read deployment details and the Production alias after readiness. Both must
+   identify the deployment recorded in step 2. If the CLI response is lost or
+   the alias points elsewhere, stop and reconcile; do not infer success from
+   commit time or a green PR. Promotion of an existing Preview needs its own
+   source receipt for that exact Preview artifact.
+
+The receipt is prospective: it cannot establish the source SHA of an older
+sourceless deployment that lacks one. Never deploy merely to repair missing
+historical provenance.
+
 ### RELEASE-5 — Run read-only canaries
 
-1. Verify `/api/version`, `/api/health` and `/api/ready` report one matching SHA
-   and healthy/ready status.
+1. Verify `/api/version`, `/api/health` and `/api/ready` report one matching
+   deployment identity and healthy/ready status. If that identity is a Git SHA,
+   require equality with the release receipt's candidate SHA. If it is a
+   `dpl_…` ID, require equality with the release receipt's deployment ID and
+   verify the receipt's clean source checkout separately. Matching endpoint
+   IDs alone never prove the source SHA.
 2. Open both live public salon pages in a real browser in English and Vietnamese.
 3. Confirm the booking form renders and browser console has no error.
 4. Review Production runtime logs for new HTTP 5xx or schema errors.
