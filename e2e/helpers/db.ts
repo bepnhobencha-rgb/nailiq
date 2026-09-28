@@ -251,6 +251,19 @@ export async function cleanupTestSalon(
   }
 }
 
+/** Read-only, non-PII failure diagnostic for a freshly seeded E2E salon. */
+export async function countSyntheticSalonBookings(salonId: string): Promise<number> {
+  const { count, error } = await supabase
+    .from("bookings")
+    .select("id", { count: "exact", head: true })
+    .eq("salon_id", salonId);
+
+  if (error || count === null) {
+    throw new Error("synthetic booking count unavailable");
+  }
+  return count;
+}
+
 /**
  * Fresh local Supabase resets do not run a seed file, while
  * `services.category` defaults to the FK-protected global `other` category.

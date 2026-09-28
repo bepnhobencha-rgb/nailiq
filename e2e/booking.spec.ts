@@ -3,6 +3,7 @@ import { withBookingSubmissionDiagnostics } from "./helpers/bookingSubmissionDia
 
 import {
   acceptSmsConsentIfPresented,
+  countSyntheticSalonBookings,
   cleanupTestSalon,
   gotoBookingServiceStep,
   seedTestSalon,
@@ -14,14 +15,16 @@ import {
 
 test.describe("Booking Flow", () => {
   let testSlug: string;
+  let testSalonId: string;
 
   test.beforeEach(async () => {
-    const { slug } = await seedTestSalon({
+    const { slug, salonId } = await seedTestSalon({
       phone: "15553334444",
       slug: "e2e-booking-salon",
       name: "E2E Booking Salon",
     });
     testSlug = slug;
+    testSalonId = salonId;
   });
 
   test.afterEach(async () => {
@@ -75,7 +78,7 @@ test.describe("Booking Flow", () => {
         page.locator('[data-testid="booking-success"]'),
       ).toBeVisible({ timeout: 15_000 });
       await expect(page.getByText(/all set/i)).toBeVisible();
-    });
+    }, () => countSyntheticSalonBookings(testSalonId));
   });
 
   test("Committed booking success does not wait for a held request-ID Web Lock", async ({ page, browserName }) => {
@@ -147,7 +150,7 @@ test.describe("Booking Flow", () => {
           delete qaWindow.__releaseBookingQaLock;
         }).catch(() => undefined);
       }
-    });
+    }, () => countSyntheticSalonBookings(testSalonId));
   });
 
   test("Time step lists slots for a future day", async ({ page }) => {

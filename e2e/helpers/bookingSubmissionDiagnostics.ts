@@ -15,6 +15,7 @@ export async function withBookingSubmissionDiagnostics(
   page: Page,
   info: TestInfo,
   run: () => Promise<void>,
+  readSyntheticBookingCount?: () => Promise<number>,
 ): Promise<void> {
   const started = Date.now();
   const events: Array<Record<string, unknown>> = [];
@@ -84,8 +85,24 @@ export async function withBookingSubmissionDiagnostics(
           timer = setTimeout(() => resolve({ timedOut: true }), 2_000);
         }),
       ]);
+      let syntheticBookingCount: number | "unavailable" | "not_checked" = "not_checked";
+      if (failed && readSyntheticBookingCount) {
+        let countTimer: ReturnType<typeof setTimeout> | undefined;
+        try {
+          syntheticBookingCount = await Promise.race([
+            readSyntheticBookingCount(),
+            new Promise<"unavailable">((resolve) => {
+              countTimer = setTimeout(() => resolve("unavailable"), 2_000);
+            }),
+          ]);
+        } catch {
+          syntheticBookingCount = "unavailable";
+        } finally {
+          if (countTimer !== undefined) clearTimeout(countTimer);
+        }
+      }
       await info.attach("booking-submission-diagnostics", {
-        body: JSON.stringify({ failed, events, browserState }),
+        body: JSON.stringify({ failed, events, browserState, syntheticBookingCount }),
         contentType: "application/json",
       });
     } catch {
