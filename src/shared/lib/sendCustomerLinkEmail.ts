@@ -44,6 +44,12 @@ export async function sendCustomerLinkEmail(input: {
   const email = (input.email ?? "").trim();
   if (!email) return { ok: false, error: "no_email" };
 
+  // Keep the shared sender behind the same outbound kill switch as its
+  // one-shot card-retry caller. A configured provider key must not bypass it.
+  if (["1", "true", "yes"].includes((process.env.DISABLE_OUTBOUND_EMAIL ?? "").trim().toLowerCase())) {
+    return { ok: false, error: "email_suppressed" };
+  }
+
   const resend = getResendClient();
   if (!resend) return { ok: false, error: "resend_not_configured" };
 

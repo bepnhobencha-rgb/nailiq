@@ -1,4 +1,4 @@
-import { beforeEach, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, expect, it, vi } from "vitest";
 const m = vi.hoisted(() => ({ send: vi.fn(), suppressed: vi.fn() }));
 vi.mock("server-only", () => ({}));
 vi.mock("@/shared/lib/resend", () => ({ getResendClient: () => ({ emails: { send: m.send } }), getResendFrom: () => "test@example.invalid" }));
@@ -6,7 +6,13 @@ vi.mock("@/shared/lib/emailCompliance", () => ({ isEmailSuppressed: m.suppressed
 vi.mock("@/shared/lib/emailExperience", () => ({ buildEmailExperience: () => ({ html: "synthetic", text: "synthetic", headers: {}, tags: [] }) }));
 import { sendCustomerLinkEmail } from "./sendCustomerLinkEmail";
 const input = { email: "guest@example.invalid", salonName: "Synthetic", subject: "Synthetic", bodyText: "Synthetic", ctaLabel: "Open", url: "https://example.invalid", requireReceipt: true };
-beforeEach(() => { vi.resetAllMocks(); });
+beforeEach(() => { vi.resetAllMocks(); vi.stubEnv("DISABLE_OUTBOUND_EMAIL", "0"); });
+afterEach(() => vi.unstubAllEnvs());
+it.each(["1", "true", "yes", " TRUE "])("does not call Resend when outbound email is disabled with %s", async value => {
+  vi.stubEnv("DISABLE_OUTBOUND_EMAIL", value);
+  expect(await sendCustomerLinkEmail(input)).toEqual({ ok: false, error: "email_suppressed" });
+  expect(m.send).not.toHaveBeenCalled();
+});
 it("requires a provider message ID for strict success", async () => {
   m.send.mockResolvedValue({ data: { id: "synthetic-receipt" }, error: null });
   expect(await sendCustomerLinkEmail({ ...input, idempotencyKey: "synthetic-key" })).toEqual({ ok: true, providerMessageId: "synthetic-receipt" });
