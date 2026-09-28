@@ -302,3 +302,35 @@ nối; kết quả dưới đây thay thế kết luận hosted QA trước đó
   chứng minh cron 24h/3h chạy, gửi email/SMS tới inbox, hay Production.
   PR #1435 vẫn Draft, chưa merge hoặc deploy Production. CI của head PR phải
   được đọc riêng; không suy PASS CI từ bài QA hosted này.
+
+## Phát hiện tiếp theo — terminal callback sau provider-accepted
+
+- Kiểm tra **read-only, chỉ số tổng hợp, không PII** trên Supabase Production
+  trong cửa sổ 7 ngày tại thời điểm rà soát: worker `reminders` có 672 run
+  `succeeded`; 8 claim email 24h và 9 claim email 3h có trạng thái
+  `delivered` cùng customer event `delivered` đã apply. Một claim 3h còn
+  `provider_accepted` sau khoảng 8,6 giờ, mặc dù registered ledger đã ghi
+  `email.delivered`; customer event tương ứng bị
+  `provider_message_conflict` và không apply. Cửa sổ 30 ngày có 1 reminder
+  và 4 transition `email.delivered` cùng lỗi này. Đây là **lỗi cập nhật
+  receipt/trạng thái**, không phải bằng chứng provider không giao thư.
+- Nguyên nhân trong function hiện hành: callback `email.sent` của reminder
+  hoặc transition tự tạo `booking_notifications` projection với provider
+  message ID. Callback terminal kế tiếp thấy chính projection ấy và nhầm là
+  message ID của một claim khác. Rehearsal bổ sung trên Supabase QA tái hiện
+  đúng `event_rejected`; transaction thất bại đã rollback sạch. Body function
+  Production được đối chiếu bằng chiều dài + MD5 với body trong migration gốc
+  `20260828070918`: **khớp chính xác**, không suy từ tên file rằng schema Live
+  giống repo.
+- Migration local `20260928024301` chỉ thay function reconcile: cho phép
+  projection thuộc **cùng salon, booking, notification type, Resend provider
+  và message ID** của reminder/transition hiện tại; booking/claim khác vẫn
+  conflict. Rehearsal kiểm `sent → delivered`, sự kiện `sent` đến trễ không
+  hạ `delivered`, transition `sent → complained`, và message ID của booking
+  khác bị từ chối. Chạy migration + rehearsal **trong một transaction QA
+  có ROLLBACK**: PASS; hậu kiểm 0 fixture và function QA cũ vẫn nguyên.
+- Focused unit/security tests: 21/21 PASS; migration-history audit exit 0,
+  không có version trùng hoặc Production-only version; `git diff --check`
+  PASS. Chưa áp migration lâu dài lên QA hay Production, chưa sửa 5 receipt
+  lịch sử, chưa gọi cron/provider hoặc gửi thông báo. Bản sửa local cần được
+  review và kiểm tra full CI trên đúng head trước bất kỳ rollout nào.
