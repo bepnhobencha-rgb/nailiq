@@ -5,6 +5,19 @@ vi.mock("@/shared/lib/supabase/serviceRole", () => ({ createServiceRoleClient: (
 vi.mock("./customerEmailDeliverySuppression", () => ({ customerEmailDeliverySuppressionReason: m.suppression, customerEmailRecipientFingerprint: () => "a".repeat(64) }));
 import { claimCardRetryEmail, completeCardRetryEmail } from "./cardRetryEmailReceipt";
 const input = { salonId: "salon", bookingId: "booking", actorId: "actor", email: "qa@example.invalid" };
+const qaBookingId = "00000000-0000-4000-8000-000000000001";
+function enablePinnedQaRehearsal() {
+  vi.stubEnv("DISABLE_OUTBOUND_EMAIL", "1");
+  vi.stubEnv("NAILIQ_QA_CARD_RETRY_EMAIL_ENABLED", "1");
+  vi.stubEnv("NAILIQ_QA_CARD_RETRY_EMAIL_BOOKING_ID", qaBookingId);
+  vi.stubEnv("NAILIQ_RESEND_QA_WEBHOOK_ONLY", "1");
+  vi.stubEnv("NAILIQ_DISPOSABLE_DB", "1");
+  vi.stubEnv("NAILIQ_QA_EXPECTED_SUPABASE_PROJECT_REF", "uhpzafoiifupyypkcwln");
+  vi.stubEnv("NEXT_PUBLIC_SUPABASE_URL", "https://uhpzafoiifupyypkcwln.supabase.co");
+  vi.stubEnv("SUPABASE_INTERNAL_URL", "https://uhpzafoiifupyypkcwln.supabase.co");
+  vi.stubEnv("NAILIQ_QA_RESEND_EMAIL_RECIPIENT", input.email);
+  vi.stubEnv("VERCEL_ENV", "preview");
+}
 beforeEach(() => {
   vi.resetAllMocks(); vi.stubEnv("NODE_ENV", "production");
   vi.stubEnv("DISABLE_OUTBOUND_EMAIL", "0"); vi.stubEnv("DEMO_OTP", "false"); vi.stubEnv("NEXT_PUBLIC_DEMO_OTP", "false");
@@ -36,6 +49,17 @@ it("blocks local runtime and absent actors", async () => {
 it.each(["true", "yes", " TRUE "])("honors the email kill switch value %s", async value => {
   vi.stubEnv("DISABLE_OUTBOUND_EMAIL", value);
   expect(await claimCardRetryEmail(input)).toBeNull(); expect(m.rpc).not.toHaveBeenCalled();
+});
+it("allows only the pinned disposable QA booking while global email stays disabled", async () => {
+  enablePinnedQaRehearsal();
+  expect(await claimCardRetryEmail({ ...input, bookingId: qaBookingId })).toEqual({ id: "receipt", attemptId: "attempt", salonId: "salon" });
+  m.rpc.mockClear();
+  expect(await claimCardRetryEmail(input)).toBeNull();
+  expect(await claimCardRetryEmail({ ...input, bookingId: qaBookingId, email: "other@example.invalid" })).toBeNull();
+  expect(m.rpc).not.toHaveBeenCalled();
+  vi.stubEnv("VERCEL_ENV", "production");
+  expect(await claimCardRetryEmail({ ...input, bookingId: qaBookingId })).toBeNull();
+  expect(m.rpc).not.toHaveBeenCalled();
 });
 it("fails closed on a lost claim response", async () => {
   m.rpc.mockRejectedValue(new Error("transport")); expect(await claimCardRetryEmail(input)).toBeNull();

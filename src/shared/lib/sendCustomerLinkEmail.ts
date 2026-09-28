@@ -2,7 +2,7 @@ import "server-only";
 import { getResendClient, getResendFrom } from "@/shared/lib/resend";
 import { isEmailSuppressed } from "@/shared/lib/emailCompliance";
 import { buildEmailExperience } from "@/shared/lib/emailExperience";
-import { resendQaTagsForRecipient, resolveResendQaBoundary } from "@/shared/notifications/resendQaBoundary";
+import { isPinnedCardRetryQaEmail, resendQaTagsForRecipient, resolveResendQaBoundary } from "@/shared/notifications/resendQaBoundary";
 
 /**
  * Send a single "here is your link" email to a customer — the EMAIL half of the
@@ -41,13 +41,20 @@ export async function sendCustomerLinkEmail(input: {
   /** Strict callers need provider acceptance evidence, not a successful no-op. */
   requireReceipt?: boolean;
   idempotencyKey?: string;
+  /** Server-only QA rehearsal for one pinned card-retry booking, never a client input. */
+  qaCardRetryBookingId?: string;
 }): Promise<{ ok: boolean; error?: string; providerMessageId?: string }> {
   const email = (input.email ?? "").trim();
   if (!email) return { ok: false, error: "no_email" };
 
   // Keep the shared sender behind the same outbound kill switch as its
   // one-shot card-retry caller. A configured provider key must not bypass it.
-  if (["1", "true", "yes"].includes((process.env.DISABLE_OUTBOUND_EMAIL ?? "").trim().toLowerCase())) {
+  const emailDisabled = ["1", "true", "yes"].includes((process.env.DISABLE_OUTBOUND_EMAIL ?? "").trim().toLowerCase());
+  const pinnedQaCardRetry = !!input.requireReceipt &&
+    !!input.idempotencyKey?.startsWith("card-retry-email/") &&
+    !!input.qaCardRetryBookingId &&
+    isPinnedCardRetryQaEmail({ bookingId: input.qaCardRetryBookingId, recipient: email });
+  if (emailDisabled && !pinnedQaCardRetry) {
     return { ok: false, error: "email_suppressed" };
   }
 

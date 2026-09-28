@@ -1,10 +1,10 @@
 import { afterEach, beforeEach, expect, it, vi } from "vitest";
-const m = vi.hoisted(() => ({ send: vi.fn(), suppressed: vi.fn(), qaBoundary: vi.fn(), qaTags: vi.fn() }));
+const m = vi.hoisted(() => ({ send: vi.fn(), suppressed: vi.fn(), qaBoundary: vi.fn(), qaTags: vi.fn(), pinnedCardRetry: vi.fn() }));
 vi.mock("server-only", () => ({}));
 vi.mock("@/shared/lib/resend", () => ({ getResendClient: () => ({ emails: { send: m.send } }), getResendFrom: () => "test@example.invalid" }));
 vi.mock("@/shared/lib/emailCompliance", () => ({ isEmailSuppressed: m.suppressed }));
 vi.mock("@/shared/lib/emailExperience", () => ({ buildEmailExperience: () => ({ html: "synthetic", text: "synthetic", headers: {}, tags: [] }) }));
-vi.mock("@/shared/notifications/resendQaBoundary", () => ({ resolveResendQaBoundary: m.qaBoundary, resendQaTagsForRecipient: m.qaTags }));
+vi.mock("@/shared/notifications/resendQaBoundary", () => ({ resolveResendQaBoundary: m.qaBoundary, resendQaTagsForRecipient: m.qaTags, isPinnedCardRetryQaEmail: m.pinnedCardRetry }));
 import { sendCustomerLinkEmail } from "./sendCustomerLinkEmail";
 const input = { email: "guest@example.invalid", salonName: "Synthetic", subject: "Synthetic", bodyText: "Synthetic", ctaLabel: "Open", url: "https://example.invalid", requireReceipt: true };
 beforeEach(() => {
@@ -15,6 +15,21 @@ afterEach(() => vi.unstubAllEnvs());
 it.each(["1", "true", "yes", " TRUE "])("does not call Resend when outbound email is disabled with %s", async value => {
   vi.stubEnv("DISABLE_OUTBOUND_EMAIL", value);
   expect(await sendCustomerLinkEmail(input)).toEqual({ ok: false, error: "email_suppressed" });
+  expect(m.send).not.toHaveBeenCalled();
+});
+it("allows only the pinned one-shot card retry through the shared email kill switch", async () => {
+  vi.stubEnv("DISABLE_OUTBOUND_EMAIL", "1");
+  const qaInput = { ...input, qaCardRetryBookingId: "00000000-0000-4000-8000-000000000001", idempotencyKey: "card-retry-email/receipt" };
+  m.pinnedCardRetry.mockReturnValue(true);
+  m.send.mockResolvedValue({ data: { id: "synthetic-receipt" }, error: null });
+  expect(await sendCustomerLinkEmail(qaInput)).toEqual({ ok: true, providerMessageId: "synthetic-receipt" });
+  expect(m.pinnedCardRetry).toHaveBeenCalledWith({ bookingId: qaInput.qaCardRetryBookingId, recipient: input.email });
+  m.send.mockClear();
+  for (const unscoped of [
+    { ...qaInput, requireReceipt: false },
+    { ...qaInput, idempotencyKey: "other/receipt" },
+    { ...qaInput, qaCardRetryBookingId: undefined },
+  ]) expect(await sendCustomerLinkEmail(unscoped)).toEqual({ ok: false, error: "email_suppressed" });
   expect(m.send).not.toHaveBeenCalled();
 });
 it("fails closed before Resend when the QA recipient is not pinned", async () => {

@@ -185,6 +185,7 @@ export async function sendSaveCardLink(
       try {
       const r = await sendCustomerLinkEmail({
         requireReceipt: emailOnly,
+        ...(emailLease ? { qaCardRetryBookingId: bookingId } : {}),
         ...(emailLease ? { idempotencyKey: `card-retry-email/${emailLease.id}` } : {}),
         email,
         clientName: (bk as { client_name?: string }).client_name ?? null,
