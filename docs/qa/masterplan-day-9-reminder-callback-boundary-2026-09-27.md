@@ -269,3 +269,36 @@ nối; kết quả dưới đây thay thế kết luận hosted QA trước đó
   cron thực tế, hay Production. Key QA mới vẫn tồn tại cho Preview cô lập;
   việc thu hồi/xoay thêm cần quyết định bảo mật riêng. PR #1435 vẫn Draft,
   chưa merge/Production tại thời điểm kiểm chứng.
+
+## Bổ sung 27/09 — hosted reminder dual-ledger QA
+
+- Theo phê duyệt riêng, xoay **chỉ** `RESEND_WEBHOOK_SECRET` synthetic trong
+  Preview của project Vercel QA cô lập; không phải khóa Resend gửi thư. Biến
+  sensitive không được update tại chỗ bằng CLI nên xóa rồi tạo lại ở đúng
+  scope Preview. Khóa mới không in vào log/report và đã xóa khỏi shell tạm.
+- `vercel redeploy` deployment nền thất bại do preset `Services` của project
+  QA không khai báo service; deployment lỗi không được dùng làm bằng chứng.
+  Build sạch bằng local config `framework: nextjs` hoàn tất, và `vercel inspect`
+  xác nhận `dpl_4GnXHhzLuqGPtxkAdBfVKCjLKgjg` **Ready, target Preview**
+  trên project QA riêng, từ checkout sạch SHA
+  `6495c2aedb69bd2f219db77eae5d534ee25587c0`.
+- Trên Supabase QA `uhpzafoiifupyypkcwln`, fixture synthetic riêng có đúng
+  1 salon, 1 booking, 1 reminder claim trước callback; cả hai event ledger có
+  0 row. Recipient là miền `example.invalid`; không gọi cron, provider hoặc
+  worker gửi thông báo.
+- Ba POST có chữ ký Svix synthetic qua hosted Preview trả lần lượt
+  **200 `event_applied`**, **200 `event_replay`**, **409 `event_conflict`**.
+  Hậu kiểm QA DB cho đúng 1 registered-email event `delivered`, 1 customer
+  reminder event `delivered` đã apply, 1 reminder claim được cập nhật
+  `email_delivery_status=delivered`, và 1 booking notification. Mỗi ledger
+  chỉ có một row của event ID, nên replay không nhân đôi.
+- Bản cleanup đầu bị trigger lifecycle nhân viên từ chối và transaction
+  rollback; không vô hiệu hóa safeguard. Dùng đường xóa toàn bộ **salon giả
+  đúng UUID/slug** với FK cascade được schema hỗ trợ. Hậu kiểm cả category,
+  salon, service, staff, booking, claim, notification và hai event ledger của
+  fixture đều **0 row**.
+- **PASS cho hosted signed reminder callback → hai ledger QA và phép replay /
+  conflict; fixture đã dọn sạch.** Đây không phải callback từ Resend thật,
+  chứng minh cron 24h/3h chạy, gửi email/SMS tới inbox, hay Production.
+  PR #1435 vẫn Draft, chưa merge hoặc deploy Production. CI của head PR phải
+  được đọc riêng; không suy PASS CI từ bài QA hosted này.
