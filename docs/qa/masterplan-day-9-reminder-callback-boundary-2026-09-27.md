@@ -92,3 +92,180 @@ và reminder recovery đã có. Nhánh local cô lập `qa/day9-delivery-truth-2
 Các rehearsal kể trên không áp migration, không thay Production, không tạo
 booking thật hoặc gửi SMS/email/provider call. Trạng thái commit, PR và Preview
 phải đối chiếu trực tiếp với GitHub/Vercel, không suy từ PASS local hoặc QA SQL.
+
+## Bổ sung 27/09 — signed HTTP tới QA và giới hạn hosted
+
+- Đăng nhập đúng project QA `uhpzafoiifupyypkcwln` bằng tài khoản quản trị đã
+  được cho phép; không tạo tài khoản mới, không qua màn MFA Vercel. Một khóa
+  `service_role` QA được gắn tạm vào riêng Preview branch, không áp Production.
+  Recipient callback được chuyển sang `example.invalid`; secret ký là ngẫu
+  nhiên và chỉ dùng cho Preview QA, không phải Resend provider credential.
+- Preview đúng branch Ready, nhưng ba POST có chữ ký tới
+  `/api/webhooks/resend` đều HTTP 403. Một POST rỗng độc lập cũng HTTP 403 với
+  `x-vercel-mitigated: deny`; GET/HEAD chạm route và trả 405. Vercel runtime
+  không có log request 403, QA không có receipt. Đây là chặn ở WAF trước route,
+  không phải bằng chứng callback app hoặc DB thất bại. Kiểm tra read-only rule
+  xác định `rule_card_receipt_release_fence_stale_deployment_writers_20260911_poPsrq`
+  đang live: Preview host Ngày 9 không nằm trong allowlist và POST thuộc nhóm
+  phương thức bị deny. Hai rule SDK booking/contact còn lại chỉ log-only.
+  Không nới WAF vì rule này thuộc project NailIQ dùng chung với Production.
+- Chạy cùng route qua `next start` local với `VERCEL_ENV=preview`, Supabase QA
+  URL/anon/service-role khớp cùng project, QA-only webhook, mọi outbound và
+  payment worker OFF. Lượt đầu thiếu anon key nên middleware trả 500; bổ sung
+  đúng anon key QA và chạy lại. Signed synthetic `waitlist_offer` trả lần lượt
+  `event_applied` HTTP 200, `event_replay` HTTP 200, và body khác cùng event ID
+  trả `event_conflict` HTTP 409. SQL Editor trên QA xác nhận đúng 1 receipt
+  `delivered` synthetic. Đây là **local HTTP → hosted QA DB PASS**, không phải
+  hosted Preview E2E, provider delivery hoặc reminder dual-ledger E2E.
+- Xóa đúng 1 receipt synthetic theo event ID/message ID/email key; hậu kiểm
+  còn 0. Local server dừng, clipboard và biến khóa trong shell tạm đã xóa.
+  Preview branch service-role được trả về placeholder vô hiệu; deployment mới
+  `dpl_CMm2L6qeETRTRgM7sRMSagD5hexH` đã Ready. Ba deployment Preview cũ
+  `dpl_BpyNQfUddNXwCEFpyVw3JfXkJeUL`,
+  `dpl_8J7SGHtvsZry2Y9zeiCLFqPwMV34` và
+  `dpl_9NLCD5N56NXcSH3cRphuN9DWVJym` vẫn Ready với môi trường build cũ;
+  đổi branch env không thu hồi secret khỏi các deployment bất biến đó.
+  Legacy QA key đã xuất hiện trong một tool-side accessibility capture. Cần
+  lập kế hoạch thu hồi/rotate key và đánh giá các Preview cũ trước khi tái sử
+  dụng QA rộng; chưa thực hiện vì có thể ảnh hưởng các consumer QA khác.
+- Chưa có migration, Production mutation, booking, provider call hoặc SMS/email.
+  PR #1435 vẫn Draft; không tính Ngày 9/P1-01 là đóng hoàn toàn.
+
+## Phương án cô lập để hoàn tất hosted QA (kiểm tra read-only tiếp theo)
+
+- PR #1435 vẫn Draft tại `6495c2aedb69bd2f219db77eae5d534ee25587c0`;
+  các check GitHub hiện tại PASS/SKIP, không có FAIL. Preview an toàn mới Ready,
+  nhưng thiếu service-role có chủ đích nên không thể ghi QA receipt.
+- Project Vercel dùng chung `nailiq` có live deny rule cho non-allowlisted
+  Preview POST. Không thêm host Ngày 9 vào allowlist, không dùng system bypass,
+  không đổi hoặc publish WAF chỉ để xanh một bài test.
+- Project riêng `nailiq-p1-01-waitlist-qa-20260914` không có custom WAF rule
+  hoặc Preview env. Deployment 13 ngày trước chỉ được xác nhận Ready; metadata
+  không cung cấp commit/source để chứng minh nó chạy toàn bộ app PR #1435.
+  Repository có fixture UI synthetic `qa/waitlist-delivery`; không suy rằng
+  deployment cũ chứa webhook hiện tại và không ghi đè project QA này.
+- Đường ít ảnh hưởng salon Live nhất là một project Vercel QA mới, không có
+  Production domain, chỉ deploy đúng commit PR #1435 ở target Preview. Cấu hình
+  chính xác QA ref/URL/anon, secret server-only **mới và riêng cho QA runner**,
+  chữ ký synthetic, recipient `example.invalid`, mọi outbound/provider/payment
+  OFF. Kiểm tra từ signed HTTP qua hosted function tới đúng QA receipt,
+  replay/conflict và dọn fixture. Không gọi Resend và không gửi thông báo.
+  Đó vẫn chưa phải provider callback thật hoặc reminder scheduler proof.
+- Không dùng lại legacy QA `service_role` JWT đã lộ trong tool output. Vercel
+  `nailiq` có nhiều biến cùng tên ở các Preview branch khác; chỉ tên/phạm vi
+  được kiểm tra, không có bằng chứng các giá trị giống nhau. Ba deployment cũ
+  chứa khóa QA vẫn Ready. Thu hồi ngay legacy key có thể làm hỏng các consumer
+  QA chưa kiểm kê; xóa deployment đơn lẻ cũng không thu hồi JWT. Theo
+  [Supabase API-key guidance](https://supabase.com/docs/guides/getting-started/api-keys),
+  tạo secret key mới song song, thay các consumer, xác nhận rồi mới deactivate
+  legacy key. Việc này là một đợt bảo mật QA riêng, không phải thao tác tự động
+  trong bài test Day 9.
+- Chưa tạo project/key mới, chưa xóa deployment, chưa rotate/deactivate key,
+  chưa đổi WAF, chưa commit/push tài liệu bổ sung. Cần phê duyệt phạm vi cụ thể
+  trước các thao tác môi trường/bảo mật này.
+
+## Bổ sung sau phê duyệt — project QA cô lập, chưa có hosted E2E
+
+- Tạo project Vercel riêng `nailiq-day9-callback-qa-20260927` và checkout sạch
+  đúng commit PR #1435 `6495c2aedb69bd2f219db77eae5d534ee25587c0` tại
+  `/private/tmp/nailiq-day9-isolated-preview-20260927`; không mang theo thay đổi
+  tài liệu đang làm dở. Project mới không có Git integration, domain NailIQ
+  đang Live hoặc provider credential. Deployment protection của project là SSO
+  cho deployment URL mặc định.
+- Đặt biến chỉ trong môi trường Preview của project này: Supabase QA URL/ref,
+  modern publishable key, QA-only signed-webhook boundary, recipient
+  `example.invalid`, SMS/email/call OFF và các payment/provider worker OFF.
+  Secret ký webhook synthetic được tạo ngẫu nhiên và lưu dạng sensitive;
+  không phải Resend provider credential. Kiểm tra metadata thấy các tên biến
+  Preview, không đọc/in giá trị khóa.
+- Supabase connector hiện chỉ hỗ trợ đọc publishable key, không có thao tác tạo
+  secret key. Browser automation đã timeout ba lần và dừng; không có
+  `SUPABASE_ACCESS_TOKEN` khả dụng trong môi trường này. Vì vậy **chưa tạo
+  modern secret key QA**, chưa đặt `SUPABASE_SERVICE_ROLE_KEY`, và không thể
+  chạy signed hosted function → QA DB.
+- Vercel CLI tự gắn lần triển khai đầu của project mới vào target `production`
+  dù lệnh mặc định không có `--prod`; thử lại với `--target preview` cũng vẫn
+  nhận `target=production` khi inspect. Cả hai lần đều bị ngắt trong lúc build
+  và xóa chính xác deployment `dpl_H5MZMiGZyhF9FJYxAGHmsnoT4LwL` và
+  `dpl_HRY3fGvj72W5FVXsynUXV3WA5sCy`. Hậu kiểm `vercel ls` sau cả hai lần
+  xác nhận project QA không còn deployment. Không phải project `nailiq`
+  Production và không có deployment Ready, nhưng đây là một sai lệch cần ghi
+  nhận, không được gọi là Preview PASS. [Tài liệu Vercel về deployment đầu tiên](https://vercel.com/docs/domains/working-with-domains/deploying-and-redirecting)
+  cũng ghi lần deploy đầu của project mới được đánh dấu Production; vì thế
+  không lặp lại với cú pháp CLI khác dưới cùng ràng buộc Preview-only.
+- Không thử lại cùng đường CLI hoặc dùng legacy QA JWT đã lộ. Hosted QA E2E
+  vẫn **BLOCKED** cho đến khi có cách tạo key mới an toàn và Vercel xác nhận
+  deployment được gắn target Preview trước khi chạy. Không thay đổi WAF,
+  Production, dữ liệu salon, provider, booking hoặc thông báo. Tài liệu này
+  vẫn chưa commit/push.
+
+## Bổ sung sau khi chuyển sang project QA đã có deployment nền
+
+- Theo phê duyệt tiếp theo, dùng lại project Vercel QA riêng
+  `nailiq-p1-01-waitlist-qa-20260914`, đã có deployment nền từ 14/09. Kiểm tra
+  project protection là SSO; Preview env ban đầu không có biến. Checkout sạch
+  vẫn ở SHA PR #1435 `6495c2aedb69bd2f219db77eae5d534ee25587c0`.
+- Cấu hình chỉ môi trường Preview: Supabase QA URL/ref, modern publishable key,
+  recipient `example.invalid`, QA webhook-only và disposable DB, mọi công tắc
+  SMS/email/call/payment/provider OFF; không thêm credential gửi hoặc key DB.
+  Tạo secret chữ ký synthetic định dạng Svix, lưu sensitive. Secret synthetic
+  đầu tiên sai định dạng đã được xóa khỏi cấu hình Preview rồi thay bằng secret
+  mới hợp lệ; deployment cũ là bất biến và không được dùng làm bằng chứng test
+  ký đúng.
+- Lần build đầu trên project QA cũ lỗi vì framework preset `Services` nhưng
+  source NailIQ không khai báo service. Dùng `--local-config` trỏ file tạm chỉ
+  có `framework: nextjs` cho đúng deployment, không sửa setting project hoặc
+  `vercel.json` trong repo, đồng thời không đưa cron vào cấu hình tạm. Build
+  Next.js + TypeScript PASS. Deployment cuối
+  `dpl_BKxjxqqroHDqDFEGhYH5ZuTYSzRG` được `vercel inspect` xác nhận
+  `READY`, `target=preview`.
+- Trên deployment cuối, một POST synthetic không chữ ký vào
+  `/api/webhooks/resend` trả HTTP 401 `invalid_signature`. Một POST synthetic
+  ký đúng nhưng không có QA marker trả HTTP 200 `event_ignored`; code route
+  trả ở bước phân loại trước khi tạo DB client. Một POST synthetic ký đúng,
+  có QA marker và đúng recipient trả HTTP 503 `webhook_store_unavailable`,
+  đúng trạng thái fail-closed do chưa có server key. Truy vấn read-only
+  Supabase QA xác nhận 0 receipt cho cả hai provider message ID fixture.
+  Không gọi Resend, không gửi mail, không tạo booking hoặc ghi fixture.
+- **Chưa có hosted function → QA DB PASS**: Supabase connector chỉ cho đọc
+  publishable key, không tạo secret key; computer-use quản trị tiếp tục timeout.
+  Không đặt `SUPABASE_SERVICE_ROLE_KEY` và không dùng legacy QA JWT đã lộ.
+  Cần tạo modern QA-only `sb_secret_...` qua kênh quản trị an toàn, bind server-only
+  vào đúng Preview QA, redeploy, rồi chạy signed apply/replay/conflict và dọn
+  receipt. Chưa thay Production, WAF, salon Live hoặc PR state; tài liệu chưa
+  commit/push.
+
+## Hosted QA callback closeout sau khi kết nối quản trị khôi phục
+
+Các dòng `BLOCKED` ở phần trên là ảnh chụp trạng thái trước khi khôi phục kết
+nối; kết quả dưới đây thay thế kết luận hosted QA trước đó.
+
+- Sau xác nhận của Huy tại thời điểm tạo khóa, tạo modern secret key có tên
+  `nailiq_day9_preview_qa_20260927` trên duy nhất Supabase QA
+  `uhpzafoiifupyypkcwln`. Không dùng legacy JWT đã lộ. Giá trị khóa không đưa
+  vào code, report hoặc log; clipboard đã được xóa sau khi chuyển.
+- Thêm `SUPABASE_SERVICE_ROLE_KEY` dạng encrypted/sensitive chỉ vào môi trường
+  **Preview** của Vercel project QA cô lập `nailiq-p1-01-waitlist-qa-20260914`.
+  `vercel env ls preview` xác nhận tên biến và scope; không đọc giá trị. Xoay
+  riêng chữ ký webhook synthetic của Preview QA để runner có thể ký request;
+  đây không phải Resend provider credential và không ảnh hưởng Production.
+- Redeploy từ checkout sạch đúng SHA PR #1435
+  `6495c2aedb69bd2f219db77eae5d534ee25587c0`, dùng local config chỉ
+  `framework: nextjs` (không cron). `vercel inspect` xác nhận deployment
+  `dpl_HZ25jppX58RK9SxRBjUV92jK4kQS` là `Ready`, `target=preview` trên
+  project QA; không phải project `nailiq` Production.
+- Trên chính deployment này, POST synthetic chữ ký sai trả
+  `401 invalid_signature`. Ba POST ký thật theo Svix với recipient
+  `example.invalid` và QA tag cho cùng event ID trả lần lượt
+  `200 event_applied`, `200 event_replay`, `409 event_conflict`. Không gọi
+  Resend hoặc provider; route chỉ nhận callback và ghi QA ledger.
+- Truy vấn QA DB trước test có 0 receipt mang fixture ID; sau `event_applied`
+  có đúng 1 row `registered_email_delivery_events` ở trạng thái `delivered`;
+  replay không tạo bản thứ hai. Xóa chính xác row synthetic bằng cả event ID
+  và message ID, rồi hậu kiểm count = 0. Không tạo booking, SMS/email thật,
+  hoặc sửa dữ liệu salon Live.
+- **PASS cho hosted signed callback → QA DB và idempotency/conflict của một
+  registered-email fixture.** Chưa phải bằng chứng Resend provider delivery,
+  cron thực tế, hay Production. Key QA mới vẫn tồn tại cho Preview cô lập;
+  việc thu hồi/xoay thêm cần quyết định bảo mật riêng. PR #1435 vẫn Draft,
+  chưa merge/Production tại thời điểm kiểm chứng.
