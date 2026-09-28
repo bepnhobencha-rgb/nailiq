@@ -33,12 +33,17 @@ export function notificationDeliveryPresentation(
         detail: "Tin này được chặn trước khi gọi nhà cung cấp.",
         tone: "warning",
       };
-    case "sent":
-    case "accepted":
     case "queued":
       return {
+        label: "⏳ Chờ gửi",
+        detail: "Tin đang trong hàng chờ; chưa có bằng chứng nhà cung cấp đã nhận hoặc giao cho khách.",
+        tone: "warning",
+      };
+    case "sent":
+    case "accepted":
+      return {
         label: "⏳ Chờ xác nhận giao",
-        detail: "Nhà cung cấp đã nhận yêu cầu; chưa có xác nhận giao cho khách.",
+        detail: "Hệ thống ghi nhận yêu cầu gửi; chưa có xác nhận giao cho khách.",
         tone: "warning",
       };
     case "sending":

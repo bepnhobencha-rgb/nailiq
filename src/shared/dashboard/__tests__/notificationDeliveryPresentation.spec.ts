@@ -4,11 +4,20 @@ import { notificationDeliveryPresentation } from "@/shared/dashboard/notificatio
 
 describe("owner activity notification delivery labels", () => {
   it("does not claim provider acceptance means customer delivery", () => {
-    for (const status of ["sent", "accepted", "queued"]) {
+    for (const status of ["sent", "accepted"]) {
       const presentation = notificationDeliveryPresentation(status);
       expect(presentation.tone).toBe("warning");
       expect(presentation.label).toBe("⏳ Chờ xác nhận giao");
+      expect(presentation.detail).not.toContain("Nhà cung cấp đã nhận");
     }
+  });
+
+  it("does not claim a queued message has reached the provider", () => {
+    expect(notificationDeliveryPresentation("queued")).toMatchObject({
+      label: "⏳ Chờ gửi",
+      tone: "warning",
+    });
+    expect(notificationDeliveryPresentation("queued").detail).toContain("chưa có bằng chứng nhà cung cấp đã nhận");
   });
 
   it("distinguishes provider-reported delivery from customer reading", () => {
