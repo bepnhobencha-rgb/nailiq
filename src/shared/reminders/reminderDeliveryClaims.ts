@@ -128,6 +128,7 @@ export function classifyReminderProviderResult(
     error === "status_callback_unavailable" ||
     error === "twilio_not_configured" ||
     error === "resend_not_configured" ||
+    error === "email_opt_out_lookup_unavailable" ||
     /^twilio_4\d\d$/u.test(error) ||
     /^resend_4\d\d$/u.test(error);
   return knownPreflightFailure

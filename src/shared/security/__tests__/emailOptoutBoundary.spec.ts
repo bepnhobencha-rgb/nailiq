@@ -62,8 +62,9 @@ describe("client_email_optouts boundary", () => {
       "src/shared/notifications/deliverStaffActionNotification.ts",
     );
 
-    expect(compliance).toContain("if (error) return true");
-    expect(compliance).toContain("catch {\n    return true;");
+    expect(compliance).toContain('if (error) return "lookup_unavailable"');
+    expect(compliance).toContain('catch {\n    return "lookup_unavailable";');
+    expect(compliance).toContain('return (await optionalEmailOptOutStatus(email)) !== "not_suppressed"');
     expect(route).toContain("if (!suppressed)");
     expect(route).toContain("status: 503");
     expect(page).toContain("We could not update your email preferences");

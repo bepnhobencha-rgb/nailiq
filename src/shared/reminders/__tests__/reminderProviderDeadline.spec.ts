@@ -3,7 +3,9 @@ import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 const mocks = vi.hoisted(() => ({ send: vi.fn(), suppression: vi.fn(), complete: vi.fn(), lookup: vi.fn(), ai: vi.fn() }));
 vi.mock("server-only", () => ({}));
 vi.mock("@/shared/lib/resend", () => ({ getResendClient: () => ({ emails: { send: mocks.send } }), getResendFrom: () => "QA <qa@example.invalid>" }));
-vi.mock("@/shared/lib/emailCompliance", () => ({ isEmailSuppressed: mocks.suppression, complianceFooterHtml: () => "", listUnsubscribeHeaders: () => ({}) }));
+vi.mock("@/shared/lib/emailCompliance", () => ({ optionalEmailOptOutStatus: async () => {
+  await mocks.suppression(); return "not_suppressed";
+}, complianceFooterHtml: () => "", listUnsubscribeHeaders: () => ({}) }));
 vi.mock("@/shared/ai/anthropicProviderPolicy", () => ({ createTextBackgroundAnthropicClient: mocks.ai }));
 vi.mock("@/shared/ai/usageLedger", () => ({ isProviderTimeoutError: () => false, trackAnthropicMessage: mocks.ai }));
 vi.mock("@/shared/booking/validateGuestPhone", () => ({ validateGuestPhone: () => ({ ok: true, digits: "19990000001" }) }));

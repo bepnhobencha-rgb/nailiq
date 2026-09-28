@@ -34,6 +34,7 @@ DECLARE
   v_claim jsonb;
   v_result jsonb;
   v_claim_id uuid;
+  v_original_claim_id uuid;
   v_attempt integer;
 BEGIN
   v_claim := public.claim_booking_reminder_delivery(
@@ -43,6 +44,7 @@ BEGIN
     RAISE EXCEPTION 'first reminder claim failed: %', v_claim;
   END IF;
   v_claim_id := (v_claim->>'claim_id')::uuid;
+  v_original_claim_id := v_claim_id;
 
   v_result := public.claim_booking_reminder_delivery(
     v_salon,v_booking,v_start,'24h','email'
@@ -58,12 +60,23 @@ BEGIN
   IF v_result->>'code' <> 'completed' THEN
     RAISE EXCEPTION 'known failure completion failed: %', v_result;
   END IF;
+  -- An unavailable optional-email opt-out lookup is classified as this
+  -- pre-provider failure. It must leave no accepted provider receipt.
+  IF NOT EXISTS (
+    SELECT 1 FROM public.booking_reminder_delivery_claims c
+    WHERE c.id = v_original_claim_id AND c.status = 'failed'
+      AND c.attempt_count = 1 AND c.provider_message_id IS NULL
+      AND c.last_error_code = 'delivery_preflight_or_rejection_failed'
+  ) THEN
+    RAISE EXCEPTION 'pre-provider failure was not durably retryable';
+  END IF;
 
   v_result := public.claim_booking_reminder_delivery(
     v_salon,v_booking,v_start,'24h','email'
   );
   IF v_result->>'code' <> 'claimed'
-     OR v_result->>'attempt_count' <> '2' THEN
+     OR v_result->>'attempt_count' <> '2'
+     OR (v_result->>'claim_id')::uuid <> v_original_claim_id THEN
     RAISE EXCEPTION 'known failure retry was not leased: %', v_result;
   END IF;
   v_claim_id := (v_result->>'claim_id')::uuid;
@@ -73,6 +86,17 @@ BEGIN
   );
   IF v_result->>'status' <> 'sent' THEN
     RAISE EXCEPTION 'accepted reminder completion failed: %', v_result;
+  END IF;
+  IF (SELECT count(*) FROM public.booking_reminder_delivery_claims c
+      WHERE c.booking_id = v_booking AND c.appointment_start_utc = v_start
+        AND c.reminder_type = '24h' AND c.channel = 'email') <> 1
+     OR NOT EXISTS (
+       SELECT 1 FROM public.booking_reminder_delivery_claims c
+       WHERE c.id = v_original_claim_id AND c.status = 'sent'
+         AND c.attempt_count = 2
+         AND c.provider_message_id = 'email-provider-receipt-qa'
+     ) THEN
+    RAISE EXCEPTION 'retry created a duplicate or lost the accepted receipt';
   END IF;
 
   -- Catch-up uses the same atomic lease: three total attempts, never a fourth.

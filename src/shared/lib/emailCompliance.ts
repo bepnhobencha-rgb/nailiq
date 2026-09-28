@@ -108,24 +108,33 @@ export function complianceFooterHtml(opts: {
   </div>`;
 }
 
-/** True when this email has opted out of optional/marketing mail. Transactional
- *  booking confirmations should NOT gate on this. Fails CLOSED (true) when the
- *  suppression list cannot be read so optional mail is never sent while consent
- *  state is unknown. */
-export async function isEmailSuppressed(email: string): Promise<boolean> {
+/** A failed read is not the same as a confirmed opt-out. */
+export type OptionalEmailOptOutStatus = "not_suppressed" | "suppressed" | "lookup_unavailable";
+
+/** Keep an unavailable opt-out lookup distinct from a confirmed opt-out so
+ * reminder workers can retry instead of marking an undelivered claim done. */
+export async function optionalEmailOptOutStatus(email: string): Promise<OptionalEmailOptOutStatus> {
   const e = email.trim().toLowerCase();
-  if (!e) return false;
+  if (!e) return "not_suppressed";
   try {
     const { data, error } = await createServiceRoleClient()
       .from("client_email_optouts" as never)
       .select("email")
       .eq("email", e)
       .maybeSingle();
-    if (error) return true;
-    return Boolean(data);
+    if (error) return "lookup_unavailable";
+    return data ? "suppressed" : "not_suppressed";
   } catch {
-    return true;
+    return "lookup_unavailable";
   }
+}
+
+/** True when this email has opted out of optional/marketing mail. Transactional
+ *  booking confirmations should NOT gate on this. Fails CLOSED (true) when the
+ *  suppression list cannot be read so optional mail is never sent while consent
+ *  state is unknown. */
+export async function isEmailSuppressed(email: string): Promise<boolean> {
+  return (await optionalEmailOptOutStatus(email)) !== "not_suppressed";
 }
 
 /**

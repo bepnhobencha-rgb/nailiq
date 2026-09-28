@@ -58,7 +58,9 @@ DECLARE
   v_confirm_hash text := encode(extensions.digest(convert_to('confirm@example.invalid', 'UTF8'), 'sha256'), 'hex');
   v_reminder_hash text := encode(extensions.digest(convert_to('reminder@example.invalid', 'UTF8'), 'sha256'), 'hex');
   v_transition_hash text := encode(extensions.digest(convert_to('transition@example.invalid', 'UTF8'), 'sha256'), 'hex');
+  v_reminder_occurred timestamptz := transaction_timestamp() - interval '90 seconds';
   v_result jsonb;
+  v_registered_result jsonb;
 BEGIN
   INSERT INTO public.booking_notifications(
     booking_id, salon_id, notification_type, channel, status, sent_at,
@@ -106,18 +108,150 @@ BEGIN
     RAISE EXCEPTION 'confirmation delivery truth failed: %', v_result;
   END IF;
 
+  -- Real providers send an accepted event before a later terminal event.
+  -- The first event creates the booking_notifications projection; the second
+  -- must recognize that same projection as its own, not as another message.
+  v_registered_result := public.record_resend_registered_email_delivery_event(
+    'evt-customer-reminder-sent', 'msg-customer-reminder',
+    'booking_reminder', 'customer', 'email.sent', v_reminder_hash,
+    1, v_reminder_occurred - interval '30 seconds', repeat('e', 64)
+  );
+  v_result := public.record_resend_customer_delivery_event(
+    'reminder', v_reminder, 'evt-customer-reminder-sent',
+    'msg-customer-reminder', 'email.sent', v_reminder_hash,
+    v_reminder_occurred - interval '30 seconds', repeat('e', 64)
+  );
+  IF v_registered_result->>'code' <> 'event_applied'
+     OR v_result->>'code' <> 'event_applied'
+     OR NOT EXISTS (SELECT 1 FROM public.booking_notifications n
+       WHERE n.booking_id = 'd82c0000-0000-4000-8000-000000000011'
+         AND n.notification_type = 'reminder_24h'
+         AND n.provider_message_id = 'msg-customer-reminder'
+         AND n.email_delivery_status = 'provider_accepted') THEN
+    RAISE EXCEPTION 'reminder accepted receipt/projection failed: %, %',
+      v_registered_result, v_result;
+  END IF;
+
+  -- The HTTP callback writes the shared registered receipt before the
+  -- reminder-specific receipt. A replay must still reach the second ledger.
+  v_registered_result := public.record_resend_registered_email_delivery_event(
+    'evt-customer-reminder-delivered', 'msg-customer-reminder',
+    'booking_reminder', 'customer', 'email.delivered', v_reminder_hash,
+    1, v_reminder_occurred, repeat('b', 64)
+  );
+  IF v_registered_result->>'code' <> 'event_applied' THEN
+    RAISE EXCEPTION 'registered reminder receipt failed: %', v_registered_result;
+  END IF;
+
   v_result := public.record_resend_customer_delivery_event(
     'reminder', v_reminder, 'evt-customer-reminder-delivered',
     'msg-customer-reminder', 'email.delivered', v_reminder_hash,
-    transaction_timestamp() - interval '90 seconds', repeat('b', 64)
+    v_reminder_occurred, repeat('b', 64)
   );
   IF v_result->>'code' <> 'event_applied'
+     OR NOT EXISTS (SELECT 1 FROM public.registered_email_delivery_events e
+       WHERE e.provider_event_id = 'evt-customer-reminder-delivered'
+         AND e.email_key = 'booking_reminder' AND e.delivery_status = 'delivered')
      OR NOT EXISTS (SELECT 1 FROM public.booking_reminder_delivery_claims c
        WHERE c.id = v_reminder AND c.email_delivery_status = 'delivered')
      OR NOT EXISTS (SELECT 1 FROM public.booking_notifications n
        WHERE n.booking_id = 'd82c0000-0000-4000-8000-000000000011'
          AND n.channel = 'email' AND n.status = 'delivered') THEN
     RAISE EXCEPTION 'reminder delivery truth/projection failed: %', v_result;
+  END IF;
+
+  -- A late or reordered accepted event cannot downgrade terminal delivery.
+  v_registered_result := public.record_resend_registered_email_delivery_event(
+    'evt-customer-reminder-late-sent', 'msg-customer-reminder',
+    'booking_reminder', 'customer', 'email.sent', v_reminder_hash,
+    1, v_reminder_occurred - interval '15 seconds', repeat('8', 64)
+  );
+  v_result := public.record_resend_customer_delivery_event(
+    'reminder', v_reminder, 'evt-customer-reminder-late-sent',
+    'msg-customer-reminder', 'email.sent', v_reminder_hash,
+    v_reminder_occurred - interval '15 seconds', repeat('8', 64)
+  );
+  IF v_registered_result->>'code' <> 'event_applied'
+     OR v_result->>'code' <> 'event_applied'
+     OR NOT EXISTS (SELECT 1 FROM public.booking_reminder_delivery_claims c
+       WHERE c.id = v_reminder AND c.email_delivery_status = 'delivered')
+     OR (SELECT count(*) FROM public.booking_notifications n
+       WHERE n.booking_id = 'd82c0000-0000-4000-8000-000000000011'
+         AND n.provider_message_id = 'msg-customer-reminder'
+         AND n.email_delivery_status = 'delivered') <> 1 THEN
+    RAISE EXCEPTION 'late accepted event downgraded reminder: %, %',
+      v_registered_result, v_result;
+  END IF;
+
+  v_registered_result := public.record_resend_registered_email_delivery_event(
+    'evt-customer-reminder-delivered', 'msg-customer-reminder',
+    'booking_reminder', 'customer', 'email.delivered', v_reminder_hash,
+    1, v_reminder_occurred, repeat('b', 64)
+  );
+  v_result := public.record_resend_customer_delivery_event(
+    'reminder', v_reminder, 'evt-customer-reminder-delivered',
+    'msg-customer-reminder', 'email.delivered', v_reminder_hash,
+    v_reminder_occurred, repeat('b', 64)
+  );
+  IF v_registered_result->>'code' <> 'event_replay'
+     OR v_result->>'code' <> 'event_replay'
+     OR (SELECT count(*) FROM public.registered_email_delivery_events
+       WHERE provider_event_id = 'evt-customer-reminder-delivered') <> 1
+     OR (SELECT count(*) FROM public.resend_customer_delivery_events
+       WHERE provider_event_id = 'evt-customer-reminder-delivered') <> 1 THEN
+    RAISE EXCEPTION 'dual reminder receipt replay was not idempotent: %, %',
+      v_registered_result, v_result;
+  END IF;
+
+  v_registered_result := public.record_resend_registered_email_delivery_event(
+    'evt-customer-reminder-delivered', 'msg-customer-reminder',
+    'booking_reminder', 'customer', 'email.delivered', v_reminder_hash,
+    1, v_reminder_occurred, repeat('d', 64)
+  );
+  v_result := public.record_resend_customer_delivery_event(
+    'reminder', v_reminder, 'evt-customer-reminder-delivered',
+    'msg-customer-reminder', 'email.delivered', v_reminder_hash,
+    v_reminder_occurred, repeat('d', 64)
+  );
+  IF v_registered_result->>'code' <> 'event_conflict'
+     OR v_result->>'code' <> 'event_conflict'
+     OR (SELECT payload_fingerprint FROM public.registered_email_delivery_events
+       WHERE provider_event_id = 'evt-customer-reminder-delivered') <> repeat('b', 64)
+     OR (SELECT payload_fingerprint FROM public.resend_customer_delivery_events
+       WHERE provider_event_id = 'evt-customer-reminder-delivered') <> repeat('b', 64) THEN
+    RAISE EXCEPTION 'changed reminder callback rewrote a durable receipt: %, %',
+      v_registered_result, v_result;
+  END IF;
+
+  -- Reusing a confirmation's message ID for another booking must remain a
+  -- conflict; the new own-projection exception cannot cross booking identity.
+  v_result := public.record_resend_customer_delivery_event(
+    'transition', v_transition, 'evt-customer-transition-cross-booking',
+    'msg-customer-confirm', 'email.sent', v_transition_hash,
+    transaction_timestamp() - interval '3 minutes', repeat('9', 64)
+  );
+  IF v_result->>'code' <> 'event_rejected'
+     OR NOT EXISTS (SELECT 1 FROM public.resend_customer_delivery_events e
+       WHERE e.provider_event_id = 'evt-customer-transition-cross-booking'
+         AND e.match_error = 'provider_message_conflict'
+         AND e.applied_at IS NULL)
+     OR EXISTS (SELECT 1 FROM public.customer_booking_transition_email_outbox o
+       WHERE o.id = v_transition AND o.provider_message_id IS NOT NULL) THEN
+    RAISE EXCEPTION 'cross-booking provider message was accepted: %', v_result;
+  END IF;
+
+  v_result := public.record_resend_customer_delivery_event(
+    'transition', v_transition, 'evt-customer-transition-sent',
+    'msg-customer-transition', 'email.sent', v_transition_hash,
+    transaction_timestamp() - interval '2 minutes', repeat('f', 64)
+  );
+  IF v_result->>'code' <> 'event_applied'
+     OR NOT EXISTS (SELECT 1 FROM public.booking_notifications n
+       WHERE n.booking_id = 'd82c0000-0000-4000-8000-000000000012'
+         AND n.notification_type = 'staff_action'
+         AND n.provider_message_id = 'msg-customer-transition'
+         AND n.email_delivery_status = 'provider_accepted') THEN
+    RAISE EXCEPTION 'transition accepted receipt/projection failed: %', v_result;
   END IF;
 
   v_result := public.record_resend_customer_delivery_event(
