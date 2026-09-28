@@ -21,6 +21,7 @@ import {
   type ActivityFeedTab,
 } from "@/shared/dashboard/activityFeedFilter";
 import { activityTimeAgo } from "@/shared/dashboard/activityTime";
+import { notificationDeliveryPresentation } from "@/shared/dashboard/notificationDeliveryPresentation";
 import { formatCurrency } from "@/shared/lib/currencyFormat";
 
 const KIND_ICON: Record<ActivityKind, string> = {
@@ -50,7 +51,13 @@ const TABS: { key: ActivityFeedTab; label: string }[] = [
   { key: "winback", label: "Giữ khách" },
 ];
 
-function StatusBadge({ status, kind }: { status: string; kind: ActivityKind }) {
+export function StatusBadge({
+  status,
+  kind,
+}: {
+  status: string;
+  kind: ActivityKind;
+}) {
   if (kind === "call") {
     const ok = status === "completed";
     const bad = status === "failed";
@@ -78,6 +85,23 @@ function StatusBadge({ status, kind }: { status: string; kind: ActivityKind }) {
     );
   }
 
+  if (kind === "sms" || kind === "email") {
+    const presentation = notificationDeliveryPresentation(status);
+    const cls =
+      presentation.tone === "success"
+        ? "bg-nq-success/15 text-nq-success"
+        : presentation.tone === "error"
+          ? "bg-nq-error/15 text-nq-error"
+          : "bg-nq-warning/15 text-nq-warning";
+    return (
+      <span
+        className={`rounded-full px-2 py-0.5 text-[10px] font-semibold ${cls}`}
+        title={presentation.detail}
+      >
+        {presentation.label}
+      </span>
+    );
+  }
   if (status === "saved") {
     return (
       <span className="rounded-full bg-nq-success/15 px-2 py-0.5 text-[10px] font-semibold text-nq-success">
