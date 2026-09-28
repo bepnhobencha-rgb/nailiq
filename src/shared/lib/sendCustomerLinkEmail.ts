@@ -2,6 +2,7 @@ import "server-only";
 import { getResendClient, getResendFrom } from "@/shared/lib/resend";
 import { isEmailSuppressed } from "@/shared/lib/emailCompliance";
 import { buildEmailExperience } from "@/shared/lib/emailExperience";
+import { resendQaTagsForRecipient, resolveResendQaBoundary } from "@/shared/notifications/resendQaBoundary";
 
 /**
  * Send a single "here is your link" email to a customer — the EMAIL half of the
@@ -50,6 +51,9 @@ export async function sendCustomerLinkEmail(input: {
     return { ok: false, error: "email_suppressed" };
   }
 
+  const qaTags = resendQaTagsForRecipient(email, resolveResendQaBoundary());
+  if (qaTags === null) return { ok: false, error: "qa_recipient_unverified" };
+
   const resend = getResendClient();
   if (!resend) return { ok: false, error: "resend_not_configured" };
 
@@ -96,7 +100,7 @@ export async function sendCustomerLinkEmail(input: {
       html: experience.html,
       text: experience.text,
       headers: experience.headers,
-      tags: experience.tags,
+      tags: [...experience.tags, ...qaTags],
     }, input.idempotencyKey ? { idempotencyKey: input.idempotencyKey } : undefined);
     if (error) {
       if (!input.requireReceipt) console.error("[sendCustomerLinkEmail] resend error", error);
