@@ -54,32 +54,42 @@ function depositErrorLabel(code: string, lang: "en" | "vi"): string {
 /** Desk "save a card to hold the spot" — texts the customer a one-tap
  *  card-capture link (charge only on no-show). The wow no-show flow: no
  *  upfront payment for the customer, automatic protection for the salon. */
-function SaveCardButton({
+export function SaveCardButton({
   slug,
   bookingId,
   disabled,
   offlineHint,
   language,
+  sendLink = sendSaveCardLink,
 }: {
   slug: string;
   bookingId: string;
   disabled?: boolean;
   offlineHint?: string;
   language: "en" | "vi";
+  sendLink?: typeof sendSaveCardLink;
 }) {
   const [busy, setBusy] = useState(false);
-  const [result, setResult] = useState<"sent" | "error" | null>(null);
+  const [result, setResult] = useState<"sent" | "email_sent" | "error" | "email_error" | null>(null);
+  const sending = useRef(false);
 
-  async function onPress() {
+  async function onPress(emailOnly = false) {
+    if (sending.current || disabled) return;
+    sending.current = true;
     setBusy(true);
     setResult(null);
     try {
-      const r = await sendSaveCardLink(slug, { bookingId, sendSms: true, language });
-      setResult(r.ok && r.smsSent ? "sent" : "error");
+      const r = await sendLink(slug, emailOnly
+        ? { bookingId, channel: "email_only", language }
+        : { bookingId, sendSms: true, language });
+      setResult(emailOnly
+        ? r.ok && r.emailSent ? "email_sent" : "email_error"
+        : r.ok && r.smsSent ? "sent" : "error");
     } catch {
-      setResult("error");
+      setResult(emailOnly ? "email_error" : "error");
     } finally {
       setBusy(false);
+      sending.current = false;
     }
   }
 
@@ -89,7 +99,7 @@ function SaveCardButton({
         type="button"
         variant="secondary"
         loading={busy}
-        disabled={disabled}
+        disabled={disabled || busy}
         title={disabled ? offlineHint : undefined}
         data-testid="drawer-save-card-link"
         className="mt-2 w-full sm:w-full"
@@ -97,6 +107,29 @@ function SaveCardButton({
       >
         {language === "en" ? "💳 Text save-card link" : "💳 Gửi link lưu thẻ"}
       </Button>
+      <Button
+        type="button"
+        variant="secondary"
+        disabled={disabled || busy || result === "email_sent"}
+        title={disabled ? offlineHint : undefined}
+        data-testid="drawer-email-save-card-link"
+        className="mt-2 w-full sm:w-full"
+        onClick={() => void onPress(true)}
+      >
+        {language === "en" ? "Email save-card link only" : "Chỉ gửi link lưu thẻ qua email"}
+      </Button>
+      {result === "email_sent" ? (
+        <p className="text-xs font-semibold text-nq-success" role="status">
+          {language === "en" ? "Email accepted for sending. No SMS sent; inbox delivery is not confirmed."
+            : "Email đã được tiếp nhận để gửi. Không gửi SMS; chưa xác nhận đã vào hộp thư."}
+        </p>
+      ) : null}
+      {result === "email_error" ? (
+        <p className="text-xs font-semibold text-nq-error" role="status">
+          {language === "en" ? "Email sending was not confirmed. Check the email address and delivery status before retrying. No SMS sent."
+            : "Chưa xác nhận gửi email. Kiểm tra địa chỉ và trạng thái gửi trước khi thử lại. Không gửi SMS."}
+        </p>
+      ) : null}
       {result === "sent" ? (
         <p className="text-xs font-semibold text-nq-success" role="status">
           {language === "en"
@@ -1553,6 +1586,7 @@ export function BookingDetailDrawer({
                     ) : null}
                     {deskEdit && model.depositsEnabled && model.noshowCardRequired && !model.cardOnFile ? (
                       <SaveCardButton
+                        key={deskEdit.booking.id}
                         slug={deskEdit.slug}
                         bookingId={deskEdit.booking.id}
                         disabled={isOffline}

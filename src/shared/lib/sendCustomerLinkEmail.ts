@@ -2,6 +2,7 @@ import "server-only";
 import { getResendClient, getResendFrom } from "@/shared/lib/resend";
 import { isEmailSuppressed } from "@/shared/lib/emailCompliance";
 import { buildEmailExperience } from "@/shared/lib/emailExperience";
+import { isPinnedCardRetryQaEmail, resendQaTagsForRecipient, resolveResendQaBoundary } from "@/shared/notifications/resendQaBoundary";
 
 /**
  * Send a single "here is your link" email to a customer — the EMAIL half of the
@@ -37,16 +38,35 @@ export async function sendCustomerLinkEmail(input: {
   url: string;
   /** Honour the marketing opt-out list (default false → transactional). */
   respectOptOut?: boolean;
-}): Promise<{ ok: boolean; error?: string }> {
+  /** Strict callers need provider acceptance evidence, not a successful no-op. */
+  requireReceipt?: boolean;
+  idempotencyKey?: string;
+  /** Server-only QA rehearsal for one pinned card-retry booking, never a client input. */
+  qaCardRetryBookingId?: string;
+}): Promise<{ ok: boolean; error?: string; providerMessageId?: string }> {
   const email = (input.email ?? "").trim();
   if (!email) return { ok: false, error: "no_email" };
+
+  // Keep the shared sender behind the same outbound kill switch as its
+  // one-shot card-retry caller. A configured provider key must not bypass it.
+  const emailDisabled = ["1", "true", "yes"].includes((process.env.DISABLE_OUTBOUND_EMAIL ?? "").trim().toLowerCase());
+  const pinnedQaCardRetry = !!input.requireReceipt &&
+    !!input.idempotencyKey?.startsWith("card-retry-email/") &&
+    !!input.qaCardRetryBookingId &&
+    isPinnedCardRetryQaEmail({ bookingId: input.qaCardRetryBookingId, recipient: email });
+  if (emailDisabled && !pinnedQaCardRetry) {
+    return { ok: false, error: "email_suppressed" };
+  }
+
+  const qaTags = resendQaTagsForRecipient(email, resolveResendQaBoundary());
+  if (qaTags === null) return { ok: false, error: "qa_recipient_unverified" };
 
   const resend = getResendClient();
   if (!resend) return { ok: false, error: "resend_not_configured" };
 
   if (input.respectOptOut && (await isEmailSuppressed(email))) {
     // Opted out of optional mail — treat as a successful no-op.
-    return { ok: true };
+    return input.requireReceipt ? { ok: false, error: "suppressed" } : { ok: true };
   }
 
   const lang = input.lang === "en" ? "en" : "vi";
@@ -80,22 +100,23 @@ export async function sendCustomerLinkEmail(input: {
   });
 
   try {
-    const { error } = await resend.emails.send({
+    const { data, error } = await resend.emails.send({
       from: getResendFrom(),
       to: email,
       subject: input.subject,
       html: experience.html,
       text: experience.text,
       headers: experience.headers,
-      tags: experience.tags,
-    });
+      tags: [...experience.tags, ...qaTags],
+    }, input.idempotencyKey ? { idempotencyKey: input.idempotencyKey } : undefined);
     if (error) {
-      console.error("[sendCustomerLinkEmail] resend error", error);
-      return { ok: false, error: String(error) };
+      if (!input.requireReceipt) console.error("[sendCustomerLinkEmail] resend error", error);
+      return { ok: false, error: input.requireReceipt ? "provider_error" : String(error) };
     }
-    return { ok: true };
+    if (input.requireReceipt && !data?.id) return { ok: false, error: "missing_receipt" };
+    return input.requireReceipt ? { ok: true, providerMessageId: data!.id } : { ok: true };
   } catch (e) {
-    console.error("[sendCustomerLinkEmail] threw", e);
-    return { ok: false, error: String(e) };
+    if (!input.requireReceipt) console.error("[sendCustomerLinkEmail] threw", e);
+    return { ok: false, error: input.requireReceipt ? "provider_unknown" : String(e) };
   }
 }

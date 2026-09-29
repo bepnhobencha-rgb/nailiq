@@ -45,6 +45,28 @@ jobs:
       - run: npm ci
       - run: npm run check:i18n
 
+  card-retry-email-ui:
+    name: Card retry email-only UI (synthetic)
+    if: github.event_name != 'workflow_dispatch'
+    runs-on: ubuntu-latest
+    timeout-minutes: 15
+    steps:
+      - uses: actions/checkout@v6
+      - uses: actions/setup-node@v6
+        with:
+          node-version: 20
+          cache: npm
+      - run: npm ci
+      - run: npx playwright install --with-deps chromium webkit
+      - run: npx playwright test --config=qa/card-retry-email-ui/playwright.config.ts
+      - name: Card retry UI artifacts (on failure)
+        if: failure()
+        uses: actions/upload-artifact@v7
+        with:
+          name: card-retry-email-ui-artifacts
+          path: test-results/card-retry-email-ui/
+          retention-days: 14
+
   # ── REQUIRED GATE ────────────────────────────────────────────────────────────
   # This is the job that should decide a merge. It is small, it is fast, and every
   # assertion in it is one that must never be red.
@@ -628,7 +650,7 @@ jobs:
         # result and a separate report without replacing the main shard report.
         run: >-
           npx playwright test e2e/booking.spec.ts
-          --grep 'Complete booking end-to-end$'
+          --grep 'Complete booking end-to-end$|Committed booking success does not wait for a held request-ID Web Lock$'
           --project=mobile --repeat-each=10 --retries=0 --reporter=list,html,json
           --output=test-results/booking-submit-webkit
         env:

@@ -78,3 +78,19 @@ export function resendQaTagsForRecipient(
     { name: "nailiq_qa_ref", value: boundary.projectRef },
   ];
 }
+
+/** Narrow rehearsal escape hatch: the global email kill switch remains enabled. */
+export function isPinnedCardRetryQaEmail(input: {
+  bookingId: string;
+  recipient: string;
+}, env: Environment = process.env): boolean {
+  if (env.NAILIQ_QA_CARD_RETRY_EMAIL_ENABLED !== "1" ||
+    !["1", "true", "yes"].includes((env.DISABLE_OUTBOUND_EMAIL ?? "").trim().toLowerCase())) {
+    return false;
+  }
+  const pinnedBookingId = env.NAILIQ_QA_CARD_RETRY_EMAIL_BOOKING_ID?.trim().toLowerCase() ?? "";
+  if (!/^[0-9a-f]{8}-[0-9a-f]{4}-[1-8][0-9a-f]{3}-[89ab][0-9a-f]{3}-[0-9a-f]{12}$/.test(pinnedBookingId) ||
+    input.bookingId.trim().toLowerCase() !== pinnedBookingId) return false;
+  const boundary = resolveResendQaBoundary(env);
+  return boundary.mode === "qa" && input.recipient.trim().toLowerCase() === boundary.recipient;
+}

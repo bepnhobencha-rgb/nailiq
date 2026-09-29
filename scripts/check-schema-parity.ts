@@ -212,6 +212,13 @@ import { execFileSync } from "node:child_process";
  * The 20260926064325 group-slot recovery migration adds two SELECT-only
  * service tables, 21 columns, eight functions and nine indexes. Blank CI
  * measured these additions; browser grants, policies and triggers are unchanged.
+ * The 20260925191112/20260925195024 card-retry email migrations add one
+ * service-only receipt table, ten columns, two invoker RPCs and three indexes.
+ * The combined candidate counts below were independently measured on a fresh
+ * native PostgreSQL 17 cluster after the folded baseline and all 279 forward
+ * migrations, including the built-in SHA-256 card-retry hotfix. Supabase
+ * Storage reference data and hosted platform advisors remain separate gates.
+ * Browser grants stay unchanged.
  * Refresh these
  * with each schema-changing forward migration — they
  * are a tripwire, not a spec.
@@ -219,7 +226,7 @@ import { execFileSync } from "node:child_process";
 const RELEASE_SHAPE = {
   // +1 PII-free Twilio terminal-receipt inbox.
   // +25 private TurnIQ policy, ledger, replay, group, check-in, offline, and rollout tables.
-  tables: 248,
+  tables: 249,
   // +2 from 20260815190000_add_salon_closure_notice.sql: closure_notice
   // added to both salons (base table) and public_salon_profiles (view) —
   // both count as columns in information_schema.
@@ -288,7 +295,7 @@ const RELEASE_SHAPE = {
   // Production-parity restoration 20260908014241 adds the five-column
   // public_booking_resource_catalog view. information_schema.columns counts
   // view columns as well as base-table columns.
-  columns: 3824,
+  columns: 3834,
   // The upsell migration replaces two legacy member-write policies with one
   // service-role-only immutable claim policy. The staff-lifecycle hardening
   // removes the browser DELETE policy so hard deletion cannot bypass the
@@ -375,7 +382,7 @@ const RELEASE_SHAPE = {
   // +2 from 20260925202830/20260925204601: gated fee reconciliation
   // discovery and customer-bound Square webhook; legacy RPCs remain.
   // +1 from 20260925220858: ready-ID fee claims after configuration preflight.
-  functions: 611,
+  functions: 613,
   // +4 pending-receipt correlation triggers across notification/staff INSERT
   // and provider-SID transitions.
   // +1 V1 terminal-booking policy trigger.
@@ -435,7 +442,7 @@ const RELEASE_SHAPE = {
   // +14 bulk email primary, unique, claim, delivery, timeline, and FK indexes.
   // +3 controlled dispatch actor and cohort/status indexes.
   // +2 R10 active authority/source-claim indexes.
-  indexes: 1022,
+  indexes: 1025,
 } as const;
 
 /**
@@ -1110,7 +1117,7 @@ function main() {
   // three more service-role-only tables. The production-parity resource
   // catalog adds one narrow public view reachable by all three API roles; its
   // five-column projection is separately pinned by the P0-03 boundary tests.
-  const GRANTS = { anon: 57, authenticated: 79, service_role: 236 } as const;
+  const GRANTS = { anon: 57, authenticated: 79, service_role: 237 } as const;
   for (const [role, want] of Object.entries(GRANTS)) {
     const got = num(
       `select count(distinct table_name) from (
@@ -1136,6 +1143,33 @@ function main() {
   }
 
   console.log("\n── Recovery and retired request SELECT-only boundary ──\n");
+  const cardRetryBoundary = num(`select count(*) from pg_class c
+    join pg_namespace n on n.oid=c.relnamespace
+    where n.nspname='public' and c.relname='booking_card_retry_email_receipts'
+      and c.relrowsecurity
+      and not has_any_column_privilege('anon', c.oid, 'SELECT,INSERT,UPDATE,REFERENCES')
+      and not has_any_column_privilege('authenticated', c.oid, 'SELECT,INSERT,UPDATE,REFERENCES')
+      and not has_table_privilege('anon', c.oid, 'DELETE,TRUNCATE,TRIGGER')
+      and not has_table_privilege('authenticated', c.oid, 'DELETE,TRUNCATE,TRIGGER')
+      and has_table_privilege('service_role', c.oid, 'SELECT')
+      and has_table_privilege('service_role', c.oid, 'INSERT')
+      and has_table_privilege('service_role', c.oid, 'UPDATE')
+      and (select count(*) from pg_proc p join pg_namespace pn on pn.oid=p.pronamespace
+        where pn.nspname='public' and p.proname in ('claim_card_retry_email','complete_card_retry_email')
+          and not p.prosecdef
+          and not has_function_privilege('anon',p.oid,'EXECUTE')
+          and not has_function_privilege('authenticated',p.oid,'EXECUTE')
+          and has_function_privilege('service_role',p.oid,'EXECUTE'))=2`);
+  if (cardRetryBoundary !== 1) failed = true;
+  console.log(`  ${cardRetryBoundary === 1 ? "✓" : "✗"} card-retry email RLS and service-only invoker RPC boundary`);
+  const cardRetryDigestBoundary = num(`select count(*) from pg_proc p
+    join pg_namespace n on n.oid=p.pronamespace
+    where n.nspname='public' and p.proname='claim_card_retry_email'
+      and pg_get_function_identity_arguments(p.oid)='p_salon_id uuid, p_booking_id uuid, p_actor_id uuid, p_recipient_fingerprint text'
+      and position('pg_catalog.sha256' in pg_get_functiondef(p.oid)) > 0
+      and position('extensions.digest' in pg_get_functiondef(p.oid)) = 0`);
+  if (cardRetryDigestBoundary !== 1) failed = true;
+  console.log(`  ${cardRetryDigestBoundary === 1 ? "✓" : "✗"} card-retry claim uses built-in SHA-256 without extensions-schema USAGE`);
   for (const table of [...CARD_RECOVERY_SERVICE_READ_TABLES, ...GROUP_RECOVERY_SERVICE_READ_TABLES]) {
     const browserReachable = num(
       `select count(*) from information_schema.role_column_grants
