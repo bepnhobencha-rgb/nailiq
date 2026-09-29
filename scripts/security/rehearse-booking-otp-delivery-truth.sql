@@ -26,7 +26,10 @@ DECLARE
   ), 'hex');
   v_sms uuid;
   v_sms_retry uuid;
+  v_sms_repeat uuid;
+  v_sms_conflict uuid;
   v_email uuid;
+  v_email_conflict uuid;
   v_marked uuid;
   v_result jsonb;
 BEGIN
@@ -76,6 +79,43 @@ BEGIN
     RAISE EXCEPTION 'stronger verified state was downgraded: %', v_result;
   END IF;
 
+  -- Twilio may return the same Verification SID for a second send within the
+  -- validity window. The distinct send-attempt SID must still be unique.
+  v_sms_repeat := public.create_booking_otp_delivery_attempt(
+    v_salon, 'sms', v_sms_fingerprint
+  );
+  v_result := public.complete_booking_otp_delivery_attempt(
+    v_sms_repeat, 'provider_accepted',
+    'VEaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa',
+    'VLcccccccccccccccccccccccccccccccc',
+    NULL
+  );
+  IF v_result->>'code' <> 'completed' OR NOT EXISTS (
+    SELECT 1 FROM public.booking_otp_delivery_attempts a
+    WHERE a.id = v_sms_repeat AND a.status = 'provider_accepted'
+      AND a.provider_request_id = 'VEaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa'
+      AND a.provider_attempt_id = 'VLcccccccccccccccccccccccccccccccc'
+  ) THEN
+    RAISE EXCEPTION 'repeated Twilio verification was not preserved: %', v_result;
+  END IF;
+
+  v_sms_conflict := public.create_booking_otp_delivery_attempt(
+    v_salon, 'sms', v_sms_fingerprint
+  );
+  v_result := public.complete_booking_otp_delivery_attempt(
+    v_sms_conflict, 'provider_accepted',
+    'VEaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaaa',
+    'VLcccccccccccccccccccccccccccccccc',
+    NULL
+  );
+  IF v_result->>'code' <> 'provider_identity_conflict' OR NOT EXISTS (
+    SELECT 1 FROM public.booking_otp_delivery_attempts a
+    WHERE a.id = v_sms_conflict AND a.status = 'sending'
+      AND a.provider_request_id IS NULL AND a.provider_attempt_id IS NULL
+  ) THEN
+    RAISE EXCEPTION 'duplicate Twilio send-attempt identity was accepted: %', v_result;
+  END IF;
+
   v_sms_retry := public.create_booking_otp_delivery_attempt(
     v_salon, 'sms', v_sms_fingerprint
   );
@@ -114,6 +154,20 @@ BEGIN
   );
   IF v_result->>'code' <> 'completed' THEN
     RAISE EXCEPTION 'email provider acceptance failed: %', v_result;
+  END IF;
+
+  v_email_conflict := public.create_booking_otp_delivery_attempt(
+    v_salon, 'email', v_email_fingerprint
+  );
+  v_result := public.complete_booking_otp_delivery_attempt(
+    v_email_conflict, 'provider_accepted', 'resend-booking-otp-message', NULL, NULL
+  );
+  IF v_result->>'code' <> 'provider_identity_conflict' OR NOT EXISTS (
+    SELECT 1 FROM public.booking_otp_delivery_attempts a
+    WHERE a.id = v_email_conflict AND a.status = 'sending'
+      AND a.provider_request_id IS NULL
+  ) THEN
+    RAISE EXCEPTION 'duplicate Resend message identity was accepted: %', v_result;
   END IF;
 
   v_result := public.record_resend_booking_otp_delivery_event(

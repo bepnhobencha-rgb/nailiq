@@ -29,7 +29,7 @@ const EXPECTED_RELEASE_SHAPE = {
   policies: 225,
   functions: 613,
   triggers: 169,
-  indexes: 1024,
+  indexes: 1025,
 };
 const EXPECTED_GRANTS = { anon: 57, authenticated: 79, service_role: 237 };
 
