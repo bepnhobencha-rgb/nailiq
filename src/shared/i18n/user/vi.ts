@@ -24,7 +24,7 @@ export const userVi: UserMessages = {
     landingMicrotrust: "14 ngày miễn phí. Không cần thẻ tín dụng.",
     landingZap: "⚡ Nếu không fix hôm nay, bạn vẫn sẽ mất khách ngày mai",
     autoLine: "Hoạt động 24/7 — kể cả khi bạn đang bận làm khách.",
-    ctaSpeed: "Đăng ký trong 2 phút.",
+    ctaSpeed: "Bắt đầu với hướng dẫn từng bước.",
     landingSectionEyebrow:
       "Bạn không thấy những gì bạn đang mất. Nhưng nó xảy ra mỗi ngày.",
     landingSectionTitle: "Tiệm đang mất tiền từ những khoảnh khắc nhỏ",
@@ -158,7 +158,7 @@ export const userVi: UserMessages = {
       ctaPrimary: "Bắt đầu dùng thử miễn phí",
       ctaSecondary: "Xem demo miễn phí",
       microtrust:
-        "Tạo tài khoản khoảng 2 phút · Giữ nguyên POS · Có hỗ trợ tiếng Việt",
+        "Tạo tài khoản, rồi thiết lập salon · Giữ nguyên POS · Có hỗ trợ tiếng Việt",
     },
     problem: {
       eyebrow: "Vì sao chọn NailIQ",
@@ -743,7 +743,7 @@ export const userVi: UserMessages = {
   auth: {
     signInOrSignUpTitle: "Bắt đầu với NailIQ",
     signInOrSignUpSubtext:
-      "Miễn phí 14 ngày · Không cần thẻ tín dụng · Xong trong 2 phút",
+      "Miễn phí 14 ngày · Không cần thẻ tín dụng · Có hướng dẫn thiết lập salon",
     orDivider: "hoặc",
     continueWithGoogle: "Tiếp tục với Google",
     googleHelperText: "Nhanh nhất · Không cần nhớ mật khẩu",
@@ -829,7 +829,7 @@ export const userVi: UserMessages = {
     resetPasswordStrengthHint: "Độ mạnh mật khẩu: ",
     brandTagline: "Quản lý salon thông minh — dành riêng cho bạn",
     brandBullet1: "Miễn phí 14 ngày · Không cần thẻ tín dụng",
-    brandBullet2: "Cài xong và chạy được trong 2 phút",
+    brandBullet2: "Tạo tài khoản, rồi thiết lập salon từng bước",
     brandBullet3: "Được xây dựng riêng cho salon người Việt ở Bắc Mỹ",
     inAppBrowserWarning:
       "Google không cho phép đăng nhập từ Messenger hoặc trình duyệt trong ứng dụng. Vui lòng mở trang này bằng Safari hoặc Chrome.",
