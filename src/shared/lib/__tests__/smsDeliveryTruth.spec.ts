@@ -76,6 +76,56 @@ describe("SMS delivery truth", () => {
     expect(parsed.searchParams.get("sms_domain_callback")).toBe("1");
   });
 
+  it("fails closed on Preview when a domain callback points to Production", () => {
+    vi.stubEnv("VERCEL_ENV", "preview");
+    vi.stubEnv("VERCEL_URL", "nailiq-qa-123.vercel.app");
+    vi.stubEnv("NEXT_PUBLIC_APP_URL", "https://nailiq.ca");
+    expect(bindSmsAttemptToStatusCallback(
+      "https://nailiq.ca/api/twilio/status?notification_id=44444444-4444-4444-8444-444444444444",
+      attemptId,
+    )).toBeNull();
+  });
+
+  it("uses the generated Preview deployment URL instead of a copied Production public URL", () => {
+    vi.stubEnv("VERCEL_ENV", "preview");
+    vi.stubEnv("VERCEL_URL", "nailiq-qa-123.vercel.app");
+    vi.stubEnv("NEXT_PUBLIC_APP_URL", "https://nailiq.ca");
+    expect(bindSmsAttemptToStatusCallback(undefined, attemptId)).toBe(
+      `https://nailiq-qa-123.vercel.app/api/twilio/status?sms_attempt_id=${attemptId}`,
+    );
+  });
+
+  it("keeps a same-deployment Preview domain correlation intact", () => {
+    vi.stubEnv("VERCEL_ENV", "preview");
+    vi.stubEnv("VERCEL_URL", "nailiq-qa-123.vercel.app");
+    const url = bindSmsAttemptToStatusCallback(
+      "https://nailiq-qa-123.vercel.app/api/twilio/status?notification_id=44444444-4444-4444-8444-444444444444",
+      attemptId,
+    );
+    const parsed = new URL(url!);
+    expect(parsed.origin).toBe("https://nailiq-qa-123.vercel.app");
+    expect(parsed.searchParams.get("notification_id")).toBe("44444444-4444-4444-8444-444444444444");
+    expect(parsed.searchParams.get("sms_attempt_id")).toBe(attemptId);
+    expect(parsed.searchParams.get("sms_domain_callback")).toBe("1");
+  });
+
+  it("fails closed on Preview without a deployment URL", () => {
+    vi.stubEnv("VERCEL_ENV", "preview");
+    vi.stubEnv("VERCEL_URL", "");
+    vi.stubEnv("NEXT_PUBLIC_APP_URL", "https://nailiq.ca");
+    expect(bindSmsAttemptToStatusCallback(undefined, attemptId)).toBeNull();
+  });
+
+  it("preserves the Production fallback outside Preview", () => {
+    vi.stubEnv("VERCEL_ENV", "production");
+    vi.stubEnv("NODE_ENV", "production");
+    vi.stubEnv("NEXT_PUBLIC_APP_URL", "");
+    vi.stubEnv("VERCEL_URL", "");
+    expect(bindSmsAttemptToStatusCallback(undefined, attemptId)).toBe(
+      `https://nailiq.ca/api/twilio/status?sms_attempt_id=${attemptId}`,
+    );
+  });
+
   it("persists a typed terminal completion", async () => {
     const rpc = vi.fn(async () => ({
       data: { success: true, code: "completed" },
