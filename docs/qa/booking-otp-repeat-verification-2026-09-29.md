@@ -63,7 +63,8 @@ not treat two distinct SMS sends as one send or prove carrier delivery.
 - QA security advisors had no finding on the OTP ledger. Performance advisors
   reported the new Twilio lookup as unused, expected with zero ledger rows;
   other project-wide advisories predate this focused change and were not
-  claimed as resolved. Full PR CI is a separate gate.
+  claimed as resolved. See the [Supabase unused-index lint](https://supabase.com/docs/guides/database/database-linter?lint=0005_unused_index).
+  Full PR CI is a separate gate.
 
 ## Rollout / rollback boundary
 
