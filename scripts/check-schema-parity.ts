@@ -411,7 +411,8 @@ const RELEASE_SHAPE = {
   // +2 continuation/card-operation foreign-key support indexes.
   // +4 owner-alert outbox primary, occurrence-unique, due, and salon indexes.
   // +6 delivery truth provider, inbox, pending, salon and suppression indexes.
-  // +10 booking-OTP attempt/event/correlation indexes.
+  // +10 booking-OTP attempt/event/correlation indexes; +1 net when the
+  // repeated-Twilio-Verification lookup replaces the global request uniqueness.
   // +5 no-show decision primary, request, booking-state, due and effect indexes.
   // +18 no-show fee review/receipt/webhook primary, unique, lookup and FK indexes.
   // +1 multi-service rollout primary key.
@@ -434,7 +435,7 @@ const RELEASE_SHAPE = {
   // +14 bulk email primary, unique, claim, delivery, timeline, and FK indexes.
   // +3 controlled dispatch actor and cohort/status indexes.
   // +2 R10 active authority/source-claim indexes.
-  indexes: 1021,
+  indexes: 1022,
 } as const;
 
 /**
