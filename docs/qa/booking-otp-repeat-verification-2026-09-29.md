@@ -65,6 +65,12 @@ not treat two distinct SMS sends as one send or prove carrier delivery.
   other project-wide advisories predate this focused change and were not
   claimed as resolved. See the [Supabase unused-index lint](https://supabase.com/docs/guides/database/database-linter?lint=0005_unused_index).
   Full PR CI is a separate gate.
+- First PR CI build/type-check job **failed** because two exact-count contract
+  tests still expected 1,021 indexes after the migration added one net index.
+  The tests now expect 1,022, matching the schema-parity source. Focused local
+  Vitest rerun passed (16/16 across three files), and `npm run typecheck`
+  passed. The first failed run remains part of the evidence; the new PR head
+  must pass CI independently.
 
 ## Rollout / rollback boundary
 
