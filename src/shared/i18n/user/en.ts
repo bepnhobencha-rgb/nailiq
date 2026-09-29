@@ -2581,7 +2581,7 @@ export const userEn: UserMessages = {
     landingZap:
       "⚡ If you don’t fix this today, you’ll keep losing guests tomorrow",
     autoLine: "Works 24/7 — even when you're with clients.",
-    ctaSpeed: "Sign up in 2 minutes.",
+    ctaSpeed: "Start with guided setup.",
     landingSectionEyebrow:
       "You don’t see what you’re losing. But it happens every day.",
     landingSectionTitle: "Salons lose money in small moments",
@@ -2717,7 +2717,7 @@ export const userEn: UserMessages = {
       ctaPrimary: "Start Your Free Trial",
       ctaSecondary: "Watch a Free Demo",
       microtrust:
-        "Ready in about 2 minutes · Keep your existing POS · English and Vietnamese support",
+        "Create an account, then set up your salon · Keep your POS · English and Vietnamese support",
     },
     problem: {
       eyebrow: "Why NailIQ",
@@ -3304,7 +3304,7 @@ export const userEn: UserMessages = {
   auth: {
     signInOrSignUpTitle: "Get started with NailIQ",
     signInOrSignUpSubtext:
-      "Free 14 days · No credit card required · Ready in 2 minutes",
+      "Free 14 days · No credit card required · Guided setup after signup",
     orDivider: "or",
     continueWithGoogle: "Continue with Google",
     googleHelperText: "Fastest · No password needed",
@@ -3389,7 +3389,7 @@ export const userEn: UserMessages = {
     resetPasswordStrengthHint: "Password strength: ",
     brandTagline: "Smart salon management — built for you",
     brandBullet1: "Free 14 days · No credit card needed",
-    brandBullet2: "Up and running in under 2 minutes",
+    brandBullet2: "Create your account, then set up your salon step by step",
     brandBullet3: "Made for Vietnamese-owned salons in North America",
     inAppBrowserWarning:
       "Google sign-in is blocked inside Messenger and other in-app browsers. Open this page in Safari or Chrome to continue.",
