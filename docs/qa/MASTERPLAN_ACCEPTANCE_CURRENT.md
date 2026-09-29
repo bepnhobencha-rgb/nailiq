@@ -9,6 +9,24 @@ phạm vi, chính sách hay điều kiện đạt trong `docs/MASTER_PLAN.md`.
 số test xanh thành phần trăm chức năng hoàn thành. Thiếu bằng chứng không đồng
 nghĩa đã xác nhận có lỗi.
 
+### Checkpoint bổ sung — một SMS trực tiếp từ Twilio, 29/09/2026 Vancouver
+
+- Theo phê duyệt riêng, gửi đúng một tin `NailIQ TEST` từ số hiện cấu hình
+  cho Production tới số thử do Huy cung cấp; không đổi số, webhook, credential,
+  NailIQ outbound switch hoặc dữ liệu salon. Twilio trả `201 Created`, sau đó
+  log báo `Delivered` và Huy xác nhận đã nhận trên điện thoại. Không gửi lại.
+- Đối chiếu read-only theo đúng Message SID: **0** `sms_delivery_attempts`
+  và **0** `twilio_message_status_receipts` ở Production; QA cũng **0/0**.
+  Đây là điều đúng với tin gửi trực tiếp từ Console, không chứng minh luồng
+  `sendSmsReminder`, callback ký xác thực, durable receipt hoặc STOP/START.
+- QA/Preview outbound vẫn OFF; số cũ không dùng cho lượt QA tiếp theo và vẫn
+  là sender Production. P1-01/V1-23 **chưa đóng**. Xem
+  [báo cáo Day 20](masterplan-day-20-sms-provider-canary-preflight-2026-09-29.md).
+- Một guard callback Preview đã được sửa và kiểm thử local để ngăn URL
+  receipt của Preview trỏ sang Production; trạng thái publish phải đối chiếu
+  PR/Preview riêng. Chưa kiểm chứng provider; không tính nó là bằng chứng
+  SMS ứng dụng đã giao.
+
 ## 1. Mốc và cách đọc
 
 ### Checkpoint mới nhất — một email Waitlist QA đã giao, 24/09/2026 Vancouver
@@ -232,7 +250,7 @@ ngày 20/09. Nguồn viết tắt được giải thích ở mục 6.
 | V1-20 | Không thu nhầm | PASS lịch sử; QA thiếu receipt không chargeable | Nghiệm thu thu tiền là phạm vi riêng, không suy từ lưu thẻ |
 | V1-21 | Năm việc tiếp tân | Local: 6 real-Auth UI journeys EN/VI và 15 tenant/race/retry PASS. PR #1424 có Preview; hosted receptionist kiểm chứng giờ hồ sơ, ẩn tiền theo quyền và route chéo salon. CI exact head: desktop 109 PASS/4 SKIP, mobile 103 PASS/10 SKIP; chưa Production | Người mới thật tạo hẹn/walk-in mỗi việc dưới 60 giây theo Giai đoạn 2, không hướng dẫn; pilot có ngưỡng walk-in dưới 30 giây riêng. Ghi đủ năm việc, không dùng thời gian robot thay người |
 | V1-22 | Queue/waitlist | Synthetic UI và guard #1425 đã deploy; một lượt hosted QA invite có receipt Resend Delivered, cleanup PASS | Callback tự động về QA và claim/booking hoàn chỉnh vẫn là cổng riêng |
-| V1-23 | Thông báo/reminder | Delivery truth đã deploy; synthetic callback PASS; một email Waitlist QA Delivered; 83 local tests PASS và rehearsal receipt PostgreSQL local PASS | Chưa đóng callback hosted, SMS, reminder 24h/3h và opt-out end-to-end; không suy rộng từ một email |
+| V1-23 | Thông báo/reminder | Delivery truth đã deploy; synthetic callback PASS; một email Waitlist QA Delivered; 83 local tests PASS và rehearsal receipt PostgreSQL local PASS. Một SMS trực tiếp qua Twilio Console Delivered và người nhận xác nhận 29/09, không đi qua NailIQ | Chưa đóng callback hosted, SMS qua ứng dụng, reminder 24h/3h và opt-out end-to-end; không suy rộng từ tin gửi trực tiếp |
 | V1-24 | Admin một tay | 30/30 local real-Auth UI/SSR PASS; Computer Use 320px, 52 khách/3 trang, Loyalty read-only. Hosted Owner Preview kiểm chứng năm luồng trong report, rồi kiểm lại timezone fix ở exact head `6c31974`; chưa Production | Năm việc trên iPhone vật lý và chủ mới chưa proven; fixture/link tạm đã bàn giao, chưa có kết quả người dùng |
 | V1-25 | EN/VI và thiết bị | Local sáu device/language profiles PASS (Chromium desktop, WebKit iPhone/iPad × EN/VI). Hosted Preview đã kiểm EN/VI và viewport 375×667 trong phạm vi hồ sơ khách; CI exact head mobile/desktop PASS. Còn copy/title nhỏ đã ghi nhận; chưa Production | Profiles không phải phần cứng thật; hosted checks không thay toàn bộ ma trận thiết bị. Hoàn tất matrix vật lý theo phạm vi phát hành |
 | V1-26 | Incident và recovery | P1-06 drill/restore có bằng chứng; #1413 đã merge/deploy; CI và post-deploy verification PASS | Ghi người trực và thực hiện rehearsal vận hành trong pilot; rollout kỹ thuật không thay thế chứng cứ con người |
@@ -248,7 +266,7 @@ ngày 20/09. Nguồn viết tắt được giải thích ở mục 6.
 | P0-01 | #1401 merged 11/09; #1404 merged 14/09; regression và diagnostics | Chưa chứng minh nguyên nhân từng 503 lịch sử; không tự tạo lỗi trên Live | Kỹ thuật: ghép log có request/stage/SHA nếu còn; ghi rõ giới hạn lịch sử |
 | P0-02 | Đã PASS hosted QA: Preview branch-scoped dùng QA disposable, Google provider QA riêng, salon trắng/email synthetic, Google OAuth thật, callback recovery, chống trùng, private/off defaults và cleanup đều có evidence; local 12 browser + 69 contract/unit và build PASS | Không còn điểm chặn kỹ thuật Day 2/Day 3 ở mức QA; còn clean-browser/device return-login, UX logout trong Guided Setup và pilot owner thật | Đóng P0-02 ở mức QA. Chuyển UX logout/progress sang backlog và giữ Production/pilot là cổng riêng |
 | P0-03 | PR #1417 merged; migration `20260921170000` đã áp Production; metadata/function signatures/ACL/Advisor PASS với 0 ERROR/20 WARN; deployment READY; hậu-merge CI/E2E SUCCESS; WAF version 9 có `booking-page-load` 60/60s/IP và `contact-submit` 5/3600s/IP, vượt ngưỡng chỉ log | Database/ACL đã đóng. WAF cần thời gian quan sát false positive; chưa có bằng chứng enforce hay traffic/pilot thực | Kỹ thuật: giữ log-only, thu thập số liệu và chỉ đề xuất enforce bằng thay đổi riêng có rollback; không mở thêm migration cho lỗi đã đóng |
-| P1-01 | #1406/#1407 và #1425 deployed; synthetic truth PASS; một email Waitlist QA được Resend xác nhận Delivered | Callback tự động QA, SMS và reminder/opt-out end-to-end còn thiếu; Inbox chưa xác nhận | Không gửi thêm theo phê duyệt một email đã dùng hết; cần cấu hình callback cô lập an toàn trước cổng provider tiếp theo |
+| P1-01 | #1406/#1407 và #1425 deployed; synthetic truth PASS; một email Waitlist QA được Resend xác nhận Delivered; một SMS gửi trực tiếp từ Twilio Console được người nhận xác nhận 29/09 | Callback tự động QA, SMS qua NailIQ và reminder/opt-out end-to-end còn thiếu; Inbox email chưa xác nhận | Không gửi thêm từ số Production để test QA; cần sender và callback cô lập an toàn trước cổng ứng dụng tiếp theo |
 | P1-02 | #1408 merged; Sandbox/backend/browser PASS | Live exception recovery cần Owner; dữ liệu cũ không đại diện hôm nay | Owner + QA: duyệt từng trường hợp sau snapshot read-only mới |
 | P1-03 | #1409 merged; profile EN/VI PASS | Người mới, thời gian, máy thật | QA/pilot: ghi từng nhiệm vụ, số trợ giúp và kết quả |
 | P1-04 | #1410 merged; 60 browser PASS, 3 SKIP; 32 unit PASS theo báo cáo | Attestation đúng cấu hình từng salon | Owner + QA: xác nhận cấu hình và rehearsal không dùng khách thật |
