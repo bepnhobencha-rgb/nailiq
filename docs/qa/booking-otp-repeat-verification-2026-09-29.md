@@ -1,6 +1,7 @@
 # Booking OTP repeated-verification ledger rehearsal — 2026-09-29
 
-Status: **local fix rehearsed; not deployed or Production-verified**. This is a
+Status: **local and disposable QA rehearsed; not Production-deployed or
+Production-verified**. This is a
 focused P1-01 receipt-integrity follow-up, not proof that SMS delivery or the
 whole Day 9 plan is complete.
 
@@ -48,15 +49,27 @@ not treat two distinct SMS sends as one send or prove carrier delivery.
   migration-history rows matched the local ledger. This is a history audit,
   not a QA migration rehearsal or a live-schema inspection.
 - Folded migration-history generation: PASS with the new migration among the
-  forward migrations. Full CI and a disposable Supabase QA rehearsal remain
-  separate gates.
+  forward migrations.
+- Supabase QA project `uhpzafoiifupyypkcwln`: the migration applied
+  successfully. Metadata showed the old globally unique request index absent,
+  the Resend request index unique, the Twilio request lookup nonunique, and
+  the provider-attempt index still unique. RLS and FORCE RLS stayed enabled.
+  Direct ledger SELECT for `anon`, `authenticated`, and `service_role` remained
+  denied; the completion RPC stayed executable only by `service_role` among
+  those roles.
+- The full SQL regression ran on that QA project in one transaction with a
+  synthetic salon and rolled back. The follow-up read found zero ledger rows
+  and no synthetic salon left. No provider was called.
+- QA security advisors had no finding on the OTP ledger. Performance advisors
+  reported the new Twilio lookup as unused, expected with zero ledger rows;
+  other project-wide advisories predate this focused change and were not
+  claimed as resolved. Full PR CI is a separate gate.
 
 ## Rollout / rollback boundary
 
-Do not apply this migration to Production from this local result. First run it
-on an isolated Supabase QA copy, inspect index metadata, RLS/ACL and advisors,
-and rerun retry/race tests. A Production rollout needs a separate explicit
-approval and checks before/after the single migration. Because future rows may
+Do not apply this migration to Production from this QA result. A Production
+rollout needs a separate explicit approval and checks before/after the single
+migration. Because future rows may
 share a Twilio Verification SID, restoring the old global unique index is not
 a safe blind rollback. Preserve the append-only ledger, inspect any duplicate
 SID rows, and plan a corrective migration if schema reversal is necessary.
