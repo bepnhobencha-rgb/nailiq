@@ -17,6 +17,24 @@ nghĩa đã xác nhận có lỗi.
 
 ## 1. Mốc và cách đọc
 
+### Checkpoint PR #1441 — 30/09/2026 Vancouver, local chưa publish
+
+- GitHub đọc lại: OPEN/Draft, head `1489fa2063b4ecfd3202211b386799d9c0e9bb54`.
+  Commit `6d6acfbf512a8041b61d2487d4321f771801ed57` trong bàn giao Cloud chưa
+  có trên PR hoặc object database local; không coi nó đã push.
+- Bản sửa tiếp nối khóa parser vào S1/S2 và giữ FAIL đã đủ bằng chứng khi
+  phiếu khác còn thiếu. 33/33 pilot tests và 32/32 booking regression liên quan
+  PASS local; synthetic vẫn không đủ điều kiện release và phiếu người thật
+  trống vẫn NOT_PROVEN. Không có phép đo người thật mới.
+- CI `36677607688` và E2E `36677607669` trên head remote ở trên SUCCESS.
+  E2E attempt 1 FAIL được giữ nguyên; attempt 2 xanh không chứng minh nguyên
+  nhân native WebKit đã sửa. MQA-0148 và AI Triage SKIPPED, không tính PASS.
+- Local diff mới chưa commit/push, chưa CI/Preview/deployed/Production-verified
+  hoặc pilot-proven. Xem [receipt và delta P0/P1](pr1441-pilot-evidence-fix-2026-09-30.md).
+
+Các checkpoint dưới đây giữ nguyên ngày, SHA và phạm vi lịch sử; không phải
+kiểm chứng Production mới của ngày 30/09.
+
 ### Checkpoint mới nhất — một email Waitlist QA đã giao, 24/09/2026 Vancouver
 
 - PR #1425 đã merge và deploy Production trong lượt trước, merge SHA

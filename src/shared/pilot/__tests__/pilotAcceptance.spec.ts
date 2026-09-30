@@ -102,6 +102,83 @@ describe("Master Plan two-salon pilot acceptance", () => {
     expect(result.gates.find((gate) => gate.code === "data_integrity")?.status).toBe("fail");
   });
 
+  it("retains a measured help-limit failure when another person's help count is missing", () => {
+    const people = Array.from({ length: 3 }, (_, i) => participant(i));
+    people[0].firstShiftHelpCount = 2;
+    people[1].firstShiftHelpCount = null;
+    const result = evaluatePilotAcceptance({ salons, participants: people });
+    expect(result.status).toBe("fail");
+    expect(result.gates.find((gate) => gate.code === "first_shift_help")?.status).toBe("fail");
+  });
+
+  it("retains a salon's refusal when the other salon has not answered", () => {
+    const result = evaluatePilotAcceptance({
+      salons: [
+        { ...salons[0], wantsToContinue: false },
+        { ...salons[1], wantsToContinue: null },
+      ],
+      participants: Array.from({ length: 3 }, (_, i) => participant(i)),
+    });
+    expect(result.status).toBe("fail");
+    expect(result.gates.find((gate) => gate.code === "salon_retention")?.status).toBe("fail");
+  });
+
+  it.each([6, 15])("retains an invalid %i-day observation window when the other window is missing", (observedDays) => {
+    const result = evaluatePilotAcceptance({
+      salons: [
+        { ...salons[0], observedDays },
+        { ...salons[1], observedDays: null },
+      ],
+      participants: Array.from({ length: 3 }, (_, i) => participant(i)),
+    });
+    expect(result.status).toBe("fail");
+    expect(result.gates.find((gate) => gate.code === "observation_window")?.status).toBe("fail");
+  });
+
+  it("fails an already unreachable 80% task threshold even when another person is not fully measured", () => {
+    const people = Array.from({ length: 5 }, (_, i) => participant(i));
+    people[0].tasks.find((task) => task.task === "create_booking")!.durationSeconds = 60;
+    people[1].tasks.find((task) => task.task === "add_walkin")!.independent = false;
+    people[2].tasks[0].durationSeconds = null;
+    const result = evaluatePilotAcceptance({ salons, participants: people });
+    expect(result.status).toBe("fail");
+    expect(result.gates.find((gate) => gate.code === "five_tasks_and_speed")?.status).toBe("fail");
+  });
+
+  it("keeps a still-reachable 80% task threshold unproven until all measurements are present", () => {
+    const people = Array.from({ length: 5 }, (_, i) => participant(i));
+    people[0].tasks.find((task) => task.task === "create_booking")!.durationSeconds = 60;
+    people[1].tasks[0].durationSeconds = null;
+    const result = evaluatePilotAcceptance({ salons, participants: people });
+    expect(result.status).toBe("not_proven");
+    expect(result.gates.find((gate) => gate.code === "five_tasks_and_speed")?.status).toBe("not_proven");
+  });
+
+  it("does not infer participant failure rates or help-limit results from duplicate identities", () => {
+    const people = Array.from({ length: 3 }, (_, i) => participant(i));
+    people[1].code = people[0].code;
+    people[0].firstShiftHelpCount = 2;
+    people[1].firstShiftHelpCount = null;
+    people[0].tasks.find((task) => task.task === "create_booking")!.durationSeconds = 60;
+    people[2].tasks[0].durationSeconds = null;
+    const result = evaluatePilotAcceptance({ salons, participants: people });
+    expect(result.status).toBe("not_proven");
+    for (const code of ["participant_identity", "first_shift_help", "five_tasks_and_speed"]) {
+      expect(result.gates.find((gate) => gate.code === code)?.status).toBe("not_proven");
+    }
+  });
+
+  it("does not infer cohort-wide results from a single salon record", () => {
+    const result = evaluatePilotAcceptance({
+      salons: [{ ...salons[0], observedDays: 6, wantsToContinue: false }],
+      participants: [participant(0)],
+    });
+    expect(result.status).toBe("not_proven");
+    for (const code of ["two_salons", "observation_window", "salon_retention"]) {
+      expect(result.gates.find((gate) => gate.code === code)?.status).toBe("not_proven");
+    }
+  });
+
   it("does not infer success from missing times, help counts, or continuation answers", () => {
     const people = Array.from({ length: 5 }, (_, i) => participant(i));
     people[0].tasks[0].durationSeconds = null;

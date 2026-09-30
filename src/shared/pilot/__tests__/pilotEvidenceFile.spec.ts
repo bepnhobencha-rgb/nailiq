@@ -29,6 +29,26 @@ describe("pilot evidence file boundary", () => {
     expect(parsePilotEvidenceFile(validFile()).ok).toBe(true);
   });
 
+  it.each(["S0", "S3", "S999", "S01", "S2 "])("rejects out-of-cohort salon code %s at both input boundaries", (code) => {
+    const file = validFile();
+    const salonResult = parsePilotEvidenceFile({ ...file, salons: [{ ...file.salons[0], code }] });
+    const participantResult = parsePilotEvidenceFile({
+      ...file,
+      participants: [{ ...file.participants[0], salonCode: code }],
+    });
+    expect(salonResult).toEqual({ ok: false, fields: ["salons.0.code"] });
+    expect(participantResult).toEqual({ ok: false, fields: ["participants.0.salonCode"] });
+  });
+
+  it.each(["S1", "S2"])("accepts approved salon code %s at both input boundaries", (code) => {
+    const file = validFile();
+    expect(parsePilotEvidenceFile({
+      ...file,
+      salons: [{ ...file.salons[0], code }],
+      participants: [{ ...file.participants[0], salonCode: code }],
+    }).ok).toBe(true);
+  });
+
   it("never treats a passing synthetic calculation as release proof", () => {
     const synthetic = parsePilotEvidenceFile(validFile());
     expect(synthetic.ok).toBe(true);

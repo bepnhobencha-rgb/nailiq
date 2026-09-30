@@ -1,8 +1,8 @@
 import { z } from "zod";
 
-import { PILOT_TASKS, type PilotAcceptance, type PilotParticipant, type PilotSalon } from "./pilotAcceptance";
+import { PILOT_SALON_CODES, PILOT_TASKS, type PilotAcceptance, type PilotParticipant, type PilotSalon } from "./pilotAcceptance";
 
-const salonCode = z.string().regex(/^S[0-9]{1,3}$/u);
+const salonCode = z.enum(PILOT_SALON_CODES);
 const participantCode = z.string().regex(/^P[0-9]{1,4}$/u);
 const observerCode = z.string().regex(/^OBS[0-9]{1,3}$/u);
 const knownBoolean = z.boolean().nullable();

@@ -93,10 +93,13 @@ export function evaluatePilotAcceptance(input: {
     add("two_salons", "pass", "Đã có đúng hai salon S1/S2.");
   }
 
-  if (salons.length !== 2 || salons.some((salon) => salon.observedDays == null)) {
+  if (salons.length !== 2) {
     add("observation_window", "not_proven", "Thiếu số ngày quan sát của hai salon.");
-  } else if (salons.some((salon) => !validCount(salon.observedDays) || salon.observedDays < 7 || salon.observedDays > 14)) {
+  } else if (salons.some((salon) => salon.observedDays != null &&
+    (!validCount(salon.observedDays) || salon.observedDays < 7 || salon.observedDays > 14))) {
     add("observation_window", "fail", "Mỗi salon cần 7–14 ngày quan sát hợp lệ.");
+  } else if (salons.some((salon) => salon.observedDays == null)) {
+    add("observation_window", "not_proven", "Thiếu số ngày quan sát của hai salon.");
   } else {
     add("observation_window", "pass", "Cả hai salon được quan sát 7–14 ngày.");
   }
@@ -138,15 +141,30 @@ export function evaluatePilotAcceptance(input: {
     "Cần chứng minh mẫu thử không chỉ gồm người quen hoặc người làm kỹ thuật.",
   );
 
-  if (!validParticipants || participants.some((participant) => participant.firstShiftHelpCount == null)) {
+  if (!validParticipants) {
     add("first_shift_help", "not_proven", "Thiếu số lần cần giúp trong ca đầu của từng người thử.");
-  } else if (participants.some((participant) => !validCount(participant.firstShiftHelpCount) || participant.firstShiftHelpCount > 1)) {
+  } else if (participants.some((participant) => participant.firstShiftHelpCount != null &&
+    (!validCount(participant.firstShiftHelpCount) || participant.firstShiftHelpCount > 1))) {
     add("first_shift_help", "fail", "Có người cần giúp quá một lần trong ca đầu.");
+  } else if (participants.some((participant) => participant.firstShiftHelpCount == null)) {
+    add("first_shift_help", "not_proven", "Thiếu số lần cần giúp trong ca đầu của từng người thử.");
   } else {
     add("first_shift_help", "pass", "Mỗi người cần giúp không quá một lần trong ca đầu.");
   }
 
   let qualifiedParticipants = 0;
+  // Missing evidence must not hide a threshold that is already unreachable.
+  // Count only explicit failures from a valid task set and participant roster.
+  const failedParticipants = validParticipants ? participants.filter((participant) => {
+    const tasks = taskSet(participant);
+    return tasks !== null && PILOT_TASKS.some((taskName) => {
+      const task = tasks.get(taskName)!;
+      return task.completed === false || task.independent === false ||
+        (typeof task.durationSeconds === "number" && Number.isFinite(task.durationSeconds) &&
+          ((taskName === "create_booking" && task.durationSeconds >= 60) ||
+            (taskName === "add_walkin" && task.durationSeconds >= 30)));
+    });
+  }).length : 0;
   const measurementsComplete = validParticipants && participants.every((participant) => {
     const tasks = taskSet(participant);
     return tasks !== null && PILOT_TASKS.every((taskName) => {
@@ -155,7 +173,10 @@ export function evaluatePilotAcceptance(input: {
         typeof task.durationSeconds === "number" && Number.isFinite(task.durationSeconds) && task.durationSeconds >= 0;
     });
   });
-  if (!measurementsComplete) {
+  if (!measurementsComplete && validParticipants &&
+    (participants.length - failedParticipants) / participants.length < 0.8) {
+    add("five_tasks_and_speed", "fail", "Các kết quả đã đo khiến tỷ lệ đạt tối đa dưới 80%; các phiếu còn thiếu không thể đổi kết luận.");
+  } else if (!measurementsComplete) {
     add("five_tasks_and_speed", "not_proven", "Thiếu kết quả/thời gian của một trong năm việc cho ít nhất một người.");
   } else {
     qualifiedParticipants = participants.filter((participant) => {
@@ -183,7 +204,9 @@ export function evaluatePilotAcceptance(input: {
     add("data_integrity", "pass", "Không ghi nhận mất dữ liệu ở hai salon.");
   }
 
-  if (salons.length !== 2 || salons.some((salon) => typeof salon.wantsToContinue !== "boolean")) {
+  if (salons.length === 2 && salons.some((salon) => salon.wantsToContinue === false)) {
+    add("salon_retention", "fail", "Có salon không muốn tiếp tục; cần cả hai salon đồng ý.");
+  } else if (salons.length !== 2 || salons.some((salon) => typeof salon.wantsToContinue !== "boolean")) {
     add("salon_retention", "not_proven", "Thiếu câu trả lời muốn tiếp tục của hai salon.");
   } else {
     const continuing = salons.filter((salon) => salon.wantsToContinue === true).length;
