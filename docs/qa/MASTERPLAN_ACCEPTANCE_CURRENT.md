@@ -17,6 +17,62 @@ nghĩa đã xác nhận có lỗi.
 
 ## 1. Mốc và cách đọc
 
+### Checkpoint đóng gói được duyệt — 30/09/2026 Vancouver, local-only
+
+- Huy đã duyệt commit/push hotfix vào PR #1441 và redeploy Preview QA;
+  không Ready/merge hoặc Production. Batch gồm MFA readiness, ba browser
+  regression, 16 CLI tests và báo cáo; không đưa diagnostic/artifact vào Git.
+- Đọc lại GitHub và remote trước đóng gói: OPEN/Draft, head `87ba36f5`,
+  main `362dca4d`. Lượt focused mới chạy trong môi trường sạch: 49/49 PASS,
+  exit 0; JSON browser đã lưu xác nhận 141 expected, 0 unexpected/flaky/skipped.
+- Preview branch chưa có cấu hình QA riêng được kiểm chứng. Biến mặc định có
+  scope dùng chung Production/Preview; API không cung cấp giá trị secret để
+  xác minh DB. Không suy ra đích DB từ scope hoặc gọi Preview là QA-safe.
+- Chỉ đóng gói commit local; chưa push/redeploy vì push có thể tự deploy với
+  cấu hình kế thừa chưa an toàn. Đã yêu cầu riêng quyền cấu hình QA branch và
+  kill switch provider; chưa nhận trả lời. Không đổi secret hay môi trường.
+- CI đã publish vẫn thuộc head cũ; human pilot và provider gates vẫn NOT PROVEN.
+
+### Checkpoint MFA hai ca biên — 30/09/2026 Vancouver, local chưa publish
+
+- Bổ sung browser test: giữ focus người dùng qua hydration và form an toàn
+  khi JavaScript tắt. Không đổi thêm code sản phẩm, Auth hoặc action.
+- Focused 6/6 và toàn bộ 141/141 browser checks PASS, retries 0; typecheck
+  và focused lint PASS. Giữ riêng lượt 135 xanh và bằng chứng đỏ trước fix.
+- Chưa commit/push/CI mới hoặc redeploy Preview; PR vẫn Draft. Không thay
+  Production, không provider/thông báo. Các gate nghiệm thu người thật giữ
+  nguyên; test local không chứng minh Master Plan hoàn tất.
+- [Báo cáo và lệnh kiểm tra tiếp nối](pr1441-mfa-hydration-local-2026-09-30.md).
+
+### Checkpoint MFA hydration — 30/09/2026 Vancouver, local chưa publish
+
+- Base vẫn `87ba36f5`, PR OPEN/Draft. Regression giữ JS trước hydration
+  thất bại trước fix (input enabled); giữ JSON đỏ và artifact CI riêng.
+- Guard readiness MFA + keyboard focus đã implement local, không sửa Auth/
+  role/action. Focused 6/6 và full browser 135/135 PASS, retries 0; 7.245 unit
+  PASS/79 skipped, typecheck/lint/default Turbopack build PASS sau sửa.
+- CI remote `36689454836` vẫn FAIL 131/132 MFA; chưa publish hotfix nên không
+  gọi CI xanh. E2E riêng `36689454814` đã SUCCESS attempt 1 đúng head, 10 jobs
+  SUCCESS/2 SKIPPED. Bằng chứng CI cũ không bị thay bởi lượt local xanh.
+- Chưa chứng minh timeline nguyên nhân CI, real TOTP/hosted MFA, máy vật lý,
+  provider hoặc human pilot. Không thay Production/hai salon Live.
+- [Chi tiết hotfix và lệnh kiểm tra](pr1441-mfa-hydration-local-2026-09-30.md).
+
+### Checkpoint tiếp nối PR #1441 — 30/09/2026 Vancouver, head mới
+
+- Đọc remote mới `87ba36f5b53af0550f84ededcbc38b2a27263bd1`, OPEN/Draft;
+  đây là commit đã push từ tác vụ khác, không phải thao tác publish của lượt
+  này. Giữ checkout cũ và kiểm chứng trên checkout detached riêng.
+- Bổ sung 16 test subprocess CLI: 49/49 focused, 7.245 unit PASS/79 skipped,
+  typecheck/lint/default Turbopack build PASS local. Chưa commit/push phần
+  test mới. Synthetic/human tự khai không phải nghiệm thu người thật.
+- CI head mới attempt 1 `36689454836` FAIL: MFA WebKit 131 PASS/1 FAIL, Verify
+  disabled dù textbox có sáu ký tự. 3 local repeats PASS không chữa nguyên
+  nhân. Diagnostic nhập trước hydration tái hiện DOM/state không khớp; chưa
+  chứng minh timeline CI và chưa sửa sản phẩm/test để che lỗi.
+- Giữ P1-07 human pilot và các gate provider/thanh toán riêng; không thay
+  Production. [Chi tiết CLI và CI triage](pr1441-cli-boundary-and-ci-triage-2026-09-30.md).
+
 ### Checkpoint PR #1441 — 30/09/2026 Vancouver, local chưa publish
 
 - GitHub đọc lại: OPEN/Draft, head `1489fa2063b4ecfd3202211b386799d9c0e9bb54`.

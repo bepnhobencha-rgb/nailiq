@@ -1,12 +1,15 @@
 "use client";
 
-import { useId, useRef, useState, useTransition } from "react";
+import { useEffect, useId, useRef, useState, useSyncExternalStore, useTransition } from "react";
 import Link from "next/link";
 import { useRouter } from "next/navigation";
 import { Button } from "@/components/ui/Button";
 import { verifyMfaChallenge } from "@/shared/superadmin/mfaActions";
 
 const unavailable = "Could not confirm verification. Please try again.";
+const subscribeToReadiness = () => () => {};
+const getClientReady = () => true;
+const getServerReady = () => false;
 
 /** 6-digit TOTP entry for the login step-up (aal1 → aal2). */
 export function MfaChallengeForm() {
@@ -16,10 +19,17 @@ export function MfaChallengeForm() {
   const [sessionExpired, setSessionExpired] = useState(false);
   const [pending, start] = useTransition();
   const inFlight = useRef(false);
+  const inputRef = useRef<HTMLInputElement>(null);
+  // Server HTML must not accept a code before React can capture its changes.
+  const ready = useSyncExternalStore(subscribeToReadiness, getClientReady, getServerReady);
   const inputId = useId();
 
+  useEffect(() => {
+    if (ready && document.activeElement === document.body) inputRef.current?.focus();
+  }, [ready]);
+
   const submit = () => {
-    if (inFlight.current || pending || !/^\d{6}$/.test(code)) return;
+    if (!ready || inFlight.current || pending || !/^\d{6}$/.test(code)) return;
     inFlight.current = true;
     setError(null);
     setSessionExpired(false);
@@ -54,13 +64,13 @@ export function MfaChallengeForm() {
     >
       <label htmlFor={inputId} className="sr-only">Authenticator code</label>
       <input
+        ref={inputRef}
         id={inputId}
         inputMode="numeric"
         autoComplete="one-time-code"
         pattern="[0-9]*"
         maxLength={6}
-        autoFocus
-        disabled={pending}
+        disabled={!ready || pending}
         aria-describedby={error ? `${inputId}-error` : undefined}
         value={code}
         onChange={(e) => setCode(e.target.value.replace(/\D/g, "").slice(0, 6))}
@@ -80,7 +90,7 @@ export function MfaChallengeForm() {
       <Button
         type="submit"
         fullWidth
-        disabled={pending || code.length !== 6}
+        disabled={!ready || pending || code.length !== 6}
         aria-busy={pending}
         className="h-11 rounded-xl font-semibold"
       >

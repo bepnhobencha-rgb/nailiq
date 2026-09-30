@@ -7,10 +7,10 @@ npx next build qa/mfa-status --webpack
 npx playwright test -c qa/mfa-status/playwright.config.ts
 ```
 
-132 checks across Chromium desktop, 320px Chromium and iPhone WebKit:
+141 checks across Chromium desktop, 320px Chromium and iPhone WebKit:
 
 - 18 status checks: slow ON/OFF reads, aborted requests, HTTP 503, typed read errors and unauthorized responses; visible error, no unconfirmed ON/OFF or mutation buttons, keyboard retry, duplicate-submit prevention and recovery.
-- 27 challenge checks: abort, HTTP 503, lost response after the stub completes, thrown server error, typed unavailable response, invalid code, expired session with working sign-in link, pending duplicate submissions and incomplete input. Recoverable errors keep the form and code, never navigate automatically, and allow a manual keyboard retry. Screenshots contain fake state only.
+- 36 challenge checks: delayed hydration (server-rendered input stays disabled until handlers are ready, then keyboard focus and exactly one submission), preserved focus when the user has already moved elsewhere, JavaScript-disabled server HTML with no unhandled verification submission, abort, HTTP 503, lost response after the stub completes, thrown server error, typed unavailable response, invalid code, expired session with working sign-in link, pending duplicate submissions and incomplete input. Recoverable errors keep the form and code, never navigate automatically, and allow a manual keyboard retry. Screenshots contain fake state only.
 
 - 87 enrollment checks: begin/confirm/disable under abort, HTTP 503, thrown and typed unavailable errors, lost completed responses, failed reconciliation, expired sessions, and manual retries. Includes pending duplicate submissions, frozen input/Cancel, keyboard confirmation, incomplete codes, cancellation cleanup and successful mutations followed by failed status reads. The stub uses fake secrets and a QA-only cookie. For response-loss tests, a successful stub response is discarded and the subsequent read models its resulting state; no real provider is contacted.
 
