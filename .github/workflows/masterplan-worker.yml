@@ -1,0 +1,146 @@
+name: Master Plan Daily Worker
+
+on:
+  schedule:
+    # 09:00 Vancouver: 16:00 UTC in summer, 17:00 UTC in winter.
+    # The timezone gate below admits exactly one of these hours each day.
+    - cron: "0 16,17 * * *"
+  workflow_dispatch:
+
+permissions:
+  contents: read
+
+concurrency:
+  group: nailiq-masterplan-worker
+  cancel-in-progress: false
+
+jobs:
+  review:
+    runs-on: ubuntu-latest
+    timeout-minutes: 60
+    permissions:
+      contents: write
+      pull-requests: write
+      actions: write
+    steps:
+      - uses: actions/checkout@v6
+        with:
+          fetch-depth: 0
+          persist-credentials: false
+      - uses: actions/setup-node@v6
+        with:
+          node-version: '20'
+          cache: npm
+
+      - name: Evaluate reviewed acceptance and local time
+        id: gate
+        shell: bash
+        run: |
+          set -euo pipefail
+          node --test scripts/masterplan-progress.test.mjs
+          node scripts/masterplan-progress.mjs > /tmp/masterplan-progress.json
+          complete=$(node -p 'JSON.parse(require("fs").readFileSync("/tmp/masterplan-progress.json")).complete')
+          due=$(node scripts/masterplan-progress.mjs --schedule-gate)
+          echo "complete=$complete" >> "$GITHUB_OUTPUT"
+          echo "due=$due" >> "$GITHUB_OUTPUT"
+          cat /tmp/masterplan-progress.json >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Stop the schedule after complete human-reviewed acceptance
+        if: steps.gate.outputs.complete == 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        run: gh api --method PUT "repos/$GITHUB_REPOSITORY/actions/workflows/masterplan-worker.yml/disable"
+
+      - name: Check for an existing worker PR
+        id: existing
+        if: steps.gate.outputs.complete != 'true' && (github.event_name == 'workflow_dispatch' || steps.gate.outputs.due == 'true')
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          gh pr list --state open --limit 1000 --json number,title,headRefName,author > /tmp/masterplan-open-prs.json
+          gh api --paginate --slurp "repos/$GITHUB_REPOSITORY/actions/runs?status=in_progress&per_page=100" > /tmp/masterplan-running-ci.json
+          busy=$(node -e 'const p=JSON.parse(require("fs").readFileSync("/tmp/masterplan-open-prs.json"));console.log(p.some(x=>x.headRefName.startsWith("automation/masterplan-")))')
+          ci_busy=$(node -e 'const p=JSON.parse(require("fs").readFileSync("/tmp/masterplan-running-ci.json"));console.log(p.flatMap(x=>x.workflow_runs).some(x=>String(x.id)!==process.env.GITHUB_RUN_ID && x.name!=="Production Monitoring"))')
+          if [[ "$ci_busy" == true ]]; then busy=true; fi
+          echo "busy=$busy" >> "$GITHUB_OUTPUT"
+          if [[ "$busy" == true ]]; then
+            echo "Existing Master Plan PR or active CI; no concurrent worker changes. Recheck next scheduled run." >> "$GITHUB_STEP_SUMMARY"
+          fi
+
+      - name: Install frozen dependencies and Codex
+        if: steps.existing.outputs.busy == 'false'
+        run: |
+          npm ci
+          npm install --prefix "$RUNNER_TEMP/masterplan-tools" --no-audit --no-fund @openai/codex@0.159.2
+
+      - name: Run one scoped engineering item
+        if: steps.existing.outputs.busy == 'false'
+        env:
+          OPENAI_API_KEY: ${{ secrets.OPENAI_API_KEY }}
+          DISABLE_OUTBOUND_SMS: '1'
+          DISABLE_OUTBOUND_CALLS: '1'
+          NEXT_TELEMETRY_DISABLED: '1'
+        shell: bash
+        run: |
+          set -euo pipefail
+          if [[ -z "$OPENAI_API_KEY" ]]; then
+            echo "Add OPENAI_API_KEY securely in repository Actions secrets; no coding task was run."
+            exit 1
+          fi
+          codex_bin="$RUNNER_TEMP/masterplan-tools/node_modules/.bin/codex"
+          printf '%s' "$OPENAI_API_KEY" | "$codex_bin" login --with-api-key
+          "$codex_bin" --ask-for-approval never exec --sandbox workspace-write --ephemeral \
+            --output-last-message /tmp/masterplan-worker-result.md \
+            - < docs/qa/masterplan-worker-prompt.md
+          cat /tmp/masterplan-worker-result.md >> "$GITHUB_STEP_SUMMARY"
+
+      - name: Validate candidate and preserve acceptance boundaries
+        id: candidate
+        if: steps.existing.outputs.busy == 'false'
+        env:
+          DISABLE_OUTBOUND_SMS: '1'
+          DISABLE_OUTBOUND_CALLS: '1'
+          NEXT_TELEMETRY_DISABLED: '1'
+          NEXT_PUBLIC_SITE_URL: http://localhost:3000
+          NEXT_PUBLIC_SUPABASE_URL: https://example.supabase.co
+          NEXT_PUBLIC_SUPABASE_ANON_KEY: dummy
+          SUPABASE_SERVICE_ROLE_KEY: dummy
+        shell: bash
+        run: |
+          set -euo pipefail
+          git diff HEAD --exit-code -- .github/workflows/masterplan-worker.yml scripts/masterplan-progress.mjs scripts/masterplan-progress.test.mjs docs/MASTER_PLAN.md docs/qa/masterplan-progress.json docs/qa/masterplan-worker-prompt.md
+          if [[ -z "$(git status --porcelain)" ]]; then
+            echo "changed=false" >> "$GITHUB_OUTPUT"
+            exit 0
+          fi
+          npm run typecheck
+          npm run lint
+          npm run test:unit -- --maxWorkers=2 --testTimeout=30000
+          npm run build
+          echo "changed=true" >> "$GITHUB_OUTPUT"
+
+      - name: Publish one draft for review
+        if: steps.candidate.outputs.changed == 'true'
+        env:
+          GH_TOKEN: ${{ github.token }}
+        shell: bash
+        run: |
+          set -euo pipefail
+          branch="automation/masterplan-${GITHUB_RUN_ID}"
+          git switch -c "$branch"
+          git config user.name "NailIQ Master Plan Worker"
+          git config user.email "masterplan-worker@users.noreply.github.com"
+          git add --all
+          if git diff --cached --name-only | rg '(^|/)(\.env[^/]*|credentials[^/]*|[^/]*\.(pem|key))$'; then
+            echo "Refusing credential-shaped files in draft."
+            exit 1
+          fi
+          git diff --cached --quiet && exit 0
+          git commit -m "fix(masterplan): advance one reviewed acceptance gap"
+          gh auth setup-git
+          git push origin "$branch"
+          gh pr create --draft --base main --head "$branch" \
+            --title "Master Plan: one scoped acceptance gap" \
+            --body-file /tmp/masterplan-worker-result.md

@@ -1,0 +1,15 @@
+{
+  "version": 1,
+  "timezone": "America/Vancouver",
+  "dailyHour": 9,
+  "selfPayRequired": true,
+  "phases": [
+    { "id": 1, "name": "Môi trường và đăng ký", "status": "incomplete", "remaining": "QA hosted đã có trong hồ sơ; chưa nghiệm thu toàn bộ điều kiện trên ứng viên hiện hành." },
+    { "id": 2, "name": "UX tiếp tân", "status": "incomplete", "remaining": "Người mới hoàn thành tạo hẹn và walk-in dưới 60 giây, không hướng dẫn." },
+    { "id": 3, "name": "Admin iPhone", "status": "incomplete", "remaining": "Nghiệm thu năm việc bằng một tay trên iPhone vật lý." },
+    { "id": 4, "name": "Ổn định", "status": "incomplete", "remaining": "Đóng provider/callback/reminder/SMS và các cổng release còn mở; xác minh PR từ xa." },
+    { "id": 5, "name": "Pilot ba salon", "status": "incomplete", "remaining": "Ba salon, 7–14 ngày, thành phần người dùng và KPI theo Master Plan." },
+    { "id": 6, "name": "Trial và self-pay", "status": "incomplete", "remaining": "Khách tự thanh toán 39 CAD/tháng, receipt/replay an toàn, nhắc trial 5/2/0 ngày, thẻ lỗi và hủy gói." },
+    { "id": 7, "name": "Bán có kiểm soát", "status": "incomplete", "remaining": "Cohort tối đa 10 salon và dữ liệu funnel/hỗ trợ của 30 ngày đầu." }
+  ]
+}
