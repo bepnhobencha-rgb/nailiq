@@ -88,25 +88,26 @@ test.describe("Group booking — gate-first OTP", () => {
     expect(sendCount).toBe(1);
 
     // ── STAMPS ──────────────────────────────────────────────
-    // The gate OTP verified the organizer's phone, so the organizer row carries
-    // the evidence. Polled because the stamp action defers to after().
+    // finalize_public_booking_profile can stamp the organizer's OTP before the
+    // separate after() callback writes booking_channel. Wait for the complete
+    // two-person snapshot; OTP alone does not prove that callback has finished.
+    // Members share the organizer's phone but have no verification of their own.
     await expect
       .poll(
         async () => {
           const rows = await getGroupBookingStamps(SLUG);
-          return rows[0]?.verification_method ?? null;
+          return rows.map((row) => ({
+            channel: row.booking_channel,
+            verification: row.verification_method,
+            hasOtpSession: Boolean(row.otp_session_id),
+            organizer: row.is_group_organizer,
+          }));
         },
         { timeout: 15_000 },
       )
-      .toBe("otp");
-
-    const rows = await getGroupBookingStamps(SLUG);
-    expect(rows.every((b) => b.booking_channel === "online")).toBe(true);
-    expect(rows[0]?.otp_session_id).not.toBeNull();
-    // Members share the organizer's phone but hold no evidence of their own —
-    // marking them verified would overstate what the OTP actually proved.
-    expect(
-      rows.filter((b) => !b.is_group_organizer).every((b) => b.verification_method === null),
-    ).toBe(true);
+      .toEqual([
+        { channel: "online", verification: "otp", hasOtpSession: true, organizer: true },
+        { channel: "online", verification: null, hasOtpSession: false, organizer: false },
+      ]);
   });
 });
