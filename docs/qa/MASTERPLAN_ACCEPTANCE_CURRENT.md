@@ -17,6 +17,22 @@ nghĩa đã xác nhận có lỗi.
 
 ## 1. Mốc và cách đọc
 
+### Checkpoint cô lập Preview được duyệt — 30/09/2026 Vancouver
+
+- Huy đã duyệt cấu hình kín QA riêng cho branch `qa/masterplan-day21-pilot-kit-20260929`.
+  Đã tạo và đọc lại exact value của 19 kill switches; tất cả đúng branch và
+  Preview-only. Metadata Production trước/sau không đổi; không trigger deploy.
+- Huy đăng nhập Supabase; browser xác nhận đúng QA `uhpzafoiifupyypkcwln`.
+  Đọc khóa hiện có trong bộ nhớ phiên, xác minh JWT `ref` đúng QA và role đúng
+  `anon`/`service_role`; không tạo khóa/token, không in hoặc ghi secret ra file.
+- Chrome Vercel vẫn ở màn hình login. Bước GitHub OAuth bị chặn trước khi thực
+  hiện; đã yêu cầu duyệt riêng tài khoản `bepnhobencha-rgb`, chưa thử lại hoặc
+  dùng đường vòng. Chưa lưu bộ khóa vào Vercel, chưa chứng minh runtime QA.
+- GitHub đọc lại: PR #1441 OPEN/Draft, head `87ba36f5`; MFA CI trên head này
+  còn FAILURE. Hotfix local `d5bcd19b` chưa push/redeploy; không dùng CI head cũ
+  hoặc 141 local browser checks làm bằng chứng hosted hotfix đã PASS.
+- [Receipt cấu hình và giới hạn](pr1441-preview-isolation-config-2026-09-30.md).
+
 ### Checkpoint đóng gói được duyệt — 30/09/2026 Vancouver, local-only
 
 - Huy đã duyệt commit/push hotfix vào PR #1441 và redeploy Preview QA;
