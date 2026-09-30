@@ -119,3 +119,20 @@ Nguồn chính: [Master Plan](../MASTER_PLAN.md),
 Các kiểm tra localhost/onboarding không đóng release, provider, pilot hoặc
 toàn bộ Master Plan. Lượt này không phát sinh provider sends, payment hay
 Production mutation. Chưa có cơ sở tuyên bố hoàn thành 100%.
+
+## Checkpoint sau khi lưu mạng
+
+- GitHub API đã truy cập được; `origin/main` vẫn ở `362dca4d`.
+- Không thấy GitHub Actions ở trạng thái queued/in_progress tại lúc đọc.
+- PR #1439 (SMS callback fence) và #1441 (pilot evidence kit) đã có các check
+  bắt buộc SUCCESS. Các job có điều kiện SKIPPED không được tính PASS; các PR
+  vẫn Draft, không merge/deploy trong lượt này.
+- Self-pay đã có Draft #1246 `fix/billing-idempotency-guard`, head `c769e00b`.
+  Nó là stacked PR trên một nền cũ, chưa có current-main/provider acceptance.
+  Không viết lại một nhánh billing trùng hoặc merge bản này chỉ vì CI cũ xanh.
+- Secrets API trả 403 `Resource not accessible by integration`: đây là thiếu
+  quyền metadata, không chứng minh thiếu secret. Codex Cloud task list trả
+  401 `Could not parse your authentication token`: trạng thái task Cloud vẫn
+  chưa xác minh, không còn được phân loại đơn thuần là lỗi network.
+- Worker còn kiểm tra active CI trước khi sửa code, bỏ qua lượt có CI/worker
+  PR khác. Không đổi Production Monitoring.

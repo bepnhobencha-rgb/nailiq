@@ -59,11 +59,14 @@ jobs:
         shell: bash
         run: |
           set -euo pipefail
-          gh pr list --state open --limit 100 --json number,title,headRefName,author > /tmp/masterplan-open-prs.json
+          gh pr list --state open --limit 1000 --json number,title,headRefName,author > /tmp/masterplan-open-prs.json
+          gh api --paginate --slurp "repos/$GITHUB_REPOSITORY/actions/runs?status=in_progress&per_page=100" > /tmp/masterplan-running-ci.json
           busy=$(node -e 'const p=JSON.parse(require("fs").readFileSync("/tmp/masterplan-open-prs.json"));console.log(p.some(x=>x.headRefName.startsWith("automation/masterplan-")))')
+          ci_busy=$(node -e 'const p=JSON.parse(require("fs").readFileSync("/tmp/masterplan-running-ci.json"));console.log(p.flatMap(x=>x.workflow_runs).some(x=>String(x.id)!==process.env.GITHUB_RUN_ID && x.name!=="Production Monitoring"))')
+          if [[ "$ci_busy" == true ]]; then busy=true; fi
           echo "busy=$busy" >> "$GITHUB_OUTPUT"
           if [[ "$busy" == true ]]; then
-            echo "Existing Master Plan PR awaits review; no new worker changes." >> "$GITHUB_STEP_SUMMARY"
+            echo "Existing Master Plan PR or active CI; no concurrent worker changes. Recheck next scheduled run." >> "$GITHUB_STEP_SUMMARY"
           fi
 
       - name: Install frozen dependencies and Codex
