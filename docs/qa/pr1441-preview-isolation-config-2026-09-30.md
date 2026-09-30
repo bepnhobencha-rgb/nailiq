@@ -45,6 +45,17 @@ Production environment metadata comparison before/after these writes was unchang
 
 ## Remaining boundary / status
 
+### Superseding checkpoint: authenticated In-app Browser save
+
+- The user completed Vercel sign-in in the In-app Browser. The rejected Chrome OAuth action was not retried or bypassed.
+- Saved `NEXT_PUBLIC_SUPABASE_URL`, `SUPABASE_INTERNAL_URL`, `NEXT_PUBLIC_SUPABASE_ANON_KEY`, and `SUPABASE_SERVICE_ROLE_KEY` to the approved Preview branch only. Production was explicitly deselected before each save.
+- Service-role is Secret (`sensitive`, write-only); other three entries are Config (`encrypted`). The existing source JWTs identify the approved QA project and roles. Private UI input equality checks passed for both keys, and each save produced Vercel's success receipt.
+- Independent API readback verified both URLs and the anon JWT's QA project/role without printing values. The service-role's scope/type were verified, not decrypted; runtime server authentication remains a separate gate.
+- All 19 kill switches were independently read back again and matched. Production metadata/ciphertext digest for 42 entries was unchanged: `98b350e50e81bc0c3707301db9b6c8f675224b123f41f13e34b0f4d817d4dd3a`.
+- Remote PR remains OPEN/Draft at `87ba36f5` before the approved push. No new deployment or application/provider invocation yet; hosted isolation/CI remain NOT PROVEN at this checkpoint.
+
+The following status is retained as historical evidence before the user's In-app Browser sign-in:
+
 - **Passed:** 19 configuration writes and authoritative readback; branch/Preview scope; unchanged Production metadata.
 - **Passed source-key verification:** The user completed Supabase login. The browser showed the approved QA project; existing legacy keys were read into session memory only. Both JWTs had the approved QA `ref`, with roles `anon` and `service_role` respectively. No key/token creation, rotation, file persistence, or printed secret.
 - **Blocked:** Chrome Vercel is signed out. Its `Continue with GitHub` action was rejected before execution; explicit approval for the named GitHub account `bepnhobencha-rgb` is pending. It has not been retried or bypassed. The earlier Supabase login block was resolved by the user's login.

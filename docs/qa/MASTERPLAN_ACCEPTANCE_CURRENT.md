@@ -17,6 +17,22 @@ nghĩa đã xác nhận có lỗi.
 
 ## 1. Mốc và cách đọc
 
+### Checkpoint QA credentials đã lưu — 30/09/2026 Vancouver
+
+- Huy tự đăng nhập Vercel In-app Browser; không thử lại Chrome OAuth bị chặn.
+  Lưu bốn biến riêng cho đúng Preview branch `qa/masterplan-day21-pilot-kit-20260929`:
+  URL public, URL nội bộ server, anon key và service-role key của QA đã duyệt.
+- Service-role lưu dạng Secret/write-only, không public; URL/anon là Config.
+  JWT nguồn và nội dung nhập được so khớp kín trong bộ nhớ. API đọc lại hai
+  URL và anon xác nhận đúng QA; Secret không được giải mã để tạo bằng chứng giả.
+- API xác nhận cả bốn biến chỉ scope Preview branch; 19/19 kill switches đọc
+  lại đúng giá trị. Metadata 42 biến Production trước/sau có cùng SHA-256
+  `98b350e50e81bc0c3707301db9b6c8f675224b123f41f13e34b0f4d817d4dd3a`.
+- PR vẫn OPEN/Draft tại remote `87ba36f5`. Chuẩn bị push batch đã kiểm thử;
+  runtime isolation và CI tại head hotfix còn NOT PROVEN, chưa deploy mới.
+- Không migration, booking, provider/thông báo hoặc thay đổi hai salon Live.
+  Các checkpoint bị chặn/chưa lưu bên dưới là lịch sử trước lần đăng nhập này.
+
 ### Checkpoint cô lập Preview được duyệt — 30/09/2026 Vancouver
 
 - Huy đã duyệt cấu hình kín QA riêng cho branch `qa/masterplan-day21-pilot-kit-20260929`.
