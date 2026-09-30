@@ -2,7 +2,7 @@ import { redirect } from "next/navigation";
 import type { Metadata } from "next";
 import { createClient } from "@/shared/lib/supabase/server";
 import { getSuperAdminRole } from "@/shared/lib/superadmin";
-import { SuperadminLoginForm } from "./SuperadminLoginForm";
+import { SuperadminLoginForm, SuperadminLoginIntro } from "./SuperadminLoginForm";
 
 export const dynamic = "force-dynamic";
 
@@ -48,58 +48,7 @@ export default async function SuperadminLoginPage({
 
   return (
     <main className="mx-auto flex w-full max-w-md flex-col gap-8 px-5 py-16 md:px-8">
-      <header className="flex flex-col gap-2">
-        <p className="text-xs font-medium uppercase tracking-[0.18em] text-nq-muted">
-          NailIQ
-        </p>
-        <h1 className="text-2xl font-semibold tracking-tight text-nq-foreground">
-          SuperAdmin sign-in
-        </h1>
-        <p className="text-sm text-nq-muted">
-          Restricted to NailIQ operators. Salon owners and staff should
-          sign in at the regular login.
-        </p>
-      </header>
-
-      {justReset ? (
-        <div
-          className="flex items-start gap-3 rounded-md border border-nq-success/40 bg-nq-success/15 px-4 py-3 text-nq-success"
-          role="status"
-          data-testid="superadmin-password-reset-banner"
-        >
-          <svg
-            className="mt-0.5 size-5 shrink-0"
-            viewBox="0 0 20 20"
-            fill="currentColor"
-            aria-hidden="true"
-          >
-            <path
-              fillRule="evenodd"
-              d="M10 18a8 8 0 1 0 0-16 8 8 0 0 0 0 16Zm3.857-9.809a.75.75 0 0 0-1.214-.882l-3.236 4.53L7.53 9.97a.75.75 0 0 0-1.06 1.06l2.5 2.5a.75.75 0 0 0 1.137-.089l3.75-5.25Z"
-              clipRule="evenodd"
-            />
-          </svg>
-          <div className="flex flex-col gap-0.5">
-            <p className="text-sm font-semibold">
-              Password updated / Mật khẩu đã được cập nhật
-            </p>
-            <p className="text-sm opacity-90">
-              Sign in with your new password. / Đăng nhập bằng mật khẩu mới.
-            </p>
-          </div>
-        </div>
-      ) : null}
-
-      {reauthenticationRequired ? (
-        <div
-          className="rounded-md border border-nq-warning/40 bg-nq-warning/10 px-4 py-3 text-sm text-nq-foreground"
-          role="status"
-          data-testid="superadmin-reauthentication-notice"
-        >
-          Your secure session ended or could not be verified. Sign in again to
-          continue.
-        </div>
-      ) : null}
+      <SuperadminLoginIntro justReset={justReset} reauthenticationRequired={reauthenticationRequired} />
 
       <SuperadminLoginForm />
     </main>

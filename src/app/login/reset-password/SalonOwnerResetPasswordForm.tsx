@@ -194,3 +194,21 @@ export function SalonOwnerResetPasswordForm() {
     </form>
   );
 }
+
+export function SalonOwnerResetPasswordHeader() {
+  const { language } = useUserLanguage();
+  const t = getUserMessages(language).auth;
+  return (
+      <header className="flex flex-col gap-2">
+        <p className="text-xs font-medium uppercase tracking-[0.18em] text-nq-muted">
+          NailIQ
+        </p>
+        <h1 className="text-2xl font-semibold tracking-tight text-nq-foreground">
+          {t.resetPasswordPageTitle}
+        </h1>
+        <p className="text-sm text-nq-muted">
+          {t.resetPasswordPageSubtitle}
+        </p>
+      </header>
+  );
+}
