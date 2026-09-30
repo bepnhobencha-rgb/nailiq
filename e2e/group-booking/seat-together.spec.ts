@@ -4,6 +4,7 @@ import { expect, test } from "@playwright/test";
 import { cleanupTestSalon } from "../helpers/db";
 import {
   fillMemberCard,
+  enterGroupConfirmAndAwaitQuote,
   gotoGroupFlow,
   nextOpenDateYmd,
   pickDateInCalendar,
@@ -48,7 +49,7 @@ async function bookGroupOfTwo(
   slug: string,
   phone: string,
 ): Promise<void> {
-  await gotoGroupFlow(page, slug);
+  await gotoGroupFlow(page, slug, { phone });
   await page.getByTestId("group-size-2").click();
   await page.getByTestId("group-size-next").click();
   await page
@@ -69,14 +70,20 @@ async function bookGroupOfTwo(
   const bestCard = page.getByTestId("group-arrangement-best");
   await expect(bestCard).toBeVisible({ timeout: 20_000 });
   await bestCard.click();
-  await page.getByTestId("group-arrangement-next").click();
+  await enterGroupConfirmAndAwaitQuote(page);
 
   await page
     .getByTestId("group-step-confirm-panel")
     .waitFor({ state: "visible" });
-  await page.getByTestId("group-primary-phone").fill(phone);
+  await expect(page.getByTestId("group-primary-phone")).toHaveValue(/\d/);
   // SMS consent was given at the phone-first gate (gotoGroupFlow); the step-5
   // checkbox is not rendered once consent is already satisfied.
+  await expect(page.getByTestId("group-authoritative-receipt")).toBeVisible({
+    timeout: 15_000,
+  });
+  await expect(page.getByTestId("group-confirm")).toBeEnabled({
+    timeout: 15_000,
+  });
   await page.getByTestId("group-confirm").click();
   await expect(page.getByTestId("booking-group-success")).toBeVisible({
     timeout: 15_000,
@@ -91,7 +98,7 @@ test.describe("Group booking — seat together / couple", () => {
     await seedGroupTestSalon(SLUG);
     try {
       // Toggle is visible and ON by default on step 2.
-      await gotoGroupFlow(page, SLUG);
+      await gotoGroupFlow(page, SLUG, { phone: "16045550222" });
       await page.getByTestId("group-size-2").click();
       await page.getByTestId("group-size-next").click();
       await page
@@ -151,14 +158,20 @@ test.describe("Group booking — seat together / couple", () => {
       const bestCard = page.getByTestId("group-arrangement-best");
       await expect(bestCard).toBeVisible({ timeout: 20_000 });
       await bestCard.click();
-      await page.getByTestId("group-arrangement-next").click();
+      await enterGroupConfirmAndAwaitQuote(page);
 
       await page
         .getByTestId("group-step-confirm-panel")
         .waitFor({ state: "visible" });
-      await page.getByTestId("group-primary-phone").fill("+16045550222");
+      await expect(page.getByTestId("group-primary-phone")).toHaveValue(/\d/);
       // SMS consent was given at the phone-first gate (gotoGroupFlow); the
       // step-5 checkbox is not rendered once consent is already satisfied.
+      await expect(page.getByTestId("group-authoritative-receipt")).toBeVisible({
+        timeout: 15_000,
+      });
+      await expect(page.getByTestId("group-confirm")).toBeEnabled({
+        timeout: 15_000,
+      });
       await page.getByTestId("group-confirm").click();
       await expect(page.getByTestId("booking-group-success")).toBeVisible({
         timeout: 15_000,
