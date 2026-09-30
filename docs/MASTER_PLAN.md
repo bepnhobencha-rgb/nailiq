@@ -153,7 +153,10 @@ Thời gian: 7–14 ngày
 
 ### Chọn nhóm thử nghiệm
 
-- 3 salon.
+- 2 salon: Hi-Lite Head Spa và Hi-Lite Studio, theo quyết định của Huy ngày
+  29/09/2026. Hai địa điểm cùng thương hiệu được tính là hai salon vận hành;
+  không tự thêm Tech Nails hoặc tenant QA vào cohort. Kết quả của hai địa điểm
+  này không được tự suy rộng thành bằng chứng cho mọi salon khác.
 - Ít nhất một chủ salon lớn tuổi.
 - Ít nhất hai tiếp tân ít sử dụng công nghệ.
 - Không chọn toàn bộ người quen hoặc người làm kỹ thuật.
@@ -173,7 +176,8 @@ hiểu, họ có sợ bấm nhầm không, họ có gọi hỗ trợ không và 
 - Thêm walk-in dưới 30 giây.
 - Không quá một lần cần trợ giúp trong ca đầu tiên.
 - Không có sự cố mất dữ liệu.
-- Ít nhất hai trong ba salon muốn tiếp tục sử dụng.
+- Cả hai salon muốn tiếp tục sử dụng. Cohort nhỏ hơn không làm giảm các cổng
+  an toàn, thành phần người thử hoặc thời gian quan sát.
 
 ## GIAI ĐOẠN 6 — THANH TOÁN VÀ CHÍNH SÁCH TRIAL
 

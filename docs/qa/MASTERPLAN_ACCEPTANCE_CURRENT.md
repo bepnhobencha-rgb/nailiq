@@ -5,6 +5,12 @@ Mỗi checkpoint có phạm vi và thời điểm riêng; mốc cũ không phả
 Đây là bảng theo dõi nghiệm thu hiện hành; không thay đổi
 phạm vi, chính sách hay điều kiện đạt trong `docs/MASTER_PLAN.md`.
 
+**Cập nhật quyết định pilot 29/09/2026:** Huy chọn đúng hai địa điểm Hi-Lite,
+không thêm salon thứ ba. Master Plan Giai đoạn 5 và bộ chấm local đã được sửa
+theo quyết định này; yêu cầu người thử thật, 7–14 ngày, ngưỡng thời gian và an
+toàn dữ liệu giữ nguyên. Các checkpoint ba salon bên dưới là lịch sử, không
+phải chính sách pilot hiện hành.
+
 **Kết luận: chưa đủ bằng chứng nghiệm thu toàn bộ Masterplan.** Không quy đổi
 số test xanh thành phần trăm chức năng hoàn thành. Thiếu bằng chứng không đồng
 nghĩa đã xác nhận có lỗi.
@@ -199,7 +205,7 @@ nghĩa đã xác nhận có lỗi.
 | 2. Tiếp tân | Năm việc cốt lõi đã có QA desktop/WebKit; sửa UX nằm trong PR #1409 đã merge | Người mới tạo hẹn dưới 60 giây và walk-in dưới 30 giây; xác nhận chế độ thường/cao điểm với người dùng |
 | 3. Admin iPhone | QA profile iPhone SE/Pro Max/iPad có bằng chứng | Dùng một tay trên iPhone vật lý và hoàn tất năm việc Admin |
 | 4. Ổn định | Các sửa P0/P1 #1401, #1404–#1411 và phòng ngừa sự cố #1413 đã vào main; probe Live sau rollout PASS | Đóng từng acceptance còn mở; đủ bằng chứng thông báo/provider và diễn tập vận hành pilot |
-| 5. Pilot | Hai salon Live là bối cảnh vận hành, không thay biên bản pilot | Ba salon, thành phần người dùng đúng yêu cầu, 7–14 ngày, số đo và kết luận |
+| 5. Pilot | Huy chọn Hi-Lite Head Spa và Hi-Lite Studio làm đúng hai salon pilot; hai salon Live không tự thay biên bản pilot | Thành phần người dùng đúng yêu cầu, 7–14 ngày ở cả hai địa điểm, số đo và xác nhận cả hai muốn tiếp tục |
 | 6. Trial/thanh toán | PR #1411 triển khai trial 14 ngày + 7 ngày continuity + read-only; activation V1 thủ công theo báo cáo đã duyệt | Masterplan còn yêu cầu tự thanh toán: cần xác nhận phạm vi nghiệm thu V1 thủ công hoặc xây/chứng nhận riêng self-pay; không tự đổi chính sách |
 | 7. Bán có kiểm soát | Chưa tìm thấy bằng chứng đủ trong bộ hồ sơ được kiểm tra | Cohort 10 salon, funnel 30 ngày, hỗ trợ và tỷ lệ chuyển đổi có dữ liệu |
 
@@ -239,7 +245,7 @@ ngày 20/09. Nguồn viết tắt được giải thích ở mục 6.
 | V1-27 | Restore/offboarding | P1-06 PostgreSQL rehearsal lịch sử PASS | Gắn thời gian phục hồi, người phụ trách và recovery acceptance vào biên bản |
 | V1-28 | Trial/giá/thanh toán | #1411 đã deploy; QA expiry/manual billing PASS | Chốt khác biệt self-pay Masterplan và activation thủ công V1; Preview Auth hạn chế còn được ghi nhận |
 | V1-29 | AI brief nếu nằm trong V1 | NOT PROVEN riêng cho pilot | Chốt scope pilot; nếu bật phải kiểm nguồn và các hành động có rủi ro |
-| V1-30 | Pilot/mở rộng | NOT PROVEN | Ba salon 7–14 ngày và KPI trước cohort 10 salon |
+| V1-30 | Pilot/mở rộng | NOT PROVEN | Hai salon Hi-Lite 7–14 ngày và KPI trước cohort 10 salon |
 
 ## 4. Hàng đợi đóng điểm chặn
 
@@ -254,7 +260,7 @@ ngày 20/09. Nguồn viết tắt được giải thích ở mục 6.
 | P1-04 | #1410 merged; 60 browser PASS, 3 SKIP; 32 unit PASS theo báo cáo | Attestation đúng cấu hình từng salon | Owner + QA: xác nhận cấu hình và rehearsal không dùng khách thật |
 | P1-05 | #1411 merged; giá/trial/manual activation đã có QA | Scope self-pay khác Masterplan; authenticated Preview chưa proven | Huy chốt phạm vi thương mại; kỹ thuật giữ nguyên chính sách đã triển khai |
 | P1-06 | #1413 merged; CI cuối xanh; 20 tests local PASS; manual Production deployment READY; health/readiness và hai trang Hi-Lite PASS | Phần kỹ thuật release prevention đã Live; chưa có bằng chứng người trực/rehearsal pilot | Đóng phần kỹ thuật. Chuyển phần con người sang checklist pilot, không mở thêm hotfix nếu không có lỗi mới |
-| P1-07 | Chưa thấy bộ đo đủ điều kiện | Ba salon/7–14 ngày/thành phần người dùng/KPI | Huy + pilot owners: xác định salon thứ ba và người tham gia |
+| P1-07 | Bộ chấm hai salon và [phiếu quan sát pilot thật](masterplan-two-salon-human-observation-sheet.md) đã có local; chưa có số đo người thật | Hai salon/7–14 ngày/thành phần người dùng/KPI | Huy + pilot owners: xác định người tham gia và lịch đo; không cần salon thứ ba |
 
 Không mở nhánh hoặc PR trùng cho những thay đổi đã merge. Không sửa sản phẩm
 chỉ vì một báo cáo lịch sử chưa cập nhật trạng thái.
@@ -273,7 +279,7 @@ thật vào báo cáo QA. Người lớn tuổi và tiếp tân ít dùng công 
 - Ít nhất 80% tự hoàn thành năm việc cốt lõi.
 - Tạo hẹn dưới 60 giây; walk-in dưới 30 giây.
 - Không quá một lần trợ giúp trong ca đầu.
-- Không mất dữ liệu; ít nhất hai trong ba salon muốn tiếp tục.
+- Không mất dữ liệu; cả hai salon muốn tiếp tục.
 - Dừng mở rộng nếu có sai tenant/quyền, mất dữ liệu, double-book hoặc thu tiền sai.
 - Synthetic/automation không thay cho người mới; không thể tạo 7–14 ngày quan sát
   bằng một lượt test nhanh.
