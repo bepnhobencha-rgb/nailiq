@@ -7,6 +7,7 @@ vi.mock("server-only", () => ({}));
 import {
   activeAgentFailureKeys,
   buildAgentCertificationMatrix,
+  latestTrackedWorkerFailed,
   staleVoiceSessionSalonIds,
 } from "@/shared/superadmin/agentCertificationActions";
 
@@ -23,6 +24,9 @@ const salon = {
   voice_ai_enabled: false,
   google_place_id: null,
   yelp_business_id: null,
+  archived_at: null,
+  superadmin_locked_at: null,
+  subscription_status: "active",
 };
 
 const emptyEvidence = {
@@ -33,22 +37,38 @@ const emptyEvidence = {
   jobs: [],
 };
 
+const TEST_NOW = new Date("2026-08-03T12:00:00Z");
+
+function buildMatrix(
+  input: Omit<Parameters<typeof buildAgentCertificationMatrix>[0], "now">,
+) {
+  return buildAgentCertificationMatrix({ ...input, now: TEST_NOW });
+}
+
 describe("Agent Certification Matrix", () => {
-  it("includes all 20 operational agents, including Daily Report", () => {
-    const rows = buildAgentCertificationMatrix({
+  it("includes the 20 existing agents plus five previously missing AI surfaces", () => {
+    const rows = buildMatrix({
       salons: [salon],
       evidence: {
         ...emptyEvidence,
         actions: [{
           salon_id: "s1",
           agent: "daily_report",
+          action_type: "sent_report",
           created_at: "2026-08-03T00:00:00Z",
         }],
       },
       failedAgents: new Set(),
     });
 
-    expect(rows).toHaveLength(20);
+    expect(rows).toHaveLength(25);
+    expect(rows.map((row) => row.agent)).toEqual(expect.arrayContaining([
+      "minh_self_learn",
+      "minh_late_decline",
+      "sms_receptionist",
+      "booking_chat",
+      "admin_copilot",
+    ]));
     expect(rows.find((row) => row.agent === "daily_report")).toMatchObject({
       agentLabel: "Daily Report",
       status: "certified",
@@ -56,8 +76,49 @@ describe("Agent Certification Matrix", () => {
     });
   });
 
+  it("publishes every mandatory typed contract field for every agent", () => {
+    const rows = buildMatrix({
+      salons: [salon],
+      evidence: emptyEvidence,
+      failedAgents: new Set(),
+    });
+
+    for (const row of rows) {
+      expect(Object.keys(row.contract).sort()).toEqual([
+        "auditContract",
+        "costPolicy",
+        "effectLevel",
+        "inputs",
+        "outputs",
+        "permissionContract",
+        "retryPolicy",
+        "runtimeEvidencePredicate",
+        "trigger",
+      ]);
+      expect(row.contract.trigger.summary.length).toBeGreaterThan(0);
+      expect(row.contract.trigger.freshnessHours).toBeGreaterThan(0);
+      expect(row.contract.permissionContract.length).toBeGreaterThan(0);
+      expect(row.contract.inputs.length).toBeGreaterThan(0);
+      expect(row.contract.outputs.length).toBeGreaterThan(0);
+      expect(row.contract.auditContract.length).toBeGreaterThan(0);
+      expect(row.contract.retryPolicy.length).toBeGreaterThan(0);
+      expect(row.contract.costPolicy.summary.length).toBeGreaterThan(0);
+      expect(row.contract.runtimeEvidencePredicate.summary.length).toBeGreaterThan(0);
+    }
+    expect(rows.find((row) => row.agent === "voice_ai")?.contract)
+      .toMatchObject({
+        permissionContract: expect.arrayContaining([
+          expect.stringContaining("voice_ai_enabled"),
+        ]),
+        auditContract: expect.arrayContaining([
+          expect.stringContaining("voice_ai_session"),
+        ]),
+        runtimeEvidencePredicate: { category: "session_telemetry" },
+      });
+  });
+
   it("marks Daily Report unconfigured when Unified Digest replaces it", () => {
-    const rows = buildAgentCertificationMatrix({
+    const rows = buildMatrix({
       salons: [{
         ...salon,
         feature_flags: { ...salon.feature_flags, ai_unified_digest: true },
@@ -70,12 +131,12 @@ describe("Agent Certification Matrix", () => {
       .toBe("not_configured");
   });
 
-  it("distinguishes certified, waiting, and unconfigured agents", () => {
-    const rows = buildAgentCertificationMatrix({
+  it("distinguishes certified, not-enough-evidence, and unconfigured agents", () => {
+    const rows = buildMatrix({
       salons: [salon],
       evidence: {
         ...emptyEvidence,
-        actions: [{ salon_id: "s1", agent: "winback", created_at: "2026-08-03T00:00:00Z" }],
+        actions: [{ salon_id: "s1", agent: "winback", action_type: "sent_sms", created_at: "2026-08-03T00:00:00Z" }],
       },
       failedAgents: new Set(),
     });
@@ -84,16 +145,16 @@ describe("Agent Certification Matrix", () => {
       status: "certified",
       evidenceCount: 1,
     });
-    expect(rows.find((row) => row.agent === "rebook")?.status).toBe("waiting_data");
+    expect(rows.find((row) => row.agent === "rebook")?.status).toBe("not_enough_evidence");
     expect(rows.find((row) => row.agent === "vip_care")?.status).toBe("not_configured");
   });
 
   it("gives the latest manager failure precedence over old evidence", () => {
-    const rows = buildAgentCertificationMatrix({
+    const rows = buildMatrix({
       salons: [salon],
       evidence: {
         ...emptyEvidence,
-        actions: [{ salon_id: "s1", agent: "winback", created_at: "2026-08-03T00:00:00Z" }],
+        actions: [{ salon_id: "s1", agent: "winback", action_type: "sent_sms", created_at: "2026-08-03T00:00:00Z" }],
       },
       failedAgents: new Set(["salon:winback"]),
     });
@@ -102,7 +163,7 @@ describe("Agent Certification Matrix", () => {
   });
 
   it("does not report a failure for an agent that is not configured", () => {
-    const rows = buildAgentCertificationMatrix({
+    const rows = buildMatrix({
       salons: [salon],
       evidence: emptyEvidence,
       failedAgents: new Set(["salon:vip_care"]),
@@ -112,12 +173,12 @@ describe("Agent Certification Matrix", () => {
   });
 
   it("requires explicit permission before Google Review Responder is configured", () => {
-    const withoutPermission = buildAgentCertificationMatrix({
+    const withoutPermission = buildMatrix({
       salons: [{ ...salon, google_place_id: "place-1" }],
       evidence: emptyEvidence,
       failedAgents: new Set(),
     });
-    const withPermission = buildAgentCertificationMatrix({
+    const withPermission = buildMatrix({
       salons: [{
         ...salon,
         google_place_id: "place-1",
@@ -130,11 +191,11 @@ describe("Agent Certification Matrix", () => {
     expect(withoutPermission.find((row) => row.agent === "review_responder")?.status)
       .toBe("not_configured");
     expect(withPermission.find((row) => row.agent === "review_responder")?.status)
-      .toBe("waiting_data");
+      .toBe("not_enough_evidence");
   });
 
   it("uses a fresh outcome timestamp for Outcome Tracker evidence", () => {
-    const rows = buildAgentCertificationMatrix({
+    const rows = buildMatrix({
       salons: [salon],
       evidence: {
         ...emptyEvidence,
@@ -142,7 +203,7 @@ describe("Agent Certification Matrix", () => {
           salon_id: "s1",
           agent: "winback",
           created_at: "2026-06-17T00:00:00Z",
-          outcome_at: "2026-07-28T00:00:00Z",
+          outcome_at: "2026-08-02T00:00:00Z",
         }],
       },
       failedAgents: new Set(),
@@ -151,12 +212,109 @@ describe("Agent Certification Matrix", () => {
     expect(rows.find((row) => row.agent === "outcome_tracker")).toMatchObject({
       status: "certified",
       evidenceCount: 1,
-      lastEvidenceAt: "2026-07-28T00:00:00Z",
+      lastEvidenceAt: "2026-08-02T00:00:00Z",
     });
   });
 
-  it("certifies Smart Reminders from a successful model-call artifact", () => {
-    const rows = buildAgentCertificationMatrix({
+  it("does not make a stale customer delivery fresh from a recent outcome", () => {
+    const rows = buildMatrix({
+      salons: [salon],
+      evidence: {
+        ...emptyEvidence,
+        actions: [{
+          salon_id: "s1",
+          agent: "winback",
+          action_type: "sent_sms",
+          created_at: "2026-07-01T00:00:00Z",
+          outcome_at: "2026-08-03T00:00:00Z",
+        }],
+      },
+      failedAgents: new Set(),
+    });
+
+    expect(rows.find((row) => row.agent === "winback")).toMatchObject({
+      status: "not_enough_evidence",
+      freshEvidenceCount: 0,
+      lastEvidenceAt: "2026-07-01T00:00:00Z",
+    });
+    expect(rows.find((row) => row.agent === "outcome_tracker")?.status)
+      .toBe("certified");
+  });
+
+  it("excludes staff overrides from No-show AI certification", () => {
+    const configuredSalon = {
+      ...salon,
+      feature_flags: {
+        ...salon.feature_flags,
+        ai_noshow_policy_shadow: true,
+      },
+    };
+    const overrideOnly = buildMatrix({
+      salons: [configuredSalon],
+      evidence: {
+        ...emptyEvidence,
+        policies: [{
+          salon_id: "s1",
+          agent: "noshow_policy",
+          mode: "override",
+          applied: true,
+          ai_confidence: null,
+          created_at: "2026-08-03T00:00:00Z",
+        }],
+      },
+      failedAgents: new Set(),
+    });
+    const modelDecision = buildMatrix({
+      salons: [configuredSalon],
+      evidence: {
+        ...emptyEvidence,
+        policies: [{
+          salon_id: "s1",
+          agent: "noshow_policy",
+          mode: "live",
+          applied: true,
+          ai_confidence: "medium",
+          created_at: "2026-08-03T00:00:00Z",
+        }],
+      },
+      failedAgents: new Set(),
+    });
+
+    expect(overrideOnly.find((row) => row.agent === "noshow")?.status)
+      .toBe("not_enough_evidence");
+    expect(modelDecision.find((row) => row.agent === "noshow")?.status)
+      .toBe("certified");
+  });
+
+  it("keeps shadow-only No-show analysis as not enough evidence of a live effect", () => {
+    const rows = buildMatrix({
+      salons: [{
+        ...salon,
+        feature_flags: {
+          ...salon.feature_flags,
+          ai_noshow_policy_shadow: true,
+        },
+      }],
+      evidence: {
+        ...emptyEvidence,
+        policies: [{
+          salon_id: "s1",
+          agent: "noshow_policy",
+          mode: "shadow",
+          applied: false,
+          ai_confidence: "medium",
+          created_at: "2026-08-03T00:00:00Z",
+        }],
+      },
+      failedAgents: new Set(),
+    });
+
+    expect(rows.find((row) => row.agent === "noshow")?.status)
+      .toBe("not_enough_evidence");
+  });
+
+  it("does not certify Smart Reminders without a persisted booking/run correlation", () => {
+    const rows = buildMatrix({
       salons: [salon],
       evidence: {
         ...emptyEvidence,
@@ -171,13 +329,35 @@ describe("Agent Certification Matrix", () => {
     });
 
     expect(rows.find((row) => row.agent === "smart_reminders")).toMatchObject({
-      status: "certified",
-      evidenceCount: 1,
+      status: "not_enough_evidence",
+      evidenceCount: 0,
+      contract: {
+        runtimeEvidencePredicate: { category: "unavailable" },
+      },
     });
   });
 
+  it("does not certify Smart Reminders from model usage alone", () => {
+    const rows = buildMatrix({
+      salons: [salon],
+      evidence: {
+        ...emptyEvidence,
+        usage: [{
+          salon_id: "s1",
+          feature: "smart_reminder",
+          status: "succeeded",
+          created_at: "2026-08-03T00:00:00Z",
+        }],
+      },
+      failedAgents: new Set(),
+    });
+
+    expect(rows.find((row) => row.agent === "smart_reminders")?.status)
+      .toBe("not_enough_evidence");
+  });
+
   it("does not certify abandoned or incomplete AI Receptionist sessions", () => {
-    const rows = buildAgentCertificationMatrix({
+    const rows = buildMatrix({
       salons: [{ ...salon, voice_ai_enabled: true }],
       evidence: {
         ...emptyEvidence,
@@ -194,12 +374,12 @@ describe("Agent Certification Matrix", () => {
     });
 
     expect(rows.find((row) => row.agent === "voice_ai")?.status).toBe(
-      "waiting_data",
+      "not_enough_evidence",
     );
   });
 
   it("certifies AI Receptionist only with a completed telemetry artifact", () => {
-    const rows = buildAgentCertificationMatrix({
+    const rows = buildMatrix({
       salons: [{ ...salon, voice_ai_enabled: true }],
       evidence: {
         ...emptyEvidence,
@@ -222,7 +402,7 @@ describe("Agent Certification Matrix", () => {
   });
 
   it("does not certify usage-backed agents from failed model calls", () => {
-    const rows = buildAgentCertificationMatrix({
+    const rows = buildMatrix({
       salons: [{
         ...salon,
         feature_flags: { ...salon.feature_flags, ai_watchdog: true },
@@ -240,12 +420,12 @@ describe("Agent Certification Matrix", () => {
     });
 
     expect(rows.find((row) => row.agent === "watchdog")?.status).toBe(
-      "waiting_data",
+      "not_enough_evidence",
     );
   });
 
   it("does not certify customer-outreach agents from skipped sends", () => {
-    const rows = buildAgentCertificationMatrix({
+    const rows = buildMatrix({
       salons: [salon],
       evidence: {
         ...emptyEvidence,
@@ -260,12 +440,182 @@ describe("Agent Certification Matrix", () => {
     });
 
     expect(rows.find((row) => row.agent === "winback")?.status).toBe(
-      "waiting_data",
+      "not_enough_evidence",
     );
   });
 
+  it("does not certify an agent from a generic or draft-only action type", () => {
+    const rows = buildMatrix({
+      salons: [salon],
+      evidence: {
+        ...emptyEvidence,
+        actions: [{
+          salon_id: "s1",
+          agent: "winback",
+          action_type: "suggestion_pending",
+          created_at: "2026-08-03T00:00:00Z",
+        }],
+      },
+      failedAgents: new Set(),
+    });
+
+    expect(rows.find((row) => row.agent === "winback")).toMatchObject({
+      status: "not_enough_evidence",
+      evidenceCount: 0,
+    });
+  });
+
+  it("downgrades eligible but stale evidence according to agent cadence", () => {
+    const rows = buildMatrix({
+      salons: [salon],
+      evidence: {
+        ...emptyEvidence,
+        actions: [{
+          salon_id: "s1",
+          agent: "winback",
+          action_type: "sent_email",
+          created_at: "2026-07-28T00:00:00Z",
+        }],
+      },
+      failedAgents: new Set(),
+    });
+
+    expect(rows.find((row) => row.agent === "winback")).toMatchObject({
+      status: "not_enough_evidence",
+      evidenceCount: 1,
+      freshEvidenceCount: 0,
+    });
+  });
+
+  it("certifies the self-learning loop only from tenant-scoped material evidence", () => {
+    const rows = buildMatrix({
+      salons: [salon],
+      evidence: {
+        ...emptyEvidence,
+        actions: [{
+          salon_id: "s1",
+          agent: "minh_self_learn",
+          action_type: "lesson_created",
+          created_at: "2026-08-03T03:00:00Z",
+        }],
+      },
+      failedAgents: new Set(),
+    });
+
+    expect(rows.find((row) => row.agent === "minh_self_learn")?.status)
+      .toBe("certified");
+  });
+
+  it("does not apply a global self-learning summary to every salon", () => {
+    const rows = buildMatrix({
+      salons: [salon],
+      evidence: {
+        ...emptyEvidence,
+        actions: [{
+          salon_id: null,
+          agent: "minh_self_learn",
+          action_type: "daily_learn_summary",
+          created_at: "2026-08-03T03:00:00Z",
+        }],
+      },
+      failedAgents: new Set(),
+    });
+
+    expect(rows.find((row) => row.agent === "minh_self_learn")?.status)
+      .toBe("not_enough_evidence");
+  });
+
+  it("does not configure self-learning for a locked or canceled tenant", () => {
+    const rows = buildMatrix({
+      salons: [{
+        ...salon,
+        superadmin_locked_at: "2026-08-03T00:00:00Z",
+        subscription_status: "canceled",
+      }],
+      evidence: {
+        ...emptyEvidence,
+        actions: [{
+          salon_id: "s1",
+          agent: "minh_self_learn",
+          action_type: "lesson_created",
+          created_at: "2026-08-03T03:00:00Z",
+        }],
+      },
+      failedAgents: new Set(["salon:minh_self_learn"]),
+    });
+
+    expect(rows.find((row) => row.agent === "minh_self_learn")?.status)
+      .toBe("not_configured");
+  });
+
+  it("certifies late-group-decline only when the audit confirms an SMS send", () => {
+    const rows = buildMatrix({
+      salons: [{
+        ...salon,
+        feature_flags: { ...salon.feature_flags, group_booking_enabled: true },
+      }],
+      evidence: {
+        ...emptyEvidence,
+        actions: [{
+          salon_id: "s1",
+          agent: "minh_late_decline",
+          action_type: "late_decline_handled",
+          payload: { outcome: "sms_suggested:ok|sms_waitlist:none" },
+          created_at: "2026-08-03T00:00:00Z",
+        }],
+      },
+      failedAgents: new Set(),
+    });
+
+    expect(rows.find((row) => row.agent === "minh_late_decline")?.status)
+      .toBe("certified");
+  });
+
+  it("keeps SMS Receptionist unverified when only model-use evidence exists", () => {
+    const rows = buildMatrix({
+      salons: [{ ...salon, voice_ai_enabled: true }],
+      evidence: {
+        ...emptyEvidence,
+        usage: [{
+          salon_id: "s1",
+          feature: "sms_receptionist",
+          status: "succeeded",
+          created_at: "2026-08-03T00:00:00Z",
+        }],
+      },
+      failedAgents: new Set(),
+    });
+
+    expect(rows.find((row) => row.agent === "sms_receptionist")).toMatchObject({
+      status: "not_enough_evidence",
+      evidenceCount: 0,
+      contract: {
+        runtimeEvidencePredicate: { category: "unavailable" },
+      },
+    });
+  });
+
+  it("uses successful model execution for Public Booking Chat and Admin Copilot", () => {
+    const rows = buildMatrix({
+      salons: [salon],
+      evidence: {
+        ...emptyEvidence,
+        usage: [
+          { salon_id: "s1", feature: "booking_chat", status: "succeeded", created_at: "2026-08-03T00:00:00Z" },
+          { salon_id: "s1", feature: "admin_copilot", status: "succeeded", created_at: "2026-08-03T00:01:00Z" },
+        ],
+      },
+      failedAgents: new Set(),
+    });
+
+    expect(rows.find((row) => row.agent === "booking_chat")?.status)
+      .toBe("certified");
+    expect(rows.find((row) => row.agent === "admin_copilot")?.status)
+      .toBe("certified");
+  });
+
   it("does not certify AI Execution from canceled or failed jobs", () => {
-    const rows = buildAgentCertificationMatrix({
+    const rows = buildMatrix({
       salons: [{
         ...salon,
         feature_flags: {
@@ -285,7 +635,7 @@ describe("Agent Certification Matrix", () => {
     });
 
     expect(rows.find((row) => row.agent === "ai_execution")?.status).toBe(
-      "waiting_data",
+      "not_enough_evidence",
     );
   });
 
@@ -325,6 +675,14 @@ describe("Agent Certification Matrix", () => {
     expect([...failures]).toEqual(["alpha-salon:watchdog"]);
   });
 
+  it("uses the latest tracked self-learning run as failure precedence", () => {
+    expect(latestTrackedWorkerFailed([{ status: "failed" }, { status: "succeeded" }]))
+      .toBe(true);
+    expect(latestTrackedWorkerFailed([{ status: "succeeded" }, { status: "failed" }]))
+      .toBe(false);
+    expect(latestTrackedWorkerFailed([])).toBe(false);
+  });
+
   it("queries the durable exception column that exists in the production schema", () => {
     const actionSource = readFileSync(
       resolve(process.cwd(), "src/shared/superadmin/agentCertificationActions.ts"),
@@ -341,5 +699,25 @@ describe("Agent Certification Matrix", () => {
     expect(schemaSource).toContain("add column if not exists source_ref text");
     expect(actionSource).toContain('.select("salon_id, source_ref, status" as never)');
     expect(actionSource).not.toContain("alert_type");
+  });
+
+  it("loads the proof fields required to distinguish No-show AI from staff overrides", () => {
+    const actionSource = readFileSync(
+      resolve(process.cwd(), "src/shared/superadmin/agentCertificationActions.ts"),
+      "utf8",
+    );
+    const pageSource = readFileSync(
+      resolve(
+        process.cwd(),
+        "src/app/superadmin/(shell)/ai/performance/page.tsx",
+      ),
+      "utf8",
+    );
+
+    expect(actionSource).toContain(
+      '.select("salon_id, agent, mode, applied, ai_confidence, created_at" as never)',
+    );
+    expect(pageSource).toContain("<caption className=\"sr-only\">");
+    expect(pageSource).toContain("for {salon.name}");
   });
 });
