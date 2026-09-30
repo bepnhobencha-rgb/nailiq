@@ -22,7 +22,9 @@ async function guard(context: BrowserContext) {
 }
 for (const lang of ["en", "vi"]) for (const kind of ["no-show", "late", "group"]) {
   const id = `${kind === "late" ? "late-cancellation" : kind === "group" ? "group-cancellation" : kind}-fee-approval-queue`;
-  const collect = /^(Collect|Thu)/;
+  // The fixture SSR starts in English; localStorage applies the saved language
+  // after hydration. Do not open a VI confirmation with a captured EN amount.
+  const collect = lang === "en" ? /^Collect/ : /^Thu/;
   test.describe(`${lang} ${kind}`, () => {
     test.beforeEach(async ({ page }) => { await page.addInitScript(l => localStorage.setItem("nailiq-user-lang", l), lang); });
     test("cancel and Escape send no action; confirmation shows exact amount/card/type", async ({ page, context }) => {
@@ -75,7 +77,7 @@ for (const lang of ["en", "vi"]) for (const kind of ["no-show", "late", "group"]
     });
     test("approval does not claim disabled dispatch and does not collect", async ({ page, context }) => {
       const calls = await guard(context); await page.goto("/?pending=1"); const queue = page.getByTestId(id);
-      await queue.getByRole("button", { name: /^(Approve|Duyệt)/ }).click();
+      await queue.getByRole("button", { name: lang === "en" ? /^Approve/ : /^Duyệt/ }).click();
       await expect(queue.getByRole("status")).toHaveText(lang === "en" ? "Approved. No payment was sent. Collection is a separate step." : "Đã duyệt. Chưa gửi lệnh thanh toán; Thu là bước riêng.");
       await expect(queue.getByRole("button", { name: collect })).toBeVisible();
       expect(calls.calls).toBe(1); expect(calls.blocked).toEqual([]);
@@ -89,7 +91,7 @@ for (const lang of ["en", "vi"]) test(`${lang} group consent cap sends no paymen
   await context.addCookies([{ name: "qa-fault", value: "consent-cap", url: origin }]);
   await page.goto("/");
   const queue = page.getByTestId("group-cancellation-fee-approval-queue");
-  await queue.getByRole("button", { name: /^(Collect|Thu)/ }).click();
+  await queue.getByRole("button", { name: lang === "en" ? /^Collect/ : /^Thu/ }).click();
   await page.getByRole("dialog").getByRole("button", { name: /^(Confirm collection|Xác nhận thu)/ }).click();
   await expect(page.getByRole("dialog")).not.toBeVisible();
   await expect(queue.getByRole("status")).toContainText(lang === "en" ? "No payment was sent" : "Chưa gửi lệnh thanh toán");
