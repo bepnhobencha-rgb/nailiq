@@ -509,6 +509,45 @@ jobs:
             echo "browsers=chromium webkit" >> "$GITHUB_OUTPUT"
             echo "::notice::Non-PR non-RC run — chromium + mobile"
           fi
+      - name: Prefer official Ubuntu archive for non-RC browser dependencies
+        if: steps.preflight.outputs.configured == 'true' && matrix.shard == 1
+        # Two non-RC runs exhausted the 45m budget after dependency installation
+        # took 34–35m. Prefer the runner's existing official HTTPS fallback;
+        # changing inactivity timeouts cannot stop slow-but-progressing downloads.
+        # This changes only a disposable GitHub runner's mirror priorities, never
+        # package signing, source definitions, test coverage or job timeouts.
+        run: |
+          set -euo pipefail
+          test "${GITHUB_ACTIONS:-}" = "true"
+          test "${RUNNER_OS:-}" = "Linux"
+          test "${RUNNER_ARCH:-}" = "X64"
+          test "${RUNNER_ENVIRONMENT:-}" = "github-hosted"
+          mirror_file=/etc/apt/apt-mirrors.txt
+          test -f "$mirror_file"
+          mirror_dir=$(mktemp -d "${RUNNER_TEMP}/nailiq-apt-mirror.XXXXXX")
+          cp -- "$mirror_file" "${mirror_dir}/original.txt"
+          awk '
+            $1 == "https://archive.ubuntu.com/ubuntu/" {
+              if (NF != 2 || $2 !~ /^priority:[12]$/) invalid = 1
+              canonical_count++
+              print $1 "\tpriority:1"
+              next
+            }
+            $1 == "http://azure.archive.ubuntu.com/ubuntu/" || $1 == "https://azure.archive.ubuntu.com/ubuntu/" {
+              if (NF != 2 || $2 !~ /^priority:[12]$/) invalid = 1
+              azure_count++
+              print $1 "\tpriority:2"
+              next
+            }
+            NF && $1 !~ /^#/ {
+              if ($2 !~ /^priority:[0-9]+$/ || substr($2, 10) + 0 < 2) invalid = 1
+            }
+            { print }
+            END { if (invalid || canonical_count != 1 || azure_count != 1) exit 42 }
+          ' "$mirror_file" > "${mirror_dir}/apt-mirrors.txt"
+          sudo install -m 0644 -- "${mirror_dir}/apt-mirrors.txt" "$mirror_file"
+          awk '$1 == "https://archive.ubuntu.com/ubuntu/" && $2 == "priority:1" { found++ } END { exit found != 1 }' "$mirror_file"
+          echo "Preferred official Ubuntu archive; APT source/signing configuration unchanged."
       - name: Install Playwright browsers
         if: steps.preflight.outputs.configured == 'true'
         run: npx playwright install --with-deps ${{ steps.projects.outputs.browsers }}
@@ -550,6 +589,18 @@ jobs:
         run: npx playwright test ${{ matrix.testpath }} ${{ steps.projects.outputs.flag }} --reporter=list,html,json
         env:
           PLAYWRIGHT_JSON_OUTPUT_NAME: playwright-report/results.json
+      - name: Preserve primary non-RC evidence before WebKit diagnostics
+        if: always() && steps.preflight.outputs.configured == 'true' && matrix.shard == 1
+        # The job timeout can interrupt later always-run diagnostics before the
+        # final artifact upload. Keep the first suite's report/log independently;
+        # missing files still mean NOT PROVEN, not a successful test result.
+        uses: actions/upload-artifact@v7
+        with:
+          name: playwright-primary-report-shard-1
+          path: |
+            playwright-report/
+            tmp/next-server.log
+          retention-days: 14
       - name: Run Guided Setup mobile certification
         if: >-
           steps.preflight.outputs.configured == 'true' &&
