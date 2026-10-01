@@ -379,7 +379,9 @@ const RELEASE_SHAPE = {
   // +2 from 20260925202830/20260925204601: gated fee reconciliation
   // discovery and customer-bound Square webhook; legacy RPCs remain.
   // +1 from 20260925220858: ready-ID fee claims after configuration preflight.
-  functions: 614,
+  // +1 signed inbound confirmation RPC. Local b99 delta measured no other
+  // shape changes; fresh blank history b108 independently verified this shape.
+  functions: 615,
   // +4 pending-receipt correlation triggers across notification/staff INSERT
   // and provider-SID transitions.
   // +1 V1 terminal-booking policy trigger.
@@ -639,6 +641,7 @@ const NO_SHOW_FEE_SERVICE_ONLY_TABLES = [
 /** Booking cannot work without these; a missing RPC fails at runtime, not at apply time. */
 const CRITICAL_FUNCTIONS = [
   "cancel_booking_from_signed_sms",
+  "confirm_booking_from_signed_sms",
   "cancel_booking_with_verified_sms_waitlist",
   "reject_sms_inbound_receipt_mutation",
   "validate_booking_otp_session",

@@ -23,11 +23,13 @@ import { expect } from "vitest";
 // This is the local release contract, not a claim about Production's schema.
 // Signed inbound SMS: blank CI 36851794422 independently measured +1 table,
 // +7 columns, +3 functions, +1 trigger and +2 indexes. Role reachability unchanged.
+// Signed confirmation: b99 local transactional delta adds exactly one function;
+// no table/column/policy/trigger/index delta. Fresh blank history b108 verified it.
 const EXPECTED_RELEASE_SHAPE = {
   tables: 249,
   columns: 3831,
   policies: 225,
-  functions: 614,
+  functions: 615,
   triggers: 170,
   indexes: 1024,
 };

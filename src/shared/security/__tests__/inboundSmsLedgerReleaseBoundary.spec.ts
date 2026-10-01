@@ -10,7 +10,7 @@ const boundary = read("scripts/security/check-inbound-sms-ledger-boundary.sql");
 describe("signed inbound SMS release ledger boundary", () => {
   it("pins the measured shape without adding direct role grants", () => {
     assertReleaseSchemaContract(parity);
-    for (const name of ["sms_inbound_booking_receipts", "cancel_booking_from_signed_sms",
+    for (const name of ["sms_inbound_booking_receipts", "cancel_booking_from_signed_sms", "confirm_booking_from_signed_sms",
       "cancel_booking_with_verified_sms_waitlist", "reject_sms_inbound_receipt_mutation"]) {
       expect(parity).toContain(`"${name}"`);
     }
@@ -27,6 +27,7 @@ describe("signed inbound SMS release ledger boundary", () => {
 
   it("allows only the exact service RPC and pins helper privilege/search-path shape", () => {
     expect(boundary).toContain("('public.cancel_booking_from_signed_sms(text,text,text,text,text)',true,true)");
+    expect(boundary).toContain("('public.confirm_booking_from_signed_sms(text,text,text,text,text)',true,true)");
     expect(boundary).toContain("('public.cancel_booking_with_verified_sms_waitlist(uuid)',false,false)");
     expect(boundary).toContain("('public.reject_sms_inbound_receipt_mutation()',false,false)");
     expect(boundary).toContain("has_function_privilege('anon',v_oid,'EXECUTE')");

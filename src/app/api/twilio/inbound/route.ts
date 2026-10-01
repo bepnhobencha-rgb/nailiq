@@ -53,7 +53,7 @@ export async function POST(req: NextRequest) {
     return new NextResponse("Service unavailable", { status: 503 });
   }
   const signature = req.headers.get("x-twilio-signature") ?? "";
-  const url = `${twilioRequestBaseUrl(req)}/api/twilio/inbound`;
+  const url = `${twilioRequestBaseUrl(req)}/api/twilio/inbound${req.nextUrl.search}`;
   if (!validateTwilioSignature(url, params, signature, authToken)) {
     console.warn("[twilio/inbound] invalid signature");
     return new NextResponse("Forbidden", { status: 403 });
@@ -77,6 +77,49 @@ export async function POST(req: NextRequest) {
       : new NextResponse("Service unavailable", { status: 503 });
   }
   if (action === "unknown") return twiml();
+
+  // Default-OFF additive confirmation rollout. The receipt must be resolved
+  // before mutable selection, including on retries after completion/deletion.
+  if (action === "booking_confirm" && process.env.NAILIQ_ATOMIC_INBOUND_SMS_CONFIRM === "true") {
+    let response: { data: unknown; error: unknown };
+    try {
+      response = await supabase.rpc("confirm_booking_from_signed_sms" as never, {
+        p_account_sid: params.AccountSid ?? "",
+        p_message_sid: params.MessageSid ?? params.SmsMessageSid ?? "",
+        p_from_phone: params.From ?? "",
+        p_to_phone: params.To ?? "",
+        p_body_sha256: createHash("sha256").update(params.Body ?? "", "utf8").digest("hex"),
+      } as never);
+    } catch {
+      return new NextResponse("Service unavailable", { status: 503 });
+    }
+    const { data, error } = response;
+    if (error || !data || typeof data !== "object" || Array.isArray(data)) {
+      return new NextResponse("Service unavailable", { status: 503 });
+    }
+    const result = data as Record<string, unknown>;
+    if (result.ok !== true || typeof result.idempotent !== "boolean") {
+      return new NextResponse("Service unavailable", { status: 503 });
+    }
+    if (result.code === "ambiguous_salon") {
+      return twiml("We found appointments at more than one salon. Nothing was confirmed. Please contact the salon to confirm the right appointment.");
+    }
+    if (result.code === "not_found") {
+      return twiml("We couldn't find an upcoming appointment for this number. Please call the salon for help.");
+    }
+    const { isBookingManagementToken } = await import("@/shared/booking/bookingManagementCapabilities");
+    if (!["applied", "already_confirmed", "booking_changed"].includes(String(result.code)) ||
+      typeof result.booking_id !== "string" || !isBookingManagementToken(result.booking_id) ||
+      typeof result.salon_id !== "string" || !isBookingManagementToken(result.salon_id)) {
+      return new NextResponse("Service unavailable", { status: 503 });
+    }
+    if (result.code === "booking_changed") {
+      return twiml("The appointment changed before we could confirm it. Nothing was confirmed by this reply. Please contact the salon.");
+    }
+    return twiml(result.code === "already_confirmed"
+      ? "This appointment was already confirmed. No other appointment was changed."
+      : "Confirmed! Your reply was recorded for this appointment. Contact the salon if your plans change.");
+  }
 
   // Additive rollout boundary: default OFF until the migration and hosted QA
   // are explicitly approved. Never fall back to the legacy selector when the

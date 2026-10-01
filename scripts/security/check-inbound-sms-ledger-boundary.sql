@@ -25,6 +25,7 @@ BEGIN
   END IF;
   FOR v_signature,v_service,v_definer IN SELECT * FROM (VALUES
     ('public.cancel_booking_from_signed_sms(text,text,text,text,text)',true,true),
+    ('public.confirm_booking_from_signed_sms(text,text,text,text,text)',true,true),
     ('public.cancel_booking_with_verified_sms_waitlist(uuid)',false,false),
     ('public.reject_sms_inbound_receipt_mutation()',false,false)
   ) AS expected(signature,service_allowed,definer_required) LOOP
