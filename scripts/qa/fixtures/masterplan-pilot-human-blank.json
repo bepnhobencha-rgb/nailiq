@@ -1,0 +1,19 @@
+{
+  "evidenceKind": "human_observation",
+  "observerCode": "OBS1",
+  "salons": [
+    {
+      "code": "S1",
+      "observedDays": null,
+      "wantsToContinue": null,
+      "dataLossOccurred": null
+    },
+    {
+      "code": "S2",
+      "observedDays": null,
+      "wantsToContinue": null,
+      "dataLossOccurred": null
+    }
+  ],
+  "participants": []
+}

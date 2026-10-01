@@ -1,5 +1,16 @@
-import { expect, test } from "@playwright/test";
+import { expect, test, type Page } from "@playwright/test";
 const origin = "http://127.0.0.1:3129";
+async function addFrameworkAlert(page: Page) {
+  // Next's route announcer may mount after the form. Keep this regression
+  // deterministic without removing or changing the application's alerts.
+  await page.evaluate(() => {
+    const announcer = document.createElement("div");
+    announcer.id = "qa-framework-route-announcer";
+    announcer.setAttribute("role", "alert");
+    announcer.setAttribute("aria-live", "assertive");
+    document.body.appendChild(announcer);
+  });
+}
 test.beforeEach(async ({ page }) => {
   await page.route("**/*", route => new URL(route.request().url()).origin === origin ? route.continue() : route.abort());
 });
@@ -24,11 +35,16 @@ for (const lang of ["en", "vi"] as const) {
   test(`${lang}: uncertain outcome keeps same request and material`, async ({ page, context }) => {
     await context.addCookies([{ name: "qa-fault", value: "unknown", url: origin }]);
     await page.goto(`/?lang=${lang}`);
+    await addFrameworkAlert(page);
     await page.getByLabel(name).fill("Synthetic QA Guest");
     await page.getByLabel(phone).fill("+16045550101");
     await page.getByRole("checkbox").check();
     await page.getByTestId("replacement-accept").click();
-    await expect(page.getByRole("alert")).toBeVisible();
+    const error = page.getByRole("main").getByRole("alert");
+    await expect(error).toBeVisible();
+    await expect(error).toHaveText(lang === "vi"
+      ? "Chưa kiểm tra được kết quả. Hãy kiểm tra lại cùng xác nhận này; đừng tạo lịch hẹn khác."
+      : "We could not check the result. Use the same confirmation again to check it safely; do not create another booking.");
     await expect(page.getByLabel(name)).toBeDisabled();
     await expect.poll(async () => (await context.cookies()).find(c => c.name === "qa-request")?.value).toMatch(/^[a-f0-9-]{36}$/);
     const request = (await context.cookies()).find(c => c.name === "qa-request")?.value;
@@ -61,11 +77,16 @@ for (const lang of ["en", "vi"] as const) {
   test(`${lang}: definitive contact rejection can be corrected`, async ({ page, context }) => {
     await context.addCookies([{ name: "qa-fault", value: "same-contact", url: origin }]);
     await page.goto(`/?lang=${lang}`);
+    await addFrameworkAlert(page);
     await page.getByLabel(name).fill("Synthetic QA Guest");
     await page.getByLabel(phone).fill("+16045550101");
     await page.getByRole("checkbox").check();
     await page.getByTestId("replacement-accept").click();
-    await expect(page.getByRole("alert")).toBeVisible();
+    const error = page.getByRole("main").getByRole("alert");
+    await expect(error).toBeVisible();
+    await expect(error).toHaveText(lang === "vi"
+      ? "Người thay cần dùng thông tin liên hệ của mình, khác với khách nhường chỗ."
+      : "The replacement must use their own contact details, different from the guest leaving this place.");
     await expect(page.getByLabel(phone)).toBeEnabled();
     await page.getByLabel(phone).fill("+16045550102");
     await page.getByTestId("replacement-accept").click();

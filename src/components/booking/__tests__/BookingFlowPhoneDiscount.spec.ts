@@ -1,7 +1,7 @@
 import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 vi.mock("server-only", () => ({}));
 const hooks = vi.hoisted(() => ({ cursor: 0, values: [] as unknown[], effects: [] as Array<() => void> }));
-const mocks = vi.hoisted(() => ({ quote: vi.fn(), submit: vi.fn(), stableId: vi.fn(), requirement: vi.fn(), acknowledge: vi.fn(), rotate: vi.fn() }));
+const mocks = vi.hoisted(() => ({ quote: vi.fn(), submit: vi.fn(), stableId: vi.fn(), requirement: vi.fn(), acknowledge: vi.fn(), rotate: vi.fn(), legacySlots: vi.fn(), strictSlots: vi.fn() }));
 vi.mock("react", async (original) => {
   const actual = await original<typeof import("react")>();
   function memo<T>(factory: () => T, deps?: readonly unknown[]) {
@@ -47,8 +47,16 @@ vi.mock("@/shared/noshow/resolveNoShowCardRequirement", () => ({ resolveNoShowCa
 vi.mock("@/shared/booking/submitPublicBooking", () => ({ quotePublicBooking: mocks.quote, submitPublicBooking: mocks.submit, BookingConflictError: class extends Error {}, BookingPricingChangedError: class extends Error {} }));
 vi.mock("@/shared/booking/publicBookingRequestId", () => ({ stablePublicBookingRequestId: mocks.stableId, acknowledgePublicBookingRequestId: mocks.acknowledge, rotatePublicBookingRequestId: mocks.rotate }));
 vi.mock("@/shared/lib/supabase/publicClient", () => ({ createPublicClient: vi.fn(() => { throw new Error("Unexpected database access"); }) }));
+vi.mock("@/shared/booking/getAvailableTimeSlots", async (original) => ({
+  ...await original<typeof import("@/shared/booking/getAvailableTimeSlots")>(),
+  getAvailableTimeSlots: mocks.legacySlots,
+  getAvailableTimeSlotsStrict: mocks.strictSlots,
+}));
 vi.mock("@/shared/observability/errorReporter", () => ({ captureException: vi.fn() }));
 import { useBookingFlowState } from "../useBookingFlowState";
+import { BookingConflictError } from "@/shared/booking/submitPublicBooking";
+import { createPublicClient } from "@/shared/lib/supabase/publicClient";
+import type { TimeSlot } from "@/shared/booking/getAvailableTimeSlots";
 import { bookingEn } from "@/shared/i18n/booking/en";
 import type { BookingSalonMeta, BookingStaffItem } from "@/shared/booking/loadBookingServices";
 import type { BookingServiceItem, BookingComboItem } from "@/shared/booking/catalog";
@@ -79,6 +87,7 @@ const services: BookingServiceItem[] = [{
 }];
 const combos: BookingComboItem[]=[];
 const addons: BookingServiceItem[]=[];
+const resources = [] as const;
 const staff: BookingStaffItem[]=[{ id: staffId, name: "Synthetic Staff", job_role: "nail_tech" }];
 const baseQuote: PublicBookingPricingQuote={
   pricingFingerprint: "a".repeat(64), salonId, serviceId, resolvedStaffId: staffId, resolvedStaffName: "Synthetic Staff",
@@ -91,7 +100,7 @@ const baseQuote: PublicBookingPricingQuote={
 let initialSession: string|null;
 function FlowHarness() {
   return useBookingFlowState(bookingEn,"synthetic",services,combos,staff,salon,null,false,addons,
-    "+16045550191",null,"Synthetic Guest","synthetic@example.test","en",true,false,initialSession);
+    "+16045550191",null,"Synthetic Guest","synthetic@example.test","en",true,false,initialSession,resources);
 }
 function render() {
   hooks.cursor=0;
@@ -113,6 +122,8 @@ async function confirm() {
 }
 beforeEach(()=>{
   vi.useFakeTimers(); hooks.cursor=0; hooks.values=[]; hooks.effects=[]; vi.clearAllMocks(); initialSession=emailSession;
+  mocks.legacySlots.mockReset(); mocks.strictSlots.mockReset();
+  vi.mocked(createPublicClient).mockImplementation(() => { throw new Error("Unexpected database access"); });
   vi.stubGlobal("window",{ location:{search:""},setTimeout,clearTimeout });
   vi.stubGlobal("fetch",vi.fn(async (url: string)=>{
     if(url.startsWith("/api/customer/")) return {ok:true,json:async()=>({found:false})};
@@ -126,6 +137,76 @@ beforeEach(()=>{
     serviceFinalCents:4800,preVoucherSubtotalCents:4800,subtotalCents:4800,totalCents:4800,
     discountLines:[{kind:"email_incentive",label:"Phone offer",amountCents:200}],
   }:baseQuote);
+});
+
+describe("booking conflict refresh uses one cancellable strict grid", () => {
+  let resolveLegacy: ((slots: TimeSlot[]) => void) | undefined;
+  beforeEach(() => {
+    resolveLegacy = undefined;
+    // A late legacy result must not overwrite the canonical effect's state.
+    mocks.legacySlots.mockImplementation(() => new Promise<TimeSlot[]>(resolve => { resolveLegacy = resolve; }));
+    mocks.strictSlots.mockResolvedValue({ ok: true, slots: [{ label: "10:00 AM", available: false }] });
+    const channel = { on: vi.fn(), subscribe: vi.fn() };
+    channel.on.mockReturnValue(channel); channel.subscribe.mockReturnValue(channel);
+    vi.mocked(createPublicClient).mockReturnValue({
+      channel: vi.fn(() => channel), removeChannel: vi.fn().mockResolvedValue(null),
+    } as unknown as ReturnType<typeof createPublicClient>);
+    vi.mocked(fetch).mockImplementation(async (url: string | URL | Request) => {
+      const path = String(url);
+      if (path.startsWith("/api/customer/")) return { ok: true, json: async () => ({ found: false }) } as Response;
+      if (path.startsWith("/api/booking/slot-ranking?")) return { ok: true, json: async () => ({ popularLabels: [] }) } as Response;
+      throw new Error(`Unexpected network ${path}`);
+    });
+  });
+
+  async function conflict() {
+    await confirm();
+    mocks.submit.mockRejectedValueOnce(new BookingConflictError());
+    await render().onConfirm();
+    return settle();
+  }
+
+  it("refreshes only through the strict effect after a definite create conflict", async () => {
+    const state = await conflict();
+    expect(state.step).toBe("time");
+    expect(mocks.strictSlots).toHaveBeenCalled();
+    expect(mocks.legacySlots).not.toHaveBeenCalled();
+    expect(state.timeSlot).toBeNull();
+    expect(mocks.acknowledge).not.toHaveBeenCalled();
+  });
+
+  it("cannot overwrite a freshly busy canonical slot with a late open response", async () => {
+    const state = await conflict();
+    expect(state.timeSlots).toEqual([{ label: "10:00 AM", available: false }]);
+    resolveLegacy?.([{ label: "10:00 AM", available: true }]);
+    await Promise.resolve();
+    expect(render().timeSlots).toEqual([{ label: "10:00 AM", available: false }]);
+    expect(render().timeSlot).toBeNull();
+  });
+
+  it("keeps unknown capacity blocked instead of accepting a late open response", async () => {
+    mocks.strictSlots.mockResolvedValue({ ok: false, reason: "unavailable" });
+    const state = await conflict();
+    expect(state.availabilityUnverified).toBe(true);
+    expect(state.timeSlots).toEqual([]);
+    resolveLegacy?.([{ label: "10:00 AM", available: true }]);
+    await Promise.resolve();
+    expect(render().timeSlots).toEqual([]);
+    expect(render().availabilityUnverified).toBe(true);
+    expect(render().timeSlot).toBeNull();
+  });
+
+  it("ignores an older strict read after the customer changes the booking day", async () => {
+    let resolveOld: ((result: { ok: true; slots: TimeSlot[] }) => void) | undefined;
+    mocks.strictSlots.mockImplementationOnce(() => new Promise(resolve => { resolveOld = resolve; }));
+    await conflict();
+    render().setSelectedDate(new Date(2026, 8, 20, 12));
+    await settle();
+    resolveOld?.({ ok: true, slots: [{ label: "10:00 AM", available: true }] });
+    await Promise.resolve();
+    expect(render().timeSlots).toEqual([{ label: "10:00 AM", available: false }]);
+    expect(render().timeSlot).toBeNull();
+  });
 });
 afterEach(()=>{
   for(const v of hooks.values) if(v&&typeof v==="object"&&"cleanup" in v) (v as {cleanup?:()=>void}).cleanup?.();

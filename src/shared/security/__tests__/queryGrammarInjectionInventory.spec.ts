@@ -251,6 +251,9 @@ describe("query grammar injection inventory", () => {
       "20260925204601_bind_square_fee_webhook_customer.sql",
       "20260926064325_group_slot_replacement_capabilities.sql",
       "20260926145844_bind_group_cancellation_fee_consent_cap.sql",
+      "20261001011654_revalidate_waitlist_claim_capacity.sql",
+      "20261001023547_respect_sequence_service_resource_requirements.sql",
+      "20261001031038_fix_waitlist_capacity_utc_occupancy.sql",
     ]);
 
     // Reviewed migration-time rewrites operate on fixed catalog function
@@ -476,6 +479,61 @@ describe("query grammar injection inventory", () => {
     expect(otpPatch).toContain("IF v_otp_session.verified_channel = ''sms'' THEN");
     expect(otpPatch.match(/\bEXECUTE\s+v_def\s*;/g)).toHaveLength(1);
     expect(otpPatch).not.toMatch(/\bEXECUTE\s+(?:format\s*\(|p_|NEW\.|OLD\.)/i);
+  });
+
+  it("bounds the waitlist lock-order rewrite to a fixed catalog target and one checked literal anchor", () => {
+    const sql = fs.readFileSync(path.join(REPO, "supabase/migrations/20261001011654_revalidate_waitlist_claim_capacity.sql"), "utf8");
+    const patches = [...sql.matchAll(/DO \$claim_lock_order\$([\s\S]*?)\$claim_lock_order\$;/g)];
+    expect(patches).toHaveLength(1);
+    const patch = patches[0][1];
+    expect(patch.match(/pg_catalog\.to_regprocedure\(/g)).toHaveLength(1);
+    expect(patch).toContain("'public.create_public_booking(uuid,uuid,uuid,text,text,timestamptz,timestamptz,text,integer,text,uuid,integer,text,uuid)'");
+    expect(patch).toContain("v_def:=pg_catalog.pg_get_functiondef(v_target)");
+    expect(patch).toContain("/length(v_anchor)<>1 THEN");
+    expect(patch).toContain("RAISE EXCEPTION 'Waitlist legacy capacity lock target missing'");
+    expect(patch).toContain("RAISE EXCEPTION 'Waitlist legacy capacity lock anchor mismatch'");
+    expect(patch.indexOf("RAISE EXCEPTION 'Waitlist legacy capacity lock anchor mismatch'")).toBeLessThan(patch.indexOf("EXECUTE "));
+    expect(patch.match(/^\s*EXECUTE\s+([^;]+);/gm)?.map((statement) => statement.trim())).toEqual([
+      "EXECUTE replace(v_def,v_anchor,v_lock);",
+    ]);
+    expect(patch).not.toMatch(/\bEXECUTE\s+(?:format\s*\(|p_|NEW\.|OLD\.)/i);
+    expect(patch).not.toMatch(/\bexecute\b[^;]*\|\|/i);
+    expect(patch).not.toMatch(/\b(?:GRANT|REVOKE|DROP)\b/i);
+  });
+
+  it("bounds sequence resource correction to one fixed resolver and counted literal patches", () => {
+    const sql=fs.readFileSync(path.join(REPO,"supabase/migrations/20261001023547_respect_sequence_service_resource_requirements.sql"),"utf8");
+    const patch=sql.match(/DO \$patch\$([\s\S]*?)\$patch\$;/)?.[1];
+    expect(patch).toBeTruthy();
+    expect(patch).toContain("to_regprocedure('public.resolve_booking_sequence_pricing_and_schedule(jsonb,boolean)')");
+    expect(patch?.match(/to_regprocedure\(/g)).toHaveLength(1);
+    expect(patch?.match(/'count',1,'old'/g)).toHaveLength(8);
+    expect(patch?.match(/'count',2,'old'/g)).toHaveLength(1);
+    expect(patch).toContain("/length(v_old)<>v_expected THEN");
+    expect(patch).toContain("RAISE EXCEPTION 'Sequence resource anchor mismatch'");
+    expect(patch?.indexOf("RAISE EXCEPTION 'Sequence resource anchor mismatch'")).toBeLessThan(patch?.indexOf("EXECUTE v_def")??0);
+    expect(patch?.match(/^\s*EXECUTE\s+([^;]+);/gm)?.map(s=>s.trim())).toEqual(["EXECUTE v_def;"]);
+    expect(patch).toContain("v_resources_enabled:=v_salon_resources_enabled AND v_resource_mode<>'none'");
+    expect(patch).toContain("previous_service.salon_id=v_salon_id");
+    expect(patch).not.toMatch(/\b(?:GRANT|REVOKE|DROP)\b|\bEXECUTE\s+(?:format\s*\(|p_|NEW\.|OLD\.)/i);
+  });
+  it("bounds shared capacity UTC correction to its fixed service-only evaluator",()=>{
+    const sql=fs.readFileSync(path.join(REPO,"supabase/migrations/20261001031038_fix_waitlist_capacity_utc_occupancy.sql"),"utf8");
+    const patch=sql.match(/DO \$capacity_time\$([\s\S]*?)\$capacity_time\$;/)?.[1];
+    expect(patch).toBeTruthy();
+    expect(patch).toContain("pg_catalog.to_regprocedure('public.evaluate_individual_waitlist_capacity(uuid,uuid,uuid,date,text)')");
+    expect(patch?.match(/to_regprocedure\(/g)).toHaveLength(1);
+    expect(patch?.match(/'count',1,'old'/g)).toHaveLength(14);
+    expect(patch?.match(/'count',2,'old'/g)).toHaveLength(2);
+    expect(patch).toContain("/length(v_old)<>v_count THEN");
+    expect(patch).toContain("RAISE EXCEPTION 'Waitlist capacity time anchor mismatch'");
+    expect(patch?.match(/^\s*EXECUTE\s+([^;]+);/gm)?.map(s=>s.trim())).toEqual(["EXECUTE v_def;"]);
+    expect(patch).not.toMatch(/\b(?:GRANT|REVOKE|DROP|ALTER)\b/i);
+    expect(patch).toContain("v_occupied_start < v_open_utc OR v_customer_end > v_close_utc");
+    expect(patch).toContain("pg_catalog.jsonb_typeof(v_day -> 'closed') IS DISTINCT FROM 'boolean'");
+    expect(patch).toContain("(v_candidate_start AT TIME ZONE v_timezone) <> v_candidate_wall");
+    expect(patch).toContain("'availability_unverified'");
+    expect(patch).not.toMatch(/\bEXECUTE\s+(?:format\s*\(|p_|NEW\.|OLD\.)/i);
   });
 
   it("limits the SMS incentive migration to hash-checked catalog definitions and literal replacements", () => {

@@ -12,6 +12,7 @@
  * any future outbound provider call.
  */
 
+import { createHash } from "node:crypto";
 import { NextRequest, NextResponse, after } from "next/server";
 import {
   getTwilioAuthToken,
@@ -52,7 +53,7 @@ export async function POST(req: NextRequest) {
     return new NextResponse("Service unavailable", { status: 503 });
   }
   const signature = req.headers.get("x-twilio-signature") ?? "";
-  const url = `${twilioRequestBaseUrl(req)}/api/twilio/inbound`;
+  const url = `${twilioRequestBaseUrl(req)}/api/twilio/inbound${req.nextUrl.search}`;
   if (!validateTwilioSignature(url, params, signature, authToken)) {
     console.warn("[twilio/inbound] invalid signature");
     return new NextResponse("Forbidden", { status: 403 });
@@ -77,6 +78,106 @@ export async function POST(req: NextRequest) {
   }
   if (action === "unknown") return twiml();
 
+  // Default-OFF additive confirmation rollout. The receipt must be resolved
+  // before mutable selection, including on retries after completion/deletion.
+  if (action === "booking_confirm" && process.env.NAILIQ_ATOMIC_INBOUND_SMS_CONFIRM === "true") {
+    let response: { data: unknown; error: unknown };
+    try {
+      response = await supabase.rpc("confirm_booking_from_signed_sms" as never, {
+        p_account_sid: params.AccountSid ?? "",
+        p_message_sid: params.MessageSid ?? params.SmsMessageSid ?? "",
+        p_from_phone: params.From ?? "",
+        p_to_phone: params.To ?? "",
+        p_body_sha256: createHash("sha256").update(params.Body ?? "", "utf8").digest("hex"),
+      } as never);
+    } catch {
+      return new NextResponse("Service unavailable", { status: 503 });
+    }
+    const { data, error } = response;
+    if (error || !data || typeof data !== "object" || Array.isArray(data)) {
+      return new NextResponse("Service unavailable", { status: 503 });
+    }
+    const result = data as Record<string, unknown>;
+    if (result.ok !== true || typeof result.idempotent !== "boolean") {
+      return new NextResponse("Service unavailable", { status: 503 });
+    }
+    if (result.code === "ambiguous_salon") {
+      return twiml("We found appointments at more than one salon. Nothing was confirmed. Please contact the salon to confirm the right appointment.");
+    }
+    if (result.code === "not_found") {
+      return twiml("We couldn't find an upcoming appointment for this number. Please call the salon for help.");
+    }
+    const { isBookingManagementToken } = await import("@/shared/booking/bookingManagementCapabilities");
+    if (!["applied", "already_confirmed", "booking_changed"].includes(String(result.code)) ||
+      typeof result.booking_id !== "string" || !isBookingManagementToken(result.booking_id) ||
+      typeof result.salon_id !== "string" || !isBookingManagementToken(result.salon_id)) {
+      return new NextResponse("Service unavailable", { status: 503 });
+    }
+    if (result.code === "booking_changed") {
+      return twiml("The appointment changed before we could confirm it. Nothing was confirmed by this reply. Please contact the salon.");
+    }
+    return twiml(result.code === "already_confirmed"
+      ? "This appointment was already confirmed. No other appointment was changed."
+      : "Confirmed! Your reply was recorded for this appointment. Contact the salon if your plans change.");
+  }
+
+  // Additive rollout boundary: default OFF until the migration and hosted QA
+  // are explicitly approved. Never fall back to the legacy selector when the
+  // new RPC fails, otherwise a retry could cancel a different appointment.
+  if (action === "booking_cancel" && process.env.NAILIQ_ATOMIC_INBOUND_SMS_CANCEL === "true") {
+    let response: { data: unknown; error: unknown };
+    try {
+      response = await supabase.rpc(
+        "cancel_booking_from_signed_sms" as never,
+        {
+          p_account_sid: params.AccountSid ?? "",
+          p_message_sid: params.MessageSid ?? params.SmsMessageSid ?? "",
+          p_from_phone: params.From ?? "",
+          p_to_phone: params.To ?? "",
+          p_body_sha256: createHash("sha256").update(params.Body ?? "", "utf8").digest("hex"),
+        } as never,
+      );
+    } catch {
+      return new NextResponse("Service unavailable", { status: 503 });
+    }
+    const { data, error } = response;
+    if (error || !data || typeof data !== "object" || Array.isArray(data)) {
+      return new NextResponse("Service unavailable", { status: 503 });
+    }
+    const result = data as Record<string, unknown>;
+    if (result.ok !== true || typeof result.idempotent !== "boolean") {
+      return new NextResponse("Service unavailable", { status: 503 });
+    }
+    if (result.code === "ambiguous_salon") {
+      return twiml("We found appointments at more than one salon. Nothing was cancelled. Please contact the salon to cancel the right appointment.");
+    }
+    if (result.code === "not_found") {
+      return twiml("We couldn't find an upcoming appointment for this number. Please call the salon for help.");
+    }
+    const { isBookingManagementToken } = await import("@/shared/booking/bookingManagementCapabilities");
+    if (!["applied", "already_cancelled", "booking_changed"].includes(String(result.code)) || typeof result.booking_id !== "string" ||
+        typeof result.salon_id !== "string" || !isBookingManagementToken(result.booking_id) ||
+        !isBookingManagementToken(result.salon_id)) {
+      return new NextResponse("Service unavailable", { status: 503 });
+    }
+    if (result.code === "already_cancelled") {
+      return twiml("This appointment was already cancelled. No other appointment was changed.");
+    }
+    if (result.code === "booking_changed") {
+      return twiml("The appointment changed before we could cancel it. Nothing was cancelled by this reply. Please contact the salon.");
+    }
+    // Domain, audit, legacy log and receipt already committed in PostgreSQL.
+    // Deliver only the exact promotion capability, using its existing durable
+    // delivery claim. Replays also recover an interrupted delivery dispatch.
+    if (result.promoted_waitlist) after(async () => {
+      const { deliverCanonicalWaitlistPromotion } =
+        await import("@/shared/noshow/promoteAndDeliverWaitlistOffer");
+      const delivered = await deliverCanonicalWaitlistPromotion(result.promoted_waitlist);
+      if (!delivered.ok) console.error("[twilio-inbound] canonical waitlist", delivered.code);
+    });
+    return twiml("Your appointment is cancelled. Book again anytime — thank you!");
+  }
+
   const { toCanonicalPhone } = await import("@/shared/lib/toCanonicalPhone");
   const phone = toCanonicalPhone(params.From ?? "");
   if (!phone) return twiml();
@@ -97,7 +198,8 @@ export async function POST(req: NextRequest) {
     .order("start_time_utc", { ascending: true })
     .limit(5);
 
-  const { data: bkRows } = await baseQuery;
+  const { data: bkRows, error: bookingReadError } = await baseQuery;
+  if (bookingReadError) return new NextResponse("Service unavailable", { status: 503 });
   const rows = (bkRows ?? []) as Array<{
     id: string; salon_id: string; service_id: string; start_time_utc: string; status: string;
     reminder_24h_sent_at: string | null; reminder_3h_sent_at: string | null; sms_confirmation_sent_at: string | null;
@@ -138,11 +240,29 @@ export async function POST(req: NextRequest) {
   const { logNotification } = await import("@/shared/lib/notificationLog");
 
   if (action === "booking_confirm") {
-    await db
+    const { data: confirmedRow, error: confirmError } = await db
       .from("bookings")
       .update({ status: "confirmed", confirmed_at: new Date().toISOString() } as never)
       .eq("id", booking.id)
-      .eq("status", "pending");
+      .eq("salon_id", booking.salon_id)
+      .eq("status", "pending")
+      .select("id")
+      .maybeSingle();
+    if (confirmError) return new NextResponse("Service unavailable", { status: 503 });
+    // A concurrent transition or replay may affect zero rows. Only the same
+    // booking's current confirmed state permits a success response; a stale
+    // pending snapshot is not evidence that the write committed.
+    if (confirmedRow?.id !== booking.id) {
+      const { data: currentRow, error: currentReadError } = await db
+        .from("bookings")
+        .select("id, status")
+        .eq("id", booking.id)
+        .eq("salon_id", booking.salon_id)
+        .maybeSingle();
+      if (currentReadError || currentRow?.id !== booking.id || currentRow.status !== "confirmed") {
+        return new NextResponse("Service unavailable", { status: 503 });
+      }
+    }
     void logNotification({
       bookingId: booking.id,
       salonId: booking.salon_id,
@@ -178,6 +298,10 @@ export async function POST(req: NextRequest) {
     bodyPreview: params.Body ?? null,
     ok,
   });
+
+  // Never tell the customer a cancellation committed when the atomic RPC
+  // failed, returned a conflict or referred to a different booking.
+  if (!ok) return new NextResponse("Service unavailable", { status: 503 });
 
   if (ok) {
     const { logBookingEvent } = await import("@/shared/dashboard/auditLog");

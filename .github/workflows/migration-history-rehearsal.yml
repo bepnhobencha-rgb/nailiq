@@ -7,6 +7,8 @@ on:
       - "scripts/audit-migration-history.mjs"
       - "scripts/build-folded-migration-history.mjs"
       - "scripts/check-schema-parity.ts"
+      - "scripts/security/check-inbound-sms-ledger-boundary.sql"
+      - "supabase/tests/inbound_sms_confirm_atomic.sql"
       - "scripts/security/rehearse-postgres-backup-restore.mjs"
       - "scripts/security/check-branch-tenant-isolation-boundary.sql"
       - "scripts/security/rehearse-branch-tenant-isolation.sql"
@@ -53,6 +55,18 @@ jobs:
     timeout-minutes: 15
     steps:
       - uses: actions/checkout@v6
+
+      - name: Isolate disposable runtime from linked cloud cache
+        run: |
+          set -euo pipefail
+          # Legacy tracked .temp files can silently replace the CLI's patched
+          # PostgreSQL image and carry a cloud project link into this blank run.
+          # Quarantine only this runner checkout's cache; never touch cloud data.
+          cache_archive="$(mktemp -d "$RUNNER_TEMP/nailiq-linked-cache.XXXXXX")"
+          if [ -d supabase/.temp ]; then
+            mv -- supabase/.temp "$cache_archive/linked-cache"
+          fi
+          test ! -e supabase/.temp
 
       - uses: actions/setup-node@v6
         with:
@@ -111,6 +125,12 @@ jobs:
             npx tsx scripts/assert-e2e-not-production.ts
 
           DB_URL="${DB_URL}" npx tsx scripts/check-schema-parity.ts
+          psql "$DB_URL" -v ON_ERROR_STOP=1 -q \
+            -f scripts/security/check-inbound-sms-ledger-boundary.sql
+          psql "$DB_URL" -X -v ON_ERROR_STOP=1 -q \
+            -c 'BEGIN' \
+            -f supabase/tests/inbound_sms_confirm_atomic.sql \
+            -c 'ROLLBACK'
           psql "$DB_URL" -v ON_ERROR_STOP=1 -q \
             -f supabase/bootstrap/reference-data.sql
           psql "$DB_URL" -v ON_ERROR_STOP=1 -q \
@@ -423,6 +443,18 @@ jobs:
             -f scripts/security/check-no-duplicate-appointments-boundary.sql
           NAILIQ_DISPOSABLE_DB=1 DB_URL="$DB_URL" \
             node scripts/security/rehearse-no-duplicate-appointments-concurrency.mjs
+
+      - name: Capture sanitized PostgreSQL crash diagnostics
+        if: failure()
+        run: |
+          set -euo pipefail
+          db_container="supabase_db_nailiq-e2e-local"
+          if docker inspect "$db_container" >/dev/null 2>&1; then
+            docker inspect --format 'image={{.Config.Image}} image_id={{.Image}} oom_killed={{.State.OOMKilled}}' "$db_container"
+            # Do not publish statements, request payloads, credentials or PII.
+            docker logs --tail 500 "$db_container" 2>&1 \
+              | grep -E 'server process .*signal|PANIC:|database system is (in recovery|interrupted)|out of memory' || true
+          fi
 
       - name: Stop throwaway Supabase
         if: always()

@@ -207,7 +207,10 @@ describe("MQA-0099 fixed local boundaries", () => {
     forbidPattern(waitlistBoundary, /\.eq\(["']claim_token["']|claim_waitlist_slot/, "new capability link is resolved as a legacy entry token");
     requirePattern(waitlistBoundary, /inspect_waitlist_claim_capability/, "GET preview does not inspect the scoped capability");
     requirePattern(waitlistBoundary, /claim_waitlist_with_management_capability/, "POST does not use atomic capability claim");
-    requirePattern(waitlistButton, /stableBookingManagementRequestId[\s\S]*requestId/, "waitlist response-loss replay has no stable request id");
+    requirePattern(waitlistButton, /requestId\s*=\s*await\s+waitlistClaimRequestId\(token,\s*isAvailable\)/, "waitlist submit does not use the bounded recovery resolver");
+    const recovery = read("src/shared/booking/waitlistClaimRecovery.ts");
+    requirePattern(recovery, /existingBookingManagementRequestId[\s\S]*if\s*\(existing\)\s*return existing/, "waitlist recovery does not retain the old logical request");
+    requirePattern(recovery, /isAvailable\s*\?\s*stableBookingManagementRequestId\(intent\)\s*:\s*null/, "unavailable offer can mint a fresh claim during recovery");
     const waitlistRoute = read("src/app/api/booking/waitlist-claim/route.ts");
     requirePattern(waitlistRoute, /content-length[\s\S]*1024/i, "waitlist body lacks Content-Length cap");
     requirePattern(waitlistRoute, /getReader[\s\S]*total\s*>\s*1024/i, "waitlist body lacks actual-stream cap");

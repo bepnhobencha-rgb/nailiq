@@ -25,6 +25,84 @@ async function guard(context: BrowserContext) {
   });
   return state;
 }
+test("challenge stays inert until hydration, then accepts one keyboard submission", async ({ page, context }) => {
+  const state = await guard(context);
+  const errors: string[] = [];
+  page.on("pageerror", e => errors.push(e.message));
+  page.on("console", message => {
+    if (/hydration|did not match/i.test(message.text())) errors.push(message.text());
+  });
+  let release!: () => void;
+  const scriptsReady = new Promise<void>(resolve => { release = resolve; });
+  await page.route(/\/_next\/static\/.*\.js(?:\?.*)?$/, async route => {
+    await scriptsReady;
+    await route.fallback();
+  });
+  const input = page.getByRole("textbox", { name: "Authenticator code" });
+  const verify = page.getByRole("button", { name: "Verify", exact: true });
+  try {
+    await page.goto("/challenge", { waitUntil: "commit" });
+    await expect(input).toBeVisible();
+    await expect(input).toBeDisabled();
+    await expect(input).toHaveValue("");
+    await expect(verify).toBeDisabled();
+    expect(state.calls).toBe(0);
+  } finally {
+    release();
+  }
+  await expect(input).toBeEnabled();
+  await expect(input).toBeFocused();
+  await input.fill("123456");
+  await expect(verify).toBeEnabled();
+  await input.press("Enter");
+  await expect(page.getByText("QA verification destination")).toBeVisible();
+  expect(state.calls).toBe(1);
+  expect(state.blocked).toEqual([]);
+  expect(errors).toEqual([]);
+});
+test("challenge hydration does not steal an existing keyboard focus", async ({ page, context }) => {
+  const state = await guard(context);
+  let release!: () => void;
+  const scriptsReady = new Promise<void>(resolve => { release = resolve; });
+  await page.route(/\/_next\/static\/.*\.js(?:\?.*)?$/, async route => {
+    await scriptsReady;
+    await route.fallback();
+  });
+  const input = page.getByRole("textbox", { name: "Authenticator code" });
+  try {
+    await page.goto("/challenge", { waitUntil: "commit" });
+    await expect(input).toBeVisible();
+    await expect(input).toBeDisabled();
+    // A synthetic focus target models the user moving elsewhere before hydration.
+    await page.evaluate(() => {
+      const button = document.createElement("button");
+      button.type = "button";
+      button.textContent = "QA existing keyboard focus";
+      document.body.append(button);
+      button.focus();
+    });
+    await expect(page.getByRole("button", { name: "QA existing keyboard focus" })).toBeFocused();
+  } finally {
+    release();
+  }
+  await expect(input).toBeEnabled();
+  await expect(page.getByRole("button", { name: "QA existing keyboard focus" })).toBeFocused();
+  await expect(input).not.toBeFocused();
+  expect(state.calls).toBe(0);
+  expect(state.blocked).toEqual([]);
+});
+test.describe("challenge without JavaScript", () => {
+  test.use({ javaScriptEnabled: false });
+  test("server HTML never offers an unhandled verification submission", async ({ page, context }) => {
+    const state = await guard(context);
+    await page.goto("/challenge");
+    await expect(page.getByRole("heading", { name: "Two-factor verification" })).toBeVisible();
+    await expect(page.getByRole("textbox", { name: "Authenticator code" })).toBeDisabled();
+    await expect(page.getByRole("button", { name: "Verify", exact: true })).toBeDisabled();
+    expect(state.calls).toBe(0);
+    expect(state.blocked).toEqual([]);
+  });
+});
 for (const fault of ["abort", "503", "response-loss", "throw", "verification_unavailable"]) {
   test(`challenge ${fault}: contains failure and manual retry succeeds`, async ({ page, context }, info) => {
     const state = await guard(context); state.fault = fault;

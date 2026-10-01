@@ -295,6 +295,8 @@ export const bookingVi: BookingMessages = {
   minuteSuffixShort: "phút",
   slotBestFit: "Phù hợp nhất",
   slotRecommended: "Gợi ý",
+  slotUnavailable: "không còn chỗ",
+  availabilityGridUnverified: "Chưa xác minh được lịch trống. Chưa chọn giờ nào. Vui lòng quay lại và thử lại.",
   popularBadge: "Phổ biến",
   featuredBadge: "Nổi bật",
   categoryToggleAria: "Mở/đóng dịch vụ {category}",

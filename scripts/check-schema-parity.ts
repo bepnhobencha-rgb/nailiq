@@ -212,6 +212,10 @@ import { execFileSync } from "node:child_process";
  * The 20260926064325 group-slot recovery migration adds two SELECT-only
  * service tables, 21 columns, eight functions and nine indexes. Blank CI
  * measured these additions; browser grants, policies and triggers are unchanged.
+ * The 20260930221321 signed inbound SMS migration adds one RPC-only receipt
+ * table, seven columns, three functions, one immutable trigger and two indexes.
+ * Blank CI 36851794422 measured the exact delta; direct role reachability does
+ * not increase. The three October 1 capacity fixes replace definitions only.
  * Refresh these
  * with each schema-changing forward migration — they
  * are a tripwire, not a spec.
@@ -219,7 +223,7 @@ import { execFileSync } from "node:child_process";
 const RELEASE_SHAPE = {
   // +1 PII-free Twilio terminal-receipt inbox.
   // +25 private TurnIQ policy, ledger, replay, group, check-in, offline, and rollout tables.
-  tables: 248,
+  tables: 249,
   // +2 from 20260815190000_add_salon_closure_notice.sql: closure_notice
   // added to both salons (base table) and public_salon_profiles (view) —
   // both count as columns in information_schema.
@@ -288,7 +292,7 @@ const RELEASE_SHAPE = {
   // Production-parity restoration 20260908014241 adds the five-column
   // public_booking_resource_catalog view. information_schema.columns counts
   // view columns as well as base-table columns.
-  columns: 3824,
+  columns: 3831,
   // The upsell migration replaces two legacy member-write policies with one
   // service-role-only immutable claim policy. The staff-lifecycle hardening
   // removes the browser DELETE policy so hard deletion cannot bypass the
@@ -375,7 +379,9 @@ const RELEASE_SHAPE = {
   // +2 from 20260925202830/20260925204601: gated fee reconciliation
   // discovery and customer-bound Square webhook; legacy RPCs remain.
   // +1 from 20260925220858: ready-ID fee claims after configuration preflight.
-  functions: 611,
+  // +1 signed inbound confirmation RPC. Local b99 delta measured no other
+  // shape changes; fresh blank history b108 independently verified this shape.
+  functions: 615,
   // +4 pending-receipt correlation triggers across notification/staff INSERT
   // and provider-SID transitions.
   // +1 V1 terminal-booking policy trigger.
@@ -402,7 +408,7 @@ const RELEASE_SHAPE = {
   // +1 bulk email append-only event trigger.
   // +1 bulk email canary-completion trigger.
   // +7 P1-05 booking, operational-write, and new-charge boundary triggers.
-  triggers: 169,
+  triggers: 170,
   // Transition/capability PKs, unique keys and focused due/salon indexes.
   // The refund inbox and customer identity map each add PK, unique, and two
   // focused indexes.
@@ -435,7 +441,7 @@ const RELEASE_SHAPE = {
   // +14 bulk email primary, unique, claim, delivery, timeline, and FK indexes.
   // +3 controlled dispatch actor and cohort/status indexes.
   // +2 R10 active authority/source-claim indexes.
-  indexes: 1022,
+  indexes: 1024,
 } as const;
 
 /**
@@ -462,6 +468,7 @@ const GROUP_RECOVERY_SERVICE_READ_TABLES = [
 ] as const;
 
 const CRITICAL_TABLES = [
+  "sms_inbound_booking_receipts",
   ...CARD_RECOVERY_SERVICE_READ_TABLES,
   ...GROUP_RECOVERY_SERVICE_READ_TABLES,
   "salons",
@@ -633,6 +640,10 @@ const NO_SHOW_FEE_SERVICE_ONLY_TABLES = [
 
 /** Booking cannot work without these; a missing RPC fails at runtime, not at apply time. */
 const CRITICAL_FUNCTIONS = [
+  "cancel_booking_from_signed_sms",
+  "confirm_booking_from_signed_sms",
+  "cancel_booking_with_verified_sms_waitlist",
+  "reject_sms_inbound_receipt_mutation",
   "validate_booking_otp_session",
   "complete_booking_card_removal_recovery",
   "complete_owner_booking_card_removal_recovery",

@@ -14,7 +14,7 @@ npx next build qa/fee-confirmation --webpack
 npx playwright test -c qa/fee-confirmation/playwright.config.ts
 ```
 
-84 cases cover three fee queues, English/Vietnamese and desktop Chromium/mobile
+88 cases cover three fee queues, English/Vietnamese and desktop Chromium/mobile
 WebKit (390px): explicit amount/card confirmation; Cancel and Escape; pending
 single-flight/double-click; disabled dismissal while pending; receipt status and
 reload; simulated decline, unknown (including stale props) and response loss; separate approval copy.
@@ -22,3 +22,9 @@ The mobile checks reject horizontal overflow. Unknown/response-loss cases cannot
 offer another Collect on stale client props. Square Sandbox integration and
 Production readiness require separate evidence; these are component/transport
 regressions with a mocked provider boundary.
+
+The fixture server initially renders English. Vietnamese tests must locate the
+Vietnamese action before opening the confirmation; a bilingual action locator
+can activate the English render before the saved language hydrates and capture
+an English-formatted amount. Keep the exact amount assertions, zero retries and
+outbound/action guards intact.

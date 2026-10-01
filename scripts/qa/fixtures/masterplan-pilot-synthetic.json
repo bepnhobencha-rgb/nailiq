@@ -1,0 +1,43 @@
+{
+  "evidenceKind": "synthetic",
+  "observerCode": "OBS1",
+  "salons": [
+    { "code": "S1", "observedDays": 7, "wantsToContinue": true, "dataLossOccurred": false },
+    { "code": "S2", "observedDays": 10, "wantsToContinue": true, "dataLossOccurred": false }
+  ],
+  "participants": [
+    {
+      "code": "P1", "salonCode": "S1", "role": "owner", "olderOwner": true, "lowTech": false,
+      "knownToTeam": false, "techProfessional": false, "firstShiftHelpCount": 0,
+      "tasks": [
+        { "task": "view_today", "completed": true, "independent": true, "durationSeconds": 15 },
+        { "task": "create_booking", "completed": true, "independent": true, "durationSeconds": 55 },
+        { "task": "add_walkin", "completed": true, "independent": true, "durationSeconds": 25 },
+        { "task": "change_status", "completed": true, "independent": true, "durationSeconds": 15 },
+        { "task": "find_customer", "completed": true, "independent": true, "durationSeconds": 15 }
+      ]
+    },
+    {
+      "code": "P2", "salonCode": "S2", "role": "receptionist", "olderOwner": false, "lowTech": true,
+      "knownToTeam": false, "techProfessional": false, "firstShiftHelpCount": 0,
+      "tasks": [
+        { "task": "view_today", "completed": true, "independent": true, "durationSeconds": 15 },
+        { "task": "create_booking", "completed": true, "independent": true, "durationSeconds": 55 },
+        { "task": "add_walkin", "completed": true, "independent": true, "durationSeconds": 25 },
+        { "task": "change_status", "completed": true, "independent": true, "durationSeconds": 15 },
+        { "task": "find_customer", "completed": true, "independent": true, "durationSeconds": 15 }
+      ]
+    },
+    {
+      "code": "P3", "salonCode": "S2", "role": "receptionist", "olderOwner": false, "lowTech": true,
+      "knownToTeam": false, "techProfessional": false, "firstShiftHelpCount": 0,
+      "tasks": [
+        { "task": "view_today", "completed": true, "independent": true, "durationSeconds": 15 },
+        { "task": "create_booking", "completed": true, "independent": true, "durationSeconds": 55 },
+        { "task": "add_walkin", "completed": true, "independent": true, "durationSeconds": 25 },
+        { "task": "change_status", "completed": true, "independent": true, "durationSeconds": 15 },
+        { "task": "find_customer", "completed": true, "independent": true, "durationSeconds": 15 }
+      ]
+    }
+  ]
+}

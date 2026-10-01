@@ -48,9 +48,14 @@ export default async function WaitlistClaimPage({ searchParams }: Props) {
       </Shell>
     );
   }
-  if (preview.state !== "available") return <Shell><Unavailable /></Shell>;
-
-  return <Shell><WaitlistClaimButton token={token} /></Shell>;
+  // A consumed offer may belong to this browser's unacknowledged POST. Render
+  // the same private unavailable result until the browser finds its own request
+  // ID. Recovery still requires an explicit POST; GET never claims or replays.
+  return (
+    <Shell>
+      <WaitlistClaimButton key={token} token={token} isAvailable={preview.state === "available"} />
+    </Shell>
+  );
 }
 
 function Unavailable() {
