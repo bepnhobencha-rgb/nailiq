@@ -323,6 +323,9 @@ export const bookingEn = {
   slotBestFit: "Best fit",
   /** Smart Gap-Free Scheduling pill (Phase 5): slot is a strong back-to-back match. */
   slotRecommended: "Recommended",
+  /** Accessible description of a disabled booking time, not a capacity decision. */
+  slotUnavailable: "not available",
+  availabilityGridUnverified: "We couldn't verify available times. No time has been selected. Go back and try again.",
   /** Small badge rendered on `services.is_popular === true` tiles. */
   popularBadge: "Popular",
   /** Small badge rendered on `services.is_featured === true` tiles. */

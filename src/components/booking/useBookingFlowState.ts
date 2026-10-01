@@ -38,9 +38,14 @@ import {
 } from "@/shared/booking/bookingConfirmLabels";
 import { BOOKING_ANY_STAFF_ID } from "@/shared/booking/bookingStaffConstants";
 import {
-  getAvailableTimeSlots,
+  getAvailableTimeSlotsStrict,
   type TimeSlot,
 } from "@/shared/booking/getAvailableTimeSlots";
+import { recoverWaitlistSlotFromFreshGrid } from "@/shared/booking/waitlistSlotRecovery";
+import {
+  BOOKING_AVAILABILITY_ERROR,
+  resolveBookingAvailabilityError,
+} from "@/shared/booking/bookingAvailabilityFeedback";
 import { computeBookingTiming } from "@/shared/booking/bookingTiming";
 import type {
   BookingSalonMeta,
@@ -241,8 +246,10 @@ export function useBookingFlowState(
   );
   const [timeSlot, setTimeSlot] = useState<string | null>(null);
   const timeSlotRef = useRef<string | null>(null);
+  const pendingWaitlistRecoveredSlotRef = useRef<string | null>(null);
   const [timeSlots, setTimeSlots] = useState<TimeSlot[]>([]);
   const [slotsLoading, setSlotsLoading] = useState(false);
+  const [availabilityUnverified, setAvailabilityUnverified] = useState(false);
   const [availabilityRevision, setAvailabilityRevision] = useState(0);
   const [availabilityRealtimeStatus, setAvailabilityRealtimeStatus] = useState<
     "idle" | "connecting" | "subscribed" | "degraded"
@@ -804,7 +811,7 @@ export function useBookingFlowState(
   const applyWebVoiceBookingHandoff = useCallback((handoff: WebVoiceBookingHandoff) => {
     const date = localNoonFromYmd(handoff.bookingDateYmd);
     if (!date) {
-      setError(t.bookingErrors.slotJustTaken);
+      setError(BOOKING_AVAILABILITY_ERROR.slotJustTaken);
       return;
     }
     pendingWebVoiceTimeSlotRef.current = normalizeVoiceSlotLabel(handoff.timeSlot);
@@ -819,7 +826,7 @@ export function useBookingFlowState(
     setVerificationAction("none");
     setStepDir(1);
     setStep("time");
-  }, [t.bookingErrors.slotJustTaken]);
+  }, []);
 
   useEffect(() => {
     timeSlotRef.current = timeSlot;
@@ -881,7 +888,7 @@ export function useBookingFlowState(
     // eslint-disable-next-line react-hooks/set-state-in-effect -- start spinner before async fetch
     setSlotsLoading(true);
 
-    void getAvailableTimeSlots({
+    void getAvailableTimeSlotsStrict({
       salonId: salon.id,
       openingHoursRaw: salon.opening_hours,
       selectedDate,
@@ -899,9 +906,37 @@ export function useBookingFlowState(
       timezone: salon.timezone,
       requiresResource: resourceCapacity.requiresResource,
       eligibleResourceIds: resourceCapacity.eligibleResourceIds,
-    }).then((slots) => {
+    }).then((result) => {
       if (cancelled) return;
+      if (!result.ok) {
+        // Unknown capacity is neither available nor full. Do not offer a
+        // selectable stale slot or a waitlist until a fresh read succeeds.
+        setAvailabilityUnverified(true);
+        setTimeSlots([]);
+        pendingWaitlistRecoveredSlotRef.current = null;
+        timeSlotRef.current = null;
+        setTimeSlot(null);
+        setWaitlistSlotAvailableLabel(null);
+        setError(BOOKING_AVAILABILITY_ERROR.gridUnverified);
+        setSlotsLoading(false);
+        return;
+      }
+      const slots = result.slots;
+      setAvailabilityUnverified(false);
+      setError((current) => current === BOOKING_AVAILABILITY_ERROR.gridUnverified ? null : current);
       setTimeSlots(slots);
+      const recoveredSlot = pendingWaitlistRecoveredSlotRef.current;
+      if (recoveredSlot) {
+        pendingWaitlistRecoveredSlotRef.current = null;
+        const selection = recoverWaitlistSlotFromFreshGrid(recoveredSlot, slots);
+        // Apply the refreshed grid and its selection in the same React batch.
+        // Selecting against the old disabled grid caused the stale-slot guard
+        // below to immediately clear the server's "book it now" recovery.
+        timeSlotRef.current = selection;
+        setTimeSlot(selection);
+        setWaitlistSlotAvailableLabel(selection);
+        if (!selection) setError(BOOKING_AVAILABILITY_ERROR.waitlistUnverified);
+      }
       const selectedSlot = timeSlotRef.current;
       if (
         availabilityRevision > 0 &&
@@ -910,7 +945,8 @@ export function useBookingFlowState(
       ) {
         timeSlotRef.current = null;
         setTimeSlot(null);
-        setError(t.bookingErrors.slotJustTaken);
+        setWaitlistSlotAvailableLabel(null);
+        setError(BOOKING_AVAILABILITY_ERROR.slotJustTaken);
       }
       setSlotsLoading(false);
     });
@@ -935,7 +971,6 @@ export function useBookingFlowState(
     slotTrailingBufferMinutes,
     availabilityRevision,
     resourceCapacity,
-    t.bookingErrors.slotJustTaken,
   ]);
 
   useEffect(() => {
@@ -960,6 +995,7 @@ export function useBookingFlowState(
     // eslint-disable-next-line react-hooks/set-state-in-effect -- reactive reset when key inputs change
     setWaitlistSlotJoined(false);
     setWaitlistSlotAvailableLabel(null);
+    pendingWaitlistRecoveredSlotRef.current = null;
     setWaitlistSource("slot_unavailable");
   }, [selectedDate, staffId, serviceId, salon.id]);
 
@@ -977,6 +1013,7 @@ export function useBookingFlowState(
     if (!match || !match.available) {
       // eslint-disable-next-line react-hooks/set-state-in-effect -- guard: drop pick that's no longer selectable
       setTimeSlot(null);
+      setWaitlistSlotAvailableLabel(null);
     }
   }, [timeSlots, timeSlot]);
 
@@ -1969,28 +2006,17 @@ export function useBookingFlowState(
         setWaitlistSource("booking_conflict");
         setStepDir(-1);
         setStep("time");
-        setError(t.bookingErrors.slotJustTaken);
-        if (serviceId && service) {
-          setSlotsLoading(true);
-          void getAvailableTimeSlots({
-            salonId: salon.id,
-            openingHoursRaw: salon.opening_hours,
-            selectedDate,
-            staffId: staffId ?? BOOKING_ANY_STAFF_ID,
-            staffList: capableStaff,
-            serviceDurationMinutes: slotBookingTiming.blockMinutes,
-            trailingBufferMinutes: slotTrailingBufferMinutes,
-            closedDateYmdSet,
-            shortestServiceMinutes,
-            leadMinutes: salon.bookingLeadMinutes,
-            timezone: salon.timezone,
-            requiresResource: resourceCapacity.requiresResource,
-            eligibleResourceIds: resourceCapacity.eligibleResourceIds,
-          }).then((slots) => {
-            setTimeSlots(slots);
-            setSlotsLoading(false);
-          });
-        }
+        setError(BOOKING_AVAILABILITY_ERROR.slotJustTaken);
+        // The canonical time-step effect owns reads and cancellation. A
+        // separate legacy read could fail open or resolve after that effect
+        // and overwrite a freshly busy/unverified grid (or another day).
+        timeSlotRef.current = null;
+        pendingWaitlistRecoveredSlotRef.current = null;
+        setTimeSlot(null);
+        setWaitlistSlotAvailableLabel(null);
+        setTimeSlots([]);
+        setSlotsLoading(true);
+        setAvailabilityRevision((revision) => revision + 1);
       } else if (
         err instanceof Error &&
         err.message === "booking_rate_limited"
@@ -2147,16 +2173,6 @@ export function useBookingFlowState(
     timeSlot,
     shopSlug,
     salon.id,
-    salon.opening_hours,
-    salon.bookingLeadMinutes,
-    salon.timezone,
-    closedDateYmdSet,
-    service,
-    capableStaff,
-    slotBookingTiming.blockMinutes,
-    slotTrailingBufferMinutes,
-    shortestServiceMinutes,
-    resourceCapacity,
     smsConsent,
     verificationAction,
     otpSessionId,
@@ -2170,7 +2186,6 @@ export function useBookingFlowState(
     t.outsideHoursError,
     t.pastTimeError,
     t.salonClosedError,
-    t.bookingErrors.slotJustTaken,
     t.bookingErrors.rateLimited,
     t.bookingErrors.monthlyLimitReached,
     t.bookingErrors.trialBookingPaused,
@@ -2249,13 +2264,15 @@ export function useBookingFlowState(
         clientLocale: language,
       });
       if (result.outcome === "slot_available") {
-        setTimeSlot(result.slotLabel);
-        timeSlotRef.current = result.slotLabel;
+        pendingWaitlistRecoveredSlotRef.current = result.slotLabel;
+        setTimeSlot(null);
+        timeSlotRef.current = null;
         setWaitlistPreferredTime("");
-        setWaitlistSlotAvailableLabel(result.slotLabel);
+        setWaitlistSlotAvailableLabel(null);
         setWaitlistSlotJoined(false);
+        setAvailabilityRevision((revision) => revision + 1);
       } else if (result.outcome === "availability_unverified") {
-        setError(t.waitlistAvailabilityUnverified);
+        setError(BOOKING_AVAILABILITY_ERROR.waitlistUnverified);
       } else {
         setWaitlistSlotAvailableLabel(null);
         setWaitlistSlotJoined(true);
@@ -2293,7 +2310,6 @@ export function useBookingFlowState(
     t.bookingErrors.invalidEmail,
     t.waitlistEmailRequired,
     t.waitlistError,
-    t.waitlistAvailabilityUnverified,
   ]);
 
   const backToPhone = useCallback(() => {
@@ -2496,7 +2512,8 @@ export function useBookingFlowState(
     waitlistPreferredTime,
     setWaitlistPreferredTime,
     waitlistTimeOptions,
-    error,
+    error: resolveBookingAvailabilityError(error, t),
+    availabilityUnverified,
     serviceError,
     bookingResult,
     pricingQuote,

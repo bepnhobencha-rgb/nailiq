@@ -2,13 +2,17 @@ import "server-only";
 
 import { BOOKING_ANY_STAFF_ID } from "@/shared/booking/bookingStaffConstants";
 import { getAvailableTimeSlotsStrict } from "@/shared/booking/getAvailableTimeSlots";
-import { loadBookingServicesForSalonSlug } from "@/shared/booking/loadBookingServices";
+import {
+  loadBookingServicesForSalonSlug,
+  loadPublicBookingSnapshot,
+} from "@/shared/booking/loadBookingServices";
 import { parseBookingClosedDateSet } from "@/shared/booking/parseBookingClosedDates";
 import {
   buildCapabilityMap,
   filterStaffCapableForService,
 } from "@/shared/booking/staffCapability";
 import { ymdToLocalNoon } from "@/shared/lib/localDateYmd";
+import { createPublicClient } from "@/shared/lib/supabase/publicClient";
 
 export type IndividualWaitlistAvailability =
   | { outcome: "slot_available"; slotLabel: string }
@@ -24,7 +28,21 @@ export async function verifyIndividualWaitlistAvailability(input: {
   preferredSlotLabel: string | null;
 }): Promise<IndividualWaitlistAvailability> {
   try {
-    const booking = await loadBookingServicesForSalonSlug(input.salonSlug);
+    // Match the public booking page's narrow anonymous resource projection.
+    // Direct reads of salon_resources correctly return no rows under anon RLS;
+    // an empty private-table result is not evidence that all beds are busy.
+    const client = createPublicClient();
+    const { snapshot, error } = await loadPublicBookingSnapshot(client, input.salonSlug);
+    if (
+      error || !snapshot ||
+      snapshot.salon.id !== input.salonId ||
+      snapshot.salon.slug !== input.salonSlug
+    ) {
+      return { outcome: "availability_unverified" };
+    }
+    const booking = await loadBookingServicesForSalonSlug(
+      input.salonSlug, client, snapshot.salon, snapshot,
+    );
     if (
       !booking ||
       !booking.proofComplete ||

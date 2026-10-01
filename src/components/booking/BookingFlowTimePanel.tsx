@@ -6,6 +6,7 @@ import { Button } from "@/components/ui/Button";
 import type { BookingMessages } from "@/shared/i18n/booking/en";
 import type { TimeSlot } from "@/shared/booking/getAvailableTimeSlots";
 import { cn } from "@/shared/lib/cn";
+import { bookingTimeSlotAriaLabel } from "@/shared/booking/bookingAvailabilityFeedback";
 import { LuxuryBookingCta } from "@/components/booking/LuxuryBookingCta";
 import {
   bookingStepVariants,
@@ -27,6 +28,7 @@ export function BookingFlowTimePanel({
   timeSlot,
   slotsLoading,
   availabilityRealtimeStatus,
+  availabilityUnverified = false,
   popularSlotLabels = [],
   timePeriodsEnabled = false,
   timezoneAbbr,
@@ -58,6 +60,7 @@ export function BookingFlowTimePanel({
   timeSlot: string | null;
   slotsLoading: boolean;
   availabilityRealtimeStatus: "idle" | "connecting" | "subscribed" | "degraded";
+  availabilityUnverified?: boolean;
   popularSlotLabels?: string[];
   /** QA-first presentation flag. Availability and booking submission stay unchanged. */
   timePeriodsEnabled?: boolean;
@@ -312,6 +315,10 @@ export function BookingFlowTimePanel({
               />
             ))}
           </div>
+        ) : availabilityUnverified ? (
+          <p role="alert" data-testid="booking-availability-unverified" className="rounded-2xl border border-nq-error/35 bg-nq-error/10 px-4 py-3 text-sm text-nq-error">
+            {t.availabilityGridUnverified}
+          </p>
         ) : timeSlots.length === 0 ? (
           <div className="space-y-6 py-2">
             <p className="text-center text-sm text-[var(--booking-text-muted)]">{t.noSlotsAvailable}</p>
@@ -437,7 +444,7 @@ export function BookingFlowTimePanel({
         ) : (
           <>
             {slotAvailableNotice}
-            {error && !(waitlistOpen && !waitlistSlotAvailableLabel) ? (
+            {error && !(waitlistOpen && waitlistTimeOptions.length > 0 && !waitlistSlotAvailableLabel) ? (
               <p
                 className="mb-5 rounded-2xl border border-nq-error/35 bg-nq-error/10 px-4 py-3 text-sm text-nq-error"
                 role="alert"
@@ -512,17 +519,7 @@ export function BookingFlowTimePanel({
                   data-available={slot.available}
                   aria-pressed={selected}
                   aria-disabled={disabled}
-                  aria-label={
-                    disabled
-                      ? `${slot.label} (not available)`
-                      : slot.scoringLabel === "best_fit"
-                        ? `${slot.label} (${t.slotBestFit})`
-                        : slot.scoringLabel === "recommended"
-                          ? `${slot.label} (${t.slotRecommended})`
-                          : popular
-                            ? `${slot.label} (popular)`
-                            : slot.label
-                  }
+                  aria-label={bookingTimeSlotAriaLabel(slot, t, popular)}
                   disabled={disabled}
                   onClick={() => {
                     if (!disabled) onSelectSlot(slot.label);
@@ -618,7 +615,7 @@ export function BookingFlowTimePanel({
           {t.back}
         </Button>
         <div className="flex w-full justify-end sm:flex-1">
-          <LuxuryBookingCta disabled={slotsLoading || !timeSlot} onClick={onNext}>
+          <LuxuryBookingCta disabled={slotsLoading || availabilityUnverified || !timeSlot} onClick={onNext}>
             {t.next}
           </LuxuryBookingCta>
         </div>

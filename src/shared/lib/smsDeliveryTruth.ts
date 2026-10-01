@@ -112,6 +112,22 @@ export function bindSmsAttemptToStatusCallback(
   explicitUrl: string | undefined,
   attemptId: string,
 ): string | null {
+  // NODE_ENV is "production" in both Vercel Production and Preview. A Preview
+  // must never send receipts to the live app if its public URL (or a domain
+  // outbox's explicit callback) was copied from Production.
+  let previewOrigin: string | null = null;
+  if (process.env.VERCEL_ENV === "preview") {
+    const deploymentHost = process.env.VERCEL_URL?.trim();
+    if (!deploymentHost) return null;
+    try {
+      const deploymentUrl = new URL(`https://${deploymentHost}`);
+      if (deploymentUrl.username || deploymentUrl.password || deploymentUrl.pathname !== "/" || deploymentUrl.search || deploymentUrl.hash) return null;
+      previewOrigin = deploymentUrl.origin;
+      if (explicitUrl?.trim() && new URL(explicitUrl.trim()).origin !== previewOrigin) return null;
+    } catch {
+      return null;
+    }
+  }
   const candidates = [
     explicitUrl?.trim(),
     process.env.NEXT_PUBLIC_APP_URL?.trim()
@@ -127,6 +143,7 @@ export function bindSmsAttemptToStatusCallback(
     try {
       const url = new URL(candidate);
       if (url.protocol !== "https:" || url.username || url.password) continue;
+      if (previewOrigin && url.origin !== previewOrigin) continue;
       url.searchParams.set("sms_attempt_id", attemptId);
       if (explicitUrl?.trim() && candidate === explicitUrl.trim()) {
         // Existing durable domain outboxes (confirmation/reminder/review/staff)

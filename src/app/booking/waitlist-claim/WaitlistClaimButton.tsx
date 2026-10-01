@@ -1,25 +1,46 @@
 "use client";
 
-import { useState } from "react";
+import { useEffect, useRef, useState } from "react";
+import { Button } from "@/components/ui/Button";
 import {
   acknowledgeBookingManagementRequest,
-  stableBookingManagementRequestId,
+  existingBookingManagementRequestId,
 } from "@/shared/booking/bookingManagementRequestId";
+import { waitlistClaimRequestId } from "@/shared/booking/waitlistClaimRecovery";
 
 type State =
-  | { kind: "idle" }
+  | { kind: "idle" | "recovery" }
   | { kind: "submitting" }
   | { kind: "booked" | "claimed" | "unavailable" | "error" };
 
-export function WaitlistClaimButton({ token }: { token: string }) {
-  const [state, setState] = useState<State>({ kind: "idle" });
+export function WaitlistClaimButton({ token, isAvailable = true }: { token: string; isAvailable?: boolean }) {
+  const [state, setState] = useState<State>({ kind: isAvailable ? "idle" : "unavailable" });
+  const inFlight = useRef(false);
+
+  useEffect(() => {
+    if (isAvailable) return;
+    let mounted = true;
+    // Read local replay metadata only. Never fetch or mutate on mount/reload.
+    void existingBookingManagementRequestId({ action: "waitlist_claim", token })
+      .then((requestId) => {
+        if (mounted && requestId && !inFlight.current) setState({ kind: "recovery" });
+      })
+      .catch(() => { /* Storage denied: retain the private unavailable result. */ });
+    return () => { mounted = false; };
+  }, [token, isAvailable]);
 
   async function submit() {
-    if (state.kind === "submitting") return;
+    if (inFlight.current) return;
+    inFlight.current = true;
     setState({ kind: "submitting" });
     try {
       const intent = { action: "waitlist_claim" as const, token };
-      const requestId = await stableBookingManagementRequestId(intent);
+      // Recovery can only POST an existing intent; never mint a replacement ID.
+      const requestId = await waitlistClaimRequestId(token, isAvailable);
+      if (!requestId) {
+        setState({ kind: "unavailable" });
+        return;
+      }
       const response = await fetch("/api/booking/waitlist-claim", {
         method: "POST",
         credentials: "same-origin",
@@ -30,7 +51,7 @@ export function WaitlistClaimButton({ token }: { token: string }) {
         ok?: unknown;
         outcome?: unknown;
       } | null;
-      if (response.ok && result?.ok === true) {
+      if (response.ok && result?.ok === true && (result.outcome === "booked" || result.outcome === "claimed")) {
         await acknowledgeBookingManagementRequest(intent);
         setState({ kind: result.outcome === "booked" ? "booked" : "claimed" });
       } else if (response.status === 409 || response.status === 400) {
@@ -41,6 +62,8 @@ export function WaitlistClaimButton({ token }: { token: string }) {
       }
     } catch {
       setState({ kind: "error" });
+    } finally {
+      inFlight.current = false;
     }
   }
 
@@ -57,20 +80,38 @@ export function WaitlistClaimButton({ token }: { token: string }) {
     return <Message title="Please try again" body="We could not complete the claim right now." retry={submit} />;
   }
 
+  if (!isAvailable) {
+    return (
+      <div className="text-center">
+        <h1 className="text-xl font-semibold text-white">Check your previous claim</h1>
+        <p className="mt-3 text-sm text-nq-muted">
+          Your last request may have succeeded. Check its result before trying to book again.
+        </p>
+        <Button size="lg" fullWidth disabled={state.kind === "submitting"}
+          aria-busy={state.kind === "submitting"} onClick={submit} className="mt-6">
+          {state.kind === "submitting" ? "Checking…" : "Check previous claim"}
+        </Button>
+      </div>
+    );
+  }
+
   return (
     <div className="text-center">
       <h1 className="text-xl font-semibold text-white">A spot is available</h1>
       <p className="mt-3 text-sm text-nq-muted">
         Confirm below to claim it. Opening this page alone does not reserve the spot.
       </p>
-      <button
+      <Button
         type="button"
+        size="lg"
+        fullWidth
         disabled={state.kind === "submitting"}
+        aria-busy={state.kind === "submitting"}
         onClick={submit}
-        className="mt-6 w-full rounded-xl bg-nq-primary px-4 py-3 text-sm font-semibold text-white disabled:opacity-60"
+        className="mt-6"
       >
         {state.kind === "submitting" ? "Claiming…" : "Claim this spot"}
-      </button>
+      </Button>
     </div>
   );
 }
@@ -90,13 +131,15 @@ function Message({ title, body, retry }: { title: string; body: string; retry?: 
       <h1 className="text-xl font-semibold text-white">{title}</h1>
       <p className="mt-3 text-sm text-nq-muted">{body}</p>
       {retry ? (
-        <button
+        <Button
           type="button"
+          variant="secondary"
+          size="lg"
           onClick={retry}
-          className="mt-6 rounded-xl border border-nq-border px-4 py-2 text-sm text-white"
+          className="mt-6"
         >
           Try again
-        </button>
+        </Button>
       ) : null}
     </div>
   );

@@ -2,6 +2,8 @@ import { beforeEach, describe, expect, it, vi } from "vitest";
 
 const mocks = vi.hoisted(() => ({
   loadBookingServicesForSalonSlug: vi.fn(),
+  loadPublicBookingSnapshot: vi.fn(),
+  createPublicClient: vi.fn(),
   getAvailableTimeSlotsStrict: vi.fn(),
 }));
 
@@ -9,6 +11,10 @@ vi.mock("server-only", () => ({}));
 
 vi.mock("@/shared/booking/loadBookingServices", () => ({
   loadBookingServicesForSalonSlug: mocks.loadBookingServicesForSalonSlug,
+  loadPublicBookingSnapshot: mocks.loadPublicBookingSnapshot,
+}));
+vi.mock("@/shared/lib/supabase/publicClient", () => ({
+  createPublicClient: mocks.createPublicClient,
 }));
 vi.mock("@/shared/booking/getAvailableTimeSlots", async (importOriginal) => ({
   ...(await importOriginal<
@@ -78,10 +84,55 @@ const input = {
   preferredSlotLabel: "12:00 PM",
 };
 
+const publicClient = { syntheticPublicClient: true };
+const snapshot = {
+  salon: { id: IDS.salon, slug: input.salonSlug },
+  services: [], staff: [], capabilities: [], promotions: [],
+  promotion_services: [], combos: [], resources,
+};
+
 describe("verifyIndividualWaitlistAvailability", () => {
   beforeEach(() => {
     vi.clearAllMocks();
     mocks.loadBookingServicesForSalonSlug.mockResolvedValue(bookingData);
+    mocks.createPublicClient.mockReturnValue(publicClient);
+    mocks.loadPublicBookingSnapshot.mockResolvedValue({ snapshot, error: null });
+  });
+
+  it("uses the anonymous public snapshot for resource truth rather than private resource table reads", async () => {
+    mocks.getAvailableTimeSlotsStrict.mockResolvedValue({
+      ok: true, slots: [{ label: "12:00 PM", available: true }],
+    });
+    await expect(verifyIndividualWaitlistAvailability(input)).resolves.toEqual({
+      outcome: "slot_available", slotLabel: "12:00 PM",
+    });
+    expect(mocks.loadPublicBookingSnapshot).toHaveBeenCalledWith(publicClient, input.salonSlug);
+    expect(mocks.loadBookingServicesForSalonSlug).toHaveBeenCalledWith(
+      input.salonSlug, publicClient, snapshot.salon, snapshot,
+    );
+  });
+
+  it.each([
+    { snapshot: null, error: null },
+    { snapshot: null, error: { code: "unavailable" } },
+    { snapshot: { ...snapshot, salon: { id: "another-salon", slug: input.salonSlug } }, error: null },
+    { snapshot: { ...snapshot, salon: { id: IDS.salon, slug: "another-slug" } }, error: null },
+  ])("fails closed before availability when the public snapshot is missing, failed or belongs to another salon", async (result) => {
+    mocks.loadPublicBookingSnapshot.mockResolvedValue(result);
+    await expect(verifyIndividualWaitlistAvailability(input)).resolves.toEqual({
+      outcome: "availability_unverified",
+    });
+    expect(mocks.loadBookingServicesForSalonSlug).not.toHaveBeenCalled();
+    expect(mocks.getAvailableTimeSlotsStrict).not.toHaveBeenCalled();
+  });
+
+  it("does not interpret a snapshot transport exception as a full salon", async () => {
+    mocks.loadPublicBookingSnapshot.mockRejectedValue(new Error("synthetic transport failure"));
+    await expect(verifyIndividualWaitlistAvailability(input)).resolves.toEqual({
+      outcome: "availability_unverified",
+    });
+    expect(mocks.loadBookingServicesForSalonSlug).not.toHaveBeenCalled();
+    expect(mocks.getAvailableTimeSlotsStrict).not.toHaveBeenCalled();
   });
 
   it("rejects a false waitlist when two of seven staff and beds can serve noon", async () => {

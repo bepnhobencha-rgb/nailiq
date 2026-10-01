@@ -1,4 +1,4 @@
-import { beforeEach, describe, expect, it, vi } from "vitest";
+import { afterEach, beforeEach, describe, expect, it, vi } from "vitest";
 import { NextRequest } from "next/server";
 
 const mocks = vi.hoisted(() => ({
@@ -51,11 +51,17 @@ function request(
 describe("Twilio outbound status callback", () => {
   beforeEach(() => {
     vi.clearAllMocks();
+    vi.stubGlobal("fetch", vi.fn(() => { throw new Error("Network forbidden in callback contract tests"); }));
     mocks.createService.mockReturnValue({ provider: "local-test" });
     mocks.getToken.mockResolvedValue("auth-token");
     mocks.validate.mockReturnValue(true);
     mocks.updateBySid.mockResolvedValue({ ok: true, code: "applied" });
     mocks.recordAttemptReceipt.mockResolvedValue({ ok: true, code: "applied" });
+  });
+
+  afterEach(() => {
+    expect(fetch).not.toHaveBeenCalled();
+    vi.unstubAllGlobals();
   });
 
   it.each([
@@ -235,6 +241,54 @@ describe("Twilio outbound status callback", () => {
 
     expect(response.status).toBe(503);
     expect(mocks.updateBySid).not.toHaveBeenCalled();
+  });
+
+  it("retries the domain receipt even when the universal attempt is already terminal", async () => {
+    const attemptId = "20200000-0000-4000-8000-000000000006";
+    const callbackUrl = `https://nailiq.test/api/twilio/status?sms_attempt_id=${attemptId}&sms_domain_callback=1`;
+    mocks.recordAttemptReceipt
+      .mockResolvedValueOnce({ ok: true, code: "applied" })
+      .mockResolvedValueOnce({ ok: true, code: "exact_replay" });
+    mocks.updateBySid
+      .mockResolvedValueOnce({ ok: false, code: "database_error" })
+      .mockResolvedValueOnce({ ok: true, code: "applied" });
+
+    expect((await POST(request(undefined, {}, callbackUrl))).status).toBe(503);
+    expect((await POST(request(undefined, {}, callbackUrl))).status).toBe(200);
+    expect(mocks.recordAttemptReceipt).toHaveBeenCalledTimes(2);
+    expect(mocks.updateBySid).toHaveBeenCalledTimes(2);
+    for (const args of mocks.updateBySid.mock.calls) expect(args).toEqual([messageSid, "delivered", null]);
+  });
+
+  it("does not update the domain until a retry durably records the universal receipt", async () => {
+    const attemptId = "20200000-0000-4000-8000-000000000006";
+    const callbackUrl = `https://nailiq.test/api/twilio/status?sms_attempt_id=${attemptId}&sms_domain_callback=1`;
+    mocks.recordAttemptReceipt
+      .mockResolvedValueOnce({ ok: false, code: "database_error" })
+      .mockResolvedValueOnce({ ok: true, code: "applied" });
+
+    expect((await POST(request(undefined, {}, callbackUrl))).status).toBe(503);
+    expect(mocks.updateBySid).not.toHaveBeenCalled();
+    expect((await POST(request(undefined, {}, callbackUrl))).status).toBe(200);
+    expect(mocks.updateBySid).toHaveBeenCalledExactlyOnceWith(messageSid, "delivered", null);
+  });
+
+  it("keeps a duplicate two-ledger callback idempotently acknowledged", async () => {
+    const attemptId = "20200000-0000-4000-8000-000000000006";
+    const callbackUrl = `https://nailiq.test/api/twilio/status?sms_attempt_id=${attemptId}&sms_domain_callback=1`;
+    mocks.recordAttemptReceipt
+      .mockResolvedValueOnce({ ok: true, code: "applied" })
+      .mockResolvedValueOnce({ ok: true, code: "exact_replay" });
+    mocks.updateBySid
+      .mockResolvedValueOnce({ ok: true, code: "applied" })
+      .mockResolvedValueOnce({ ok: true, code: "exact_replay" });
+
+    expect((await POST(request(undefined, {}, callbackUrl))).status).toBe(200);
+    expect((await POST(request(undefined, {}, callbackUrl))).status).toBe(200);
+    expect(mocks.recordAttemptReceipt).toHaveBeenCalledTimes(2);
+    expect(mocks.updateBySid).toHaveBeenCalledTimes(2);
+    // RPC outcomes, not route calls, prove replay. No provider send belongs in
+    // this callback path. This is mocked contract coverage, not durable DB proof.
   });
 
   it("acknowledges an exact terminal replay without requiring a second write", async () => {

@@ -567,8 +567,10 @@ export async function sendSmsReminder(
     });
 
     if (!res.ok) {
-      const text = await res.text();
-      console.error("[sendSmsReminder] Twilio error", res.status, text.slice(0, 300));
+      // Provider bodies may echo contact details, SMS text or credentials.
+      // HTTP status is sufficient for classification; do not consume/log the
+      // body or let an unreadable body obscure a known rejection.
+      console.error("[sendSmsReminder] Twilio error", res.status);
       const error = `twilio_${res.status}`;
       if (res.status >= 500) {
         const persisted = await completeSmsDeliveryAttempt({
@@ -615,8 +617,9 @@ export async function sendSmsReminder(
       attemptId: attempt.attemptId,
       deliveryTruthPersisted: persisted,
     };
-  } catch (e) {
-    console.error("[sendSmsReminder]", e);
+  } catch {
+    // Transport/parse exceptions can contain request URLs, auth or SMS data.
+    console.error("[sendSmsReminder] provider_exception");
     const persisted = await completeSmsDeliveryAttempt({
       ...attempt,
       status: "unknown",

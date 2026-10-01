@@ -324,6 +324,7 @@ export function BookingFlow({
             timeSlot={flow.timeSlot}
             slotsLoading={flow.slotsLoading}
             availabilityRealtimeStatus={flow.availabilityRealtimeStatus}
+            availabilityUnverified={flow.availabilityUnverified}
             popularSlotLabels={flow.popularSlotLabels}
             timePeriodsEnabled={salon.bookingTimePeriodsEnabled}
             timezoneAbbr={slotsTimezoneAbbr}

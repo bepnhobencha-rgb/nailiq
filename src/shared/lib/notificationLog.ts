@@ -9,19 +9,14 @@
 import { createServiceRoleClient } from "@/shared/lib/supabase/serviceRole";
 
 function safeLogError(error: unknown): string {
-  const value = error as { code?: unknown; message?: unknown } | null;
-  const code = typeof value?.code === "string" ? `${value.code}:` : "";
-  const message =
-    typeof value?.message === "string"
-      ? value.message
-      : error instanceof Error
-        ? error.message
-        : "database_error";
-  return `${code}${message}`
-    .replace(/[A-Z0-9._%+-]+@[A-Z0-9.-]+\.[A-Z]{2,}/gi, "[email]")
-    .replace(/\+?\d[\d\s().-]{7,}\d/g, "[phone]")
-    .replace(/[\r\n\t]+/g, " ")
-    .slice(0, 500);
+  // Database messages/details can echo SMS bodies, customer names and bearer
+  // links. Masking phone/email is insufficient. Retain only bounded SQLSTATE
+  // or PostgREST diagnostic codes; never stringify arbitrary error context.
+  const code = (error as { code?: unknown } | null)?.code;
+  return typeof code === "string" &&
+    /^(?:[0-9][A-Z0-9]{4}|(?:F0|HV|P0|XX)[A-Z0-9]{3}|PGRST[0-9]{3})$/u.test(code)
+    ? `database_error:${code}`
+    : "database_error";
 }
 
 export type NotificationType =
