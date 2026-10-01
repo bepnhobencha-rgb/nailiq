@@ -21,13 +21,15 @@ import { expect } from "vitest";
 // Group-slot recovery adds two SELECT-only service tables, 21 columns, eight
 // functions and nine indexes, measured by both blank CI migration jobs.
 // This is the local release contract, not a claim about Production's schema.
+// Signed inbound SMS: blank CI 36851794422 independently measured +1 table,
+// +7 columns, +3 functions, +1 trigger and +2 indexes. Role reachability unchanged.
 const EXPECTED_RELEASE_SHAPE = {
-  tables: 248,
-  columns: 3824,
+  tables: 249,
+  columns: 3831,
   policies: 225,
-  functions: 611,
-  triggers: 169,
-  indexes: 1022,
+  functions: 614,
+  triggers: 170,
+  indexes: 1024,
 };
 const EXPECTED_GRANTS = { anon: 57, authenticated: 79, service_role: 236 };
 
