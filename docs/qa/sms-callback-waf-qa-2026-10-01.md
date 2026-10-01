@@ -264,3 +264,74 @@ This batch advances hosted synthetic callback evidence, not Day 22 closure or
 Artifacts: `waf-callback-*-b134.json`, `waf-callback-*-b139.json`,
 `callback-hosted-negative-b135.json`, `callback-hosted-positive-b137-*.json`,
 `callback-hosted-durable-b140.json`, and the scoped cleanup SQL `b141`.
+
+## Publication and native CI failure — retained, not a green retry
+
+The approved three-file follow-up was committed and pushed once as
+`f936afb59e648a150cb401e02b5abc73fd510b92`. Git remote and PR read-back agree;
+PR #1441 remains Draft. The publication driver initially saw the old PR head
+after the successful push (eventual consistency). A separate read-only check
+verified publication; no duplicate push or force push was performed.
+All sixteen unrelated dirty-file hashes and the two unrelated staged files
+were preserved.
+
+Preview `dpl_3cXyXzujyivgMDCnVh7WfPug6Nnv` is READY at the literal new head.
+Cleanup Preview `dpl_FsdAXYDYTLAUhWcyHPwMo91UDinN` is also READY at its earlier
+head. Neither has Production aliases. Branch overrides are removed, default
+atomic adapters are OFF, and the original WAF rule is restored with no draft.
+
+Migration run `36893592394`, attempt 1, FAILED at the newly wired SQL fixture:
+`server closed the connection unexpectedly`, psql exit 2. Schema history,
+parity and ledger metadata/ACL passed first. CI did not capture the native
+server log before cleanup, so this CI output alone does not prove a signal.
+Other CI/E2E jobs on this head must be assessed separately, not borrowed from
+the previous head or inferred from Preview READY.
+
+### Root-cause contrast on owned local containers
+
+- The tracked `supabase/.temp/postgres-version` is `17.6.1.111` despite the
+  ignore rule. Supabase CLI 2.109.1 reads this cache and overrides its default
+  PostgreSQL image. An actual CLI `services` check confirms that selection.
+- With Supabase's hint/reserved-role settings, image `17.6.1.111` applied all
+  550 migrations, then crashed at cases 16–17 (real anon/authenticated EXECUTE
+  denial). The owned server log records `signal 11: Segmentation fault`.
+- Identical history/fixture and diagnostic settings passed all 20 cases on
+  `17.6.1.143` and `17.6.1.167`. These are local image comparisons, with bare
+  auth stubs, not a hosted Auth or provider test. Every owned container was
+  removed; the shared local database was not used for these crash probes.
+- A further .143 container initialized with `supabase_admin` as bootstrap
+  superuser and `postgres` as NOSUPERUSER/CREATEROLE/CREATEDB/BYPASSRLS also
+  passed all 20 cases after all 550 migrations. Retain b149's earlier harness
+  failure: initdb's bootstrap postgres cannot be demoted. That failed before
+  the fixture; b151 corrects initialization, not application privileges.
+- [Supabase's upstream issue and maintainer resolution](https://github.com/supabase/postgres/issues/2112)
+  confirm supautils 3.2.0/3.2.1 denied-function crashes in image tags .099–.112,
+  fixed from supautils 3.2.2. Do not infer hosted Production uses that old
+  extension merely because a tracked local cache does.
+
+### Scoped correction and verification
+
+Only the same three approved files change. The workflow quarantines the
+runner checkout's legacy linked cache before `supabase start`; it does not
+delete tracked developer files, change a cloud project, upgrade the CLI, grant
+EXECUTE, suppress role tests or alter application SQL. A sanitized failure
+diagnostic records image/OOM/native signal without statements or payloads.
+
+The exact workflow shell step was tested in a separate temporary directory:
+CLI 2.109.1 resolves .111 before quarantine and .143 afterward. Running the
+step again without a cache also succeeds. CLI telemetry was disabled. The
+first private harness incorrectly parsed human-table output as JSON; it
+failed before moving the cache, and was corrected to request JSON explicitly.
+
+Local corrected gates: 70/70 focused tests across three files, typecheck,
+touched-file ESLint, YAML parse and diff check PASS. The first YAML harness
+referenced an unavailable `yaml` package; using the already-installed
+`js-yaml` parser passed. Neither harness failure was an application change.
+No unchanged CI rerun was requested. Corrected-head CI/complete blank Supabase
+runtime remains NOT PROVEN until its own run finishes.
+
+Private evidence: `confirmation-native-b144.json`, `-b145.json`, `-b146.json`,
+`-b147.json` (including the retained native crash log), `clean-cache-b148.json`,
+`confirmation-native-b149.json`, `-b151.json`, and
+`callback-publication-verified-b143.json`. No Production, provider or real
+notification action was performed.

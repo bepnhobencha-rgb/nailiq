@@ -53,4 +53,26 @@ describe("signed inbound SMS release ledger boundary", () => {
       /-f scripts\/security\/check-inbound-sms-ledger-boundary\.sql\s+psql "\$DB_URL" -X -v ON_ERROR_STOP=1 -q \\\n\s+-c 'BEGIN' \\\n\s+-f supabase\/tests\/inbound_sms_confirm_atomic\.sql \\\n\s+-c 'ROLLBACK'/,
     );
   });
+
+  it("isolates legacy linked cache before starting the disposable runtime", () => {
+    const workflow = read(".github/workflows/migration-history-rehearsal.yml");
+    const isolation = workflow.indexOf("name: Isolate disposable runtime from linked cloud cache");
+    const start = workflow.indexOf("supabase start --exclude");
+    expect(isolation).toBeGreaterThan(0);
+    expect(isolation).toBeLessThan(start);
+    expect(workflow).toContain('mv -- supabase/.temp "$cache_archive/linked-cache"');
+    expect(workflow).toContain("test ! -e supabase/.temp");
+    expect(workflow).not.toContain("supabase link");
+  });
+
+  it("retains sanitized native-crash evidence before stopping the throwaway database", () => {
+    const workflow = read(".github/workflows/migration-history-rehearsal.yml");
+    const diagnostic = workflow.indexOf("name: Capture sanitized PostgreSQL crash diagnostics");
+    const stop = workflow.indexOf("name: Stop throwaway Supabase");
+    expect(diagnostic).toBeGreaterThan(0);
+    expect(diagnostic).toBeLessThan(stop);
+    expect(workflow.slice(diagnostic, stop)).toContain("if: failure()");
+    expect(workflow.slice(diagnostic, stop)).toContain("oom_killed={{.State.OOMKilled}}");
+    expect(workflow.slice(diagnostic, stop)).toContain("grep -E 'server process .*signal");
+  });
 });
