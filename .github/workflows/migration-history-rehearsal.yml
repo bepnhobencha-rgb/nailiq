@@ -8,6 +8,7 @@ on:
       - "scripts/build-folded-migration-history.mjs"
       - "scripts/check-schema-parity.ts"
       - "scripts/security/check-inbound-sms-ledger-boundary.sql"
+      - "supabase/tests/inbound_sms_confirm_atomic.sql"
       - "scripts/security/rehearse-postgres-backup-restore.mjs"
       - "scripts/security/check-branch-tenant-isolation-boundary.sql"
       - "scripts/security/rehearse-branch-tenant-isolation.sql"
@@ -114,6 +115,10 @@ jobs:
           DB_URL="${DB_URL}" npx tsx scripts/check-schema-parity.ts
           psql "$DB_URL" -v ON_ERROR_STOP=1 -q \
             -f scripts/security/check-inbound-sms-ledger-boundary.sql
+          psql "$DB_URL" -X -v ON_ERROR_STOP=1 -q \
+            -c 'BEGIN' \
+            -f supabase/tests/inbound_sms_confirm_atomic.sql \
+            -c 'ROLLBACK'
           psql "$DB_URL" -v ON_ERROR_STOP=1 -q \
             -f supabase/bootstrap/reference-data.sql
           psql "$DB_URL" -v ON_ERROR_STOP=1 -q \

@@ -40,4 +40,17 @@ describe("signed inbound SMS release ledger boundary", () => {
     const workflow = read(".github/workflows/migration-history-rehearsal.yml");
     expect(workflow).toMatch(/DB_URL="\$\{DB_URL\}" npx tsx scripts\/check-schema-parity\.ts\s+psql[^\n]+\n\s+-f scripts\/security\/check-inbound-sms-ledger-boundary\.sql/);
   });
+
+  it("reruns the atomic confirmation scenarios when their SQL fixture changes", () => {
+    const workflow = read(".github/workflows/migration-history-rehearsal.yml");
+    const triggers = workflow.split("  workflow_dispatch:")[0];
+    expect(triggers).toContain('"supabase/tests/inbound_sms_confirm_atomic.sql"');
+  });
+
+  it("executes the real atomic confirmation fixture in a rollback transaction in CI", () => {
+    const workflow = read(".github/workflows/migration-history-rehearsal.yml");
+    expect(workflow).toMatch(
+      /-f scripts\/security\/check-inbound-sms-ledger-boundary\.sql\s+psql "\$DB_URL" -X -v ON_ERROR_STOP=1 -q \\\n\s+-c 'BEGIN' \\\n\s+-f supabase\/tests\/inbound_sms_confirm_atomic\.sql \\\n\s+-c 'ROLLBACK'/,
+    );
+  });
 });
